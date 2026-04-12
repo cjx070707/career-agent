@@ -1,0 +1,17 @@
+[
+  {
+    "type": "job_posting",
+    "title": "Backend Engineer Intern",
+    "snippet": "Python, FastAPI, REST APIs, SQL, and basic cloud exposure."
+  },
+  {
+    "type": "job_posting",
+    "title": "AI Platform Backend Engineer",
+    "snippet": "Backend services for LLM products, tool orchestration, retrieval systems, and platform APIs."
+  },
+  {
+    "type": "job_posting",
+    "title": "Frontend Engineer Intern",
+    "snippet": "React, TypeScript, component libraries, UI implementation, and interaction polish."
+  }
+]

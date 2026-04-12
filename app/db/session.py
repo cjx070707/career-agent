@@ -1,0 +1,57 @@
+import sqlite3
+from sqlite3 import Connection
+from typing import Optional
+
+from app.db.base import resolve_db_path
+
+
+def get_database_url(db_path: Optional[str] = None) -> str:
+    return f"sqlite:///{resolve_db_path(db_path)}"
+
+
+def get_connection(db_path: Optional[str] = None) -> Connection:
+    connection = sqlite3.connect(resolve_db_path(db_path))
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def init_db(db_path: Optional[str] = None) -> None:
+    with get_connection(db_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS conversation_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS candidates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS job_postings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS resumes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                version TEXT NOT NULL,
+                FOREIGN KEY(candidate_id) REFERENCES candidates(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS career_profiles (
+                user_id TEXT PRIMARY KEY,
+                target_role_preference TEXT NOT NULL DEFAULT '',
+                skill_keywords TEXT NOT NULL DEFAULT '',
+                career_focus_notes TEXT NOT NULL DEFAULT '',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
