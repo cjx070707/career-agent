@@ -16,4 +16,7 @@ def list_candidates() -> List[Dict[str, Union[int, str]]]:
 
 @router.post("/candidates", status_code=status.HTTP_201_CREATED)
 def create_candidate(payload: CandidateCreate) -> Dict[str, Union[int, str]]:
-    return candidate_service.create_candidate(name=payload.name)
+    return candidate_service.create_candidate(
+        name=payload.name,
+        user_id=payload.user_id,
+    )

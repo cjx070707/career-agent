@@ -12,11 +12,13 @@ def build_job_tools() -> list[ToolDefinition]:
             input_model=SearchJobsToolInput,
             handler=lambda payload: [
                 {
-                    "type": result.type,
-                    "title": result.title,
-                    "snippet": result.snippet,
+                    "type": hit.type,
+                    "title": hit.title,
+                    "snippet": hit.snippet,
+                    "matched_terms": hit.matched_terms,
+                    "reason": hit.reason,
                 }
-                for result in retrieval_service.search(payload.query)
+                for hit in retrieval_service.search_with_reasons(payload.query)
             ],
         )
     ]

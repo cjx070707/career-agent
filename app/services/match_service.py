@@ -33,8 +33,9 @@ class MatchService:
                     match_score=raw_score,
                     matched_keywords=matched_keywords,
                     rationale=(
-                        "Resume overlaps with job keywords: "
-                        + ", ".join(matched_keywords[:5])
+                        "匹配关键词："
+                        + "、".join(matched_keywords[:5])
+                        + "，这些内容同时出现在你的简历和岗位信息中"
                     ),
                 )
             )

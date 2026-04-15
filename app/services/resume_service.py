@@ -1,11 +1,31 @@
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 from app.db.session import get_connection
 
 
 class ResumeService:
-    def has_resume(self) -> bool:
+    def has_resume(self, user_id: Optional[str] = None) -> bool:
         with get_connection() as connection:
+            if user_id:
+                row = connection.execute(
+                    """
+                    SELECT 1
+                    FROM resumes
+                    INNER JOIN candidates ON candidates.id = resumes.candidate_id
+                    WHERE candidates.user_id = ?
+                    LIMIT 1
+                    """,
+                    (user_id,),
+                ).fetchone()
+                if row is not None:
+                    return True
+                total = connection.execute(
+                    "SELECT COUNT(*) AS count FROM resumes"
+                ).fetchone()
+                candidate_total = connection.execute(
+                    "SELECT COUNT(*) AS count FROM candidates"
+                ).fetchone()
+                return int(total["count"]) == 1 and int(candidate_total["count"]) == 1
             row = connection.execute(
                 """
                 SELECT 1
@@ -13,7 +33,7 @@ class ResumeService:
                 LIMIT 1
                 """
             ).fetchone()
-        return row is not None
+            return row is not None
 
     def create_resume(
         self,
@@ -79,16 +99,45 @@ class ResumeService:
             "version": row["version"],
         }
 
-    def get_latest_resume(self) -> Dict[str, Union[int, str]]:
+    def get_latest_resume(self, user_id: Optional[str] = None) -> Dict[str, Union[int, str]]:
         with get_connection() as connection:
-            row = connection.execute(
-                """
-                SELECT id, candidate_id, title, content, version
-                FROM resumes
-                ORDER BY id DESC
-                LIMIT 1
-                """
-            ).fetchone()
+            if user_id:
+                row = connection.execute(
+                    """
+                    SELECT resumes.id, resumes.candidate_id, resumes.title, resumes.content, resumes.version
+                    FROM resumes
+                    INNER JOIN candidates ON candidates.id = resumes.candidate_id
+                    WHERE candidates.user_id = ?
+                    ORDER BY resumes.id DESC
+                    LIMIT 1
+                    """,
+                    (user_id,),
+                ).fetchone()
+                if row is None:
+                    total = connection.execute(
+                        "SELECT COUNT(*) AS count FROM resumes"
+                    ).fetchone()
+                    candidate_total = connection.execute(
+                        "SELECT COUNT(*) AS count FROM candidates"
+                    ).fetchone()
+                    if int(total["count"]) == 1 and int(candidate_total["count"]) == 1:
+                        row = connection.execute(
+                            """
+                            SELECT id, candidate_id, title, content, version
+                            FROM resumes
+                            ORDER BY id DESC
+                            LIMIT 1
+                            """
+                        ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT id, candidate_id, title, content, version
+                    FROM resumes
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
         if row is None:
             raise ValueError("No resume available")
         return {

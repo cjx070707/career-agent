@@ -5,7 +5,7 @@ import httpx
 from pydantic import ValidationError
 
 from app.env import settings
-from app.llm.prompts import PLANNER_SYSTEM_PROMPT
+from app.llm.prompts import JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT, PLANNER_SYSTEM_PROMPT
 from app.schemas.chat import ChatPlan
 
 
@@ -22,6 +22,9 @@ class LLMClient:
 
     def __init__(self) -> None:
         self.model = settings.default_model
+        self.last_plan_source = "not_used"
+        self.last_job_search_summary_source = "not_used"
+        self.last_generate_source = "not_used"
 
     def is_configured(self) -> bool:
         return bool(settings.openai_api_key)
@@ -55,11 +58,13 @@ class LLMClient:
                     available_tools=available_tools,
                     user_state=normalized_user_state,
                 )
+                self.last_plan_source = "model"
                 return self._validated_plan(plan_payload, planner_source="model")
             except (RuntimeError, ValidationError, ValueError, httpx.HTTPError) as exc:
                 last_error = exc
 
         _ = last_error
+        self.last_plan_source = "fallback"
         return self._validated_plan(
             self._fallback_plan(
                 message,
@@ -77,6 +82,7 @@ class LLMClient:
         memory_context: list[str],
         evidence: list[str],
     ) -> str:
+        self.last_generate_source = "fallback"
         if self.is_configured():
             return (
                 f"Model {self.model} is configured, but live completion is not wired yet."
@@ -93,6 +99,38 @@ class LLMClient:
             )
 
         return f"Fallback response for '{message}'."
+
+    def summarize_job_search(
+        self,
+        message: str,
+        memory_context: List[str],
+        jobs: List[Dict[str, Any]],
+    ) -> str:
+        top_jobs = self._top_job_search_hits(jobs)
+        if not self._job_search_summarizer_is_configured():
+            self.last_job_search_summary_source = "fallback"
+            return self._fallback_job_search_summary(top_jobs, bool(memory_context))
+        try:
+            request = self._build_job_search_summarize_chat_request(
+                message=message,
+                memory_context=memory_context,
+                jobs=top_jobs,
+            )
+            chat_payload = self._post_responses(
+                f"{self._planner_base_url().rstrip('/')}/chat/completions",
+                api_key=self._planner_api_key(),
+                payload=request,
+                timeout=45.0,
+            )
+            text = self._extract_chat_completion_text(chat_payload).strip()
+            if not text:
+                self.last_job_search_summary_source = "fallback"
+                return self._fallback_job_search_summary(top_jobs, bool(memory_context))
+            self.last_job_search_summary_source = "model"
+            return text
+        except (RuntimeError, ValueError, httpx.HTTPError):
+            self.last_job_search_summary_source = "fallback"
+            return self._fallback_job_search_summary(top_jobs, bool(memory_context))
 
     def _generate_plan_with_model(
         self,
@@ -117,6 +155,7 @@ class LLMClient:
                 f"{self._planner_base_url().rstrip('/')}/responses",
                 api_key=self._planner_api_key(),
                 payload=request,
+                timeout=45.0,
             )
             return self._extract_plan_payload(response_payload)
         except httpx.HTTPStatusError as exc:
@@ -134,6 +173,7 @@ class LLMClient:
             f"{self._planner_base_url().rstrip('/')}/chat/completions",
             api_key=self._planner_api_key(),
             payload=chat_request,
+            timeout=45.0,
         )
         return self._extract_chat_completions_plan_payload(chat_payload)
 
@@ -244,14 +284,25 @@ class LLMClient:
         plan_payload: Dict[str, Any],
         planner_source: str,
     ) -> Dict[str, Any]:
+        normalized_payload = self._normalize_plan(plan_payload)
         plan = ChatPlan.model_validate(
             {
-                **plan_payload,
+                **normalized_payload,
                 "planner_source": planner_source,
             }
         )
         self._validate_plan_contract(plan)
         return plan.model_dump()
+
+    def _normalize_plan(self, plan_payload: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(plan_payload)
+        if normalized.get("task_type") != "job_search":
+            return normalized
+        steps = normalized.get("steps", [])
+        if "search_jobs" not in steps:
+            return normalized
+        normalized["steps"] = ["search_jobs"]
+        return normalized
 
     def _validate_plan_contract(self, plan: ChatPlan) -> None:
         if plan.task_type not in self.ALLOWED_TASK_TYPES:
@@ -268,6 +319,7 @@ class LLMClient:
         url: str,
         api_key: str,
         payload: Dict[str, Any],
+        timeout: float = 45.0,
     ) -> Dict[str, Any]:
         response = httpx.post(
             url,
@@ -276,10 +328,83 @@ class LLMClient:
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=15,
+            timeout=timeout,
         )
         response.raise_for_status()
         return response.json()
+
+    def _build_job_search_summarize_chat_request(
+        self,
+        message: str,
+        memory_context: List[str],
+        jobs: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return {
+            "model": self._planner_model(),
+            "messages": [
+                {
+                    "role": "system",
+                    "content": JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "message": message,
+                            "memory_context": memory_context,
+                            "jobs": jobs,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+        }
+
+    def _extract_chat_completion_text(self, payload: Dict[str, Any]) -> str:
+        choices = payload.get("choices", [])
+        for choice in choices:
+            message = choice.get("message", {})
+            content = message.get("content")
+            if isinstance(content, str) and content:
+                return content
+            if isinstance(content, list):
+                parts: List[str] = []
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        text = part.get("text")
+                        if isinstance(text, str) and text:
+                            parts.append(text)
+                if parts:
+                    return "".join(parts)
+        return ""
+
+    def _job_search_summarizer_is_configured(self) -> bool:
+        return bool(self._planner_api_key())
+
+    def _top_job_search_hits(self, jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return jobs[:3]
+
+    def _fallback_job_search_summary(
+        self,
+        jobs: List[Dict[str, Any]],
+        has_memory_context: bool,
+    ) -> str:
+        if not jobs:
+            return "暂时没有合适的岗位结果，建议换个关键词再试。"
+
+        intro = "推荐岗位："
+        if has_memory_context:
+            intro = "结合你最近提到的偏好，推荐岗位："
+
+        lines: List[str] = [intro]
+        for idx, job in enumerate(jobs, start=1):
+            title = str(job.get("title") or "未命名岗位").strip()
+            reason = str(job.get("reason") or job.get("snippet") or "").strip()
+            if reason:
+                lines.append(f"{idx}. {title}：{reason}")
+            else:
+                lines.append(f"{idx}. {title}")
+        return "\n".join(lines)
 
     def _fallback_plan(
         self,

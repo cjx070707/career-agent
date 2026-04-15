@@ -1,7 +1,10 @@
+import json
+
 import httpx
 
 from app.llm.client import LLMClient
 from app.env import settings
+from app.llm.prompts import JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT
 
 
 class ModelFirstLLMClient(LLMClient):
@@ -31,7 +34,7 @@ class ConfigAwareLLMClient(LLMClient):
     def is_configured(self) -> bool:
         return True
 
-    def _post_responses(self, url, payload=None, api_key=None):
+    def _post_responses(self, url, payload=None, api_key=None, **kwargs):
         self.request_url = url
         return {
             "output": [
@@ -54,7 +57,7 @@ class ChatCompletionsFallbackLLMClient(LLMClient):
     def is_configured(self) -> bool:
         return True
 
-    def _post_responses(self, url, payload=None, api_key=None):
+    def _post_responses(self, url, payload=None, api_key=None, **kwargs):
         self.called_urls.append(url)
         if url.endswith("/responses"):
             request = httpx.Request("POST", url)
@@ -73,20 +76,63 @@ class ChatCompletionsFallbackLLMClient(LLMClient):
         raise AssertionError(f"Unexpected URL: {url}")
 
 
+class JobSearchSummarizeChatClient(LLMClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.summarize_chat_calls = []
+
+    def _post_responses(self, url, payload=None, api_key=None, **kwargs):
+        self.summarize_chat_calls.append((url, payload, kwargs))
+        return {"choices": [{"message": {"content": "Model job-search summary."}}]}
+
+
+class TimeoutCaptureLLMClient(LLMClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = []
+
+    def is_configured(self) -> bool:
+        return True
+
+    def _post_responses(self, url, payload=None, api_key=None, **kwargs):
+        self.calls.append((url, kwargs))
+        if url.endswith("/responses"):
+            return {
+                "output": [
+                    {
+                        "content": [
+                            {
+                                "text": "{\"task_type\":\"job_search\",\"reason\":\"ok\",\"steps\":[\"search_jobs\"],\"needs_more_context\":false,\"missing_context\":[],\"follow_up_question\":null}"
+                            }
+                        ]
+                    }
+                ]
+            }
+        return {"choices": [{"message": {"content": "Model job-search summary."}}]}
+
+
 def test_generate_plan_uses_profile_and_memory_for_job_search() -> None:
     client = LLMClient()
+    original_openai_api_key = settings.openai_api_key
+    original_planner_api_key = settings.planner_api_key
 
-    plan = client.generate_plan(
-        message="帮我找一些岗位",
-        memory_context=["我们刚刚聊过后端实习方向"],
-        profile={
-            "user_id": "u1",
-            "target_role_preference": "backend",
-            "skill_keywords": ["python", "fastapi"],
-            "career_focus_notes": "User currently prefers backend roles.",
-        },
-        available_tools=["search_jobs", "match_resume_to_jobs"],
-    )
+    settings.openai_api_key = ""
+    settings.planner_api_key = ""
+    try:
+        plan = client.generate_plan(
+            message="帮我找一些岗位",
+            memory_context=["我们刚刚聊过后端实习方向"],
+            profile={
+                "user_id": "u1",
+                "target_role_preference": "backend",
+                "skill_keywords": ["python", "fastapi"],
+                "career_focus_notes": "User currently prefers backend roles.",
+            },
+            available_tools=["search_jobs", "match_resume_to_jobs"],
+        )
+    finally:
+        settings.openai_api_key = original_openai_api_key
+        settings.planner_api_key = original_planner_api_key
 
     assert plan["task_type"] == "job_search"
     assert plan["steps"] == ["search_jobs"]
@@ -96,18 +142,26 @@ def test_generate_plan_uses_profile_and_memory_for_job_search() -> None:
 
 def test_generate_plan_respects_available_tools_for_matching() -> None:
     client = LLMClient()
+    original_openai_api_key = settings.openai_api_key
+    original_planner_api_key = settings.planner_api_key
 
-    plan = client.generate_plan(
-        message="结合我的情况推荐适合投的岗位",
-        memory_context=[],
-        profile={
-            "user_id": "u1",
-            "target_role_preference": "",
-            "skill_keywords": [],
-            "career_focus_notes": "",
-        },
-        available_tools=["get_candidate_profile", "search_jobs"],
-    )
+    settings.openai_api_key = ""
+    settings.planner_api_key = ""
+    try:
+        plan = client.generate_plan(
+            message="结合我的情况推荐适合投的岗位",
+            memory_context=[],
+            profile={
+                "user_id": "u1",
+                "target_role_preference": "",
+                "skill_keywords": [],
+                "career_focus_notes": "",
+            },
+            available_tools=["get_candidate_profile", "search_jobs"],
+        )
+    finally:
+        settings.openai_api_key = original_openai_api_key
+        settings.planner_api_key = original_planner_api_key
 
     assert plan["task_type"] == "job_match_planning"
     assert plan["steps"] == ["get_candidate_profile", "search_jobs"]
@@ -117,19 +171,27 @@ def test_generate_plan_respects_available_tools_for_matching() -> None:
 
 def test_generate_plan_asks_for_resume_when_matching_context_is_missing() -> None:
     client = LLMClient()
+    original_openai_api_key = settings.openai_api_key
+    original_planner_api_key = settings.planner_api_key
 
-    plan = client.generate_plan(
-        message="我适合投哪些岗位",
-        memory_context=[],
-        profile={
-            "user_id": "u1",
-            "target_role_preference": "",
-            "skill_keywords": [],
-            "career_focus_notes": "",
-        },
-        available_tools=["match_resume_to_jobs"],
-        user_state={"has_candidate": True, "has_resume": False},
-    )
+    settings.openai_api_key = ""
+    settings.planner_api_key = ""
+    try:
+        plan = client.generate_plan(
+            message="我适合投哪些岗位",
+            memory_context=[],
+            profile={
+                "user_id": "u1",
+                "target_role_preference": "",
+                "skill_keywords": [],
+                "career_focus_notes": "",
+            },
+            available_tools=["match_resume_to_jobs"],
+            user_state={"has_candidate": True, "has_resume": False},
+        )
+    finally:
+        settings.openai_api_key = original_openai_api_key
+        settings.planner_api_key = original_planner_api_key
 
     assert plan["task_type"] == "job_match"
     assert plan["steps"] == []
@@ -234,6 +296,9 @@ def test_build_plan_request_uses_hardened_planner_prompt() -> None:
 
     system_content = request["input"][0]["content"]
 
+    assert "University of Sydney Career Hub" in system_content
+    assert "search first" in system_content
+    assert "location_preference, experience_level, and work_type_preference" in system_content
     assert "If required user context is missing" in system_content
     assert "follow_up_question" in system_content
     assert "Do not use unavailable tools" in system_content
@@ -402,3 +467,62 @@ def test_generate_plan_falls_back_when_missing_context_contract_is_broken() -> N
     assert client.fallback_calls == 1
     assert plan["planner_source"] == "fallback"
     assert plan["missing_context"] == ["resume"]
+
+
+def test_summarize_job_search_uses_chat_completions_when_configured() -> None:
+    client = JobSearchSummarizeChatClient()
+    planner_base = settings.planner_base_url.rstrip("/")
+    original_openai_api_key = settings.openai_api_key
+    original_planner_api_key = settings.planner_api_key
+
+    settings.openai_api_key = ""
+    settings.planner_api_key = "planner-only-key"
+    try:
+        text = client.summarize_job_search(
+            message="找后端实习",
+            memory_context=["我们聊过偏好 Python"],
+            jobs=[
+                {"title": "Backend Intern", "snippet": "Python team"},
+                {"title": "Platform Intern", "snippet": "Infra team"},
+                {"title": "API Intern", "snippet": "Service APIs"},
+                {"title": "Extra Intern", "snippet": "Should not be sent"},
+            ],
+        )
+    finally:
+        settings.openai_api_key = original_openai_api_key
+        settings.planner_api_key = original_planner_api_key
+
+    assert text == "Model job-search summary."
+    assert len(client.summarize_chat_calls) == 1
+    url, payload, kwargs = client.summarize_chat_calls[0]
+    assert url == f"{planner_base}/chat/completions"
+    assert kwargs["timeout"] == 45.0
+    assert payload["model"] == settings.planner_model
+    assert payload["messages"][0]["content"] == JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT
+    user_blob = json.loads(payload["messages"][1]["content"])
+    assert user_blob["message"] == "找后端实习"
+    assert user_blob["memory_context"] == ["我们聊过偏好 Python"]
+    assert [job["title"] for job in user_blob["jobs"]] == [
+        "Backend Intern",
+        "Platform Intern",
+        "API Intern",
+    ]
+
+
+def test_planner_and_summarizer_requests_use_45_second_timeout() -> None:
+    client = TimeoutCaptureLLMClient()
+
+    client.generate_plan(
+        message="帮我找一些岗位",
+        memory_context=[],
+        profile={},
+        available_tools=["search_jobs"],
+    )
+    client.summarize_job_search(
+        message="找后端实习",
+        memory_context=[],
+        jobs=[{"title": "Backend Intern", "snippet": "Python team"}],
+    )
+
+    assert client.calls[0][1]["timeout"] == 45.0
+    assert client.calls[1][1]["timeout"] == 45.0

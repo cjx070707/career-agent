@@ -17,4 +17,5 @@ def chat(payload: ChatRequest) -> ChatResponse:
         tool_used=result.tool_used,
         plan=result.plan,
         tool_trace=result.tool_trace,
+        llm_trace=result.llm_trace,
     )

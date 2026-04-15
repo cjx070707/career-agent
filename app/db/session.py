@@ -29,7 +29,8 @@ def init_db(db_path: Optional[str] = None) -> None:
 
             CREATE TABLE IF NOT EXISTS candidates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL
+                name TEXT NOT NULL,
+                user_id TEXT
             );
 
             CREATE TABLE IF NOT EXISTS job_postings (
@@ -55,3 +56,9 @@ def init_db(db_path: Optional[str] = None) -> None:
             );
             """
         )
+        candidate_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(candidates)").fetchall()
+        }
+        if "user_id" not in candidate_columns:
+            connection.execute("ALTER TABLE candidates ADD COLUMN user_id TEXT")

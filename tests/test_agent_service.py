@@ -1,24 +1,43 @@
 from app.services.agent_service import AgentService
 from app.services.candidate_service import CandidateService
 from app.services.job_service import JobService
+from app.services.memory_service import MemoryService
 
 
 class FakeLLMClient:
     def __init__(self) -> None:
         self.called = False
+        self.summarize_job_search_calls = []
+        self.last_plan_source = "not_used"
+        self.last_job_search_summary_source = "not_used"
+        self.last_generate_source = "not_used"
 
     def generate_plan(self, **kwargs):
         self.called = True
+        self.last_plan_source = "model"
         return {
             "task_type": "job_search",
             "reason": "planned by fake llm",
             "steps": ["search_jobs"],
             "needs_more_context": False,
+            "planner_source": "model",
         }
 
     def generate(self, message: str, memory_context: list[str], evidence: list[str]) -> str:
+        self.last_generate_source = "fallback"
         return f"fake-generate:{message}"
-def test_agent_service_uses_llm_layer_to_build_plan(isolated_runtime) -> None:
+
+    def summarize_job_search(
+        self, message: str, memory_context: list[str], jobs: list
+    ) -> str:
+        self.last_job_search_summary_source = "model"
+        self.summarize_job_search_calls.append(
+            {"message": message, "memory_context": list(memory_context), "jobs": jobs}
+        )
+        return "fake-job-search-summary"
+
+
+def test_agent_service_uses_router_first_for_obvious_job_search(isolated_runtime) -> None:
     fake_llm = FakeLLMClient()
     CandidateService().create_candidate(name="Planner User")
     JobService().create_job(title="Python FastAPI Backend Engineer")
@@ -26,8 +45,60 @@ def test_agent_service_uses_llm_layer_to_build_plan(isolated_runtime) -> None:
 
     result = service.respond("planner-user", "帮我找一些 Python backend 岗位")
 
+    assert fake_llm.called is False
+    assert result.plan is not None
+    assert result.plan.task_type == "job_search"
+    assert result.plan.steps == ["search_jobs"]
+    assert result.plan.planner_source == "router"
+    assert result.tool_trace == ["search_jobs"]
+    assert result.llm_trace.model_dump() == {
+        "planner_source": "router",
+        "job_search_summary_source": "model",
+        "generate_source": "not_used",
+    }
+
+
+def test_agent_service_uses_llm_layer_for_gray_query(isolated_runtime) -> None:
+    fake_llm = FakeLLMClient()
+    CandidateService().create_candidate(name="Planner User")
+    JobService().create_job(title="Python FastAPI Backend Engineer")
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("planner-user", "你觉得我下一步职业方向应该怎么考虑")
+
     assert fake_llm.called is True
     assert result.plan is not None
     assert result.plan.task_type == "job_search"
     assert result.plan.reason == "planned by fake llm"
     assert result.tool_trace == ["search_jobs"]
+    assert result.llm_trace.model_dump() == {
+        "planner_source": "model",
+        "job_search_summary_source": "model",
+        "generate_source": "not_used",
+    }
+
+
+def test_agent_service_search_jobs_uses_summarize_job_search(isolated_runtime) -> None:
+    fake_llm = FakeLLMClient()
+    CandidateService().create_candidate(name="Search Summarizer User")
+    JobService().create_job(title="Rust Systems Engineer")
+    memory = MemoryService()
+    memory.save_turn("search-summarizer-user", "上一轮：偏好外企", "好的，记住了。")
+    service = AgentService(llm_client=fake_llm, memory_service=memory)
+
+    result = service.respond("search-summarizer-user", "帮我找 Rust 系统开发岗位")
+
+    assert result.answer == "fake-job-search-summary"
+    assert len(fake_llm.summarize_job_search_calls) == 1
+    call = fake_llm.summarize_job_search_calls[0]
+    assert call["message"] == "帮我找 Rust 系统开发岗位"
+    assert call["memory_context"] == ["上一轮：偏好外企", "好的，记住了。"]
+    assert isinstance(call["jobs"], list)
+    assert len(call["jobs"]) >= 1
+    assert call["jobs"][0]["title"] == "Rust Systems Engineer"
+    assert result.sources[0].title == "Rust Systems Engineer"
+    assert result.llm_trace.model_dump() == {
+        "planner_source": "router",
+        "job_search_summary_source": "model",
+        "generate_source": "not_used",
+    }

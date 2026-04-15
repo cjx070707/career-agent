@@ -204,13 +204,18 @@ python3 -m pytest tests/test_app.py tests/test_memory_service.py tests/test_retr
 
 ### 4.3 尚未开始或尚未完成的重点业务流
 
-- `POST /candidates`
-- `POST /jobs`
-- `resumes` 表与接口
 - 简历、项目经历、投递记录、面试反馈的数据模型
 - 简历优化完整链路
 - 面试复盘完整链路
 - React 前端
+
+补充说明：
+
+- `POST /candidates`
+- `POST /jobs`
+- `POST /resumes`
+
+这些基础写入接口现在已经存在，因此这一部分不再属于“尚未开始”。当前真正未完成的重点，已经转向更完整的数据模型、更多求职场景闭环，以及产品化前端。
 
 ## 5. 对照简历表述的完成情况
 
@@ -244,6 +249,18 @@ python3 -m pytest tests/test_app.py tests/test_memory_service.py tests/test_retr
 但执行顺序需要调整。
 
 当前项目最需要修正的问题，不是“方向错了”，而是“过早把终局架构当前线化”。也就是说，在单场景闭环还没有跑顺、工具边界和结果质量还没有稳定之前，就过早把大量精力投入到了 planner、动态路由、Agent 编排和系统化抽象上。
+
+这里有一个需要明确写下来的“醒悟点”：
+
+- 之前的问题，不是因为我们想做 Agent 这件事本身错了，而是因为让 planner 过早站到了第一决策层
+- 在当前阶段，明显业务场景应该先走稳定、可测、可解释的规则入口，把闭环结果先做实
+- planner 在这个阶段仍然保留，但职责应当退到灰区问题和兜底补充，而不是主导所有请求
+
+这次调整因此不是“回退成硬编码 workflow”，而是一次实现顺序的纠偏：
+
+- 终局仍然是 Agent
+- 但阶段 A / B 的代码执行策略应当优先保证闭环稳定，再把 planner 逐步抬回主线
+- 如果一个能力在拿掉 planner 后仍然成立，那它才值得优先进入当前主线
 
 新的路线图因此采用一条新的主线：
 
@@ -297,6 +314,8 @@ python3 -m pytest tests/test_app.py tests/test_memory_service.py tests/test_retr
 
 - `岗位搜索 + 推荐理由`
 
+该闭环当前对应的真实产品背景，是 `University of Sydney Career Hub`。因此这一阶段默认产品语境不是“无限开放的全局求职搜索”，而是优先围绕 `Sydney / University of Sydney` 相关岗位机会建立 `search first, then refine` 的稳定体验。
+
 这一阶段的重点不是“像不像 Agent”，而是“结果有没有用”。
 
 具体要求：
@@ -317,7 +336,12 @@ python3 -m pytest tests/test_app.py tests/test_memory_service.py tests/test_retr
 
 当前状态判断：
 
-- 这是接下来最优先的阶段
+- `岗位搜索 + 推荐理由` 这条闭环已经基本跑通：
+  - 明显 query 已切到 `router-first`
+  - `job_search` 已按 `search first, then refine` 执行
+  - 已加入 `Sydney / University of Sydney` 默认语境增强
+  - 推荐结果已带结构化理由，不再只是岗位列表或匹配分数
+- 因此阶段 A 可以视为基本完成，当前更适合进入阶段 B：把已经验证有效的边界、contract 和可观测性沉淀下来
 
 ### 阶段 B：能力沉淀期
 
@@ -348,7 +372,11 @@ python3 -m pytest tests/test_app.py tests/test_memory_service.py tests/test_retr
 
 当前状态判断：
 
-- 已有一些零散基础，但尚未真正完成
+- 现在已经进入这一阶段的起点，当前优先沉淀的内容应包括：
+  - 用户级 candidate / resume 绑定边界
+  - `search_jobs` 的 query augmentation 规则
+  - 推荐理由输出 contract
+  - `/chat` 返回中的 `plan / tool_trace / source trace` 可观测性
 
 ### 阶段 C：Agent 收口期
 

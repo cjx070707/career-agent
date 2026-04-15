@@ -40,6 +40,11 @@ def test_chat_endpoint_returns_mock_agent_response(isolated_runtime) -> None:
     assert body["tool_used"] is None
     assert body["plan"] is None
     assert body["tool_trace"] == []
+    assert body["llm_trace"] == {
+        "planner_source": "fallback",
+        "job_search_summary_source": "not_used",
+        "generate_source": "fallback",
+    }
 
 
 def test_chat_endpoint_uses_recent_memory_for_same_user(isolated_runtime) -> None:
@@ -332,6 +337,9 @@ def test_chat_endpoint_returns_multi_step_plan_for_complex_matching(isolated_run
     assert body["plan"]["needs_more_context"] is False
     assert body["tool_trace"] == body["plan"]["steps"]
     assert "Python FastAPI Backend Engineer" in body["answer"]
+    assert "匹配理由" in body["answer"]
+    assert "匹配关键词" in body["answer"]
+    assert "Resume overlaps" not in body["answer"]
 
 
 def test_chat_search_uses_long_term_profile_preference(isolated_runtime) -> None:
@@ -359,6 +367,7 @@ def test_chat_search_uses_long_term_profile_preference(isolated_runtime) -> None
     assert body["tool_used"] == "search_jobs"
     assert body["plan"]["task_type"] == "job_search"
     assert body["plan"]["steps"] == ["search_jobs"]
+    assert body["plan"]["planner_source"] == "router"
     assert "backend" in body["plan"]["reason"].lower()
     assert body["sources"][0]["title"] == "Python FastAPI Backend Engineer"
 
@@ -394,11 +403,44 @@ def test_chat_executor_stops_when_search_finds_no_jobs(isolated_runtime) -> None
         "search_jobs",
     ]
     assert body["tool_used"] == "search_jobs"
-    assert "没有找到相关岗位" in body["answer"]
+    assert body["answer"] == "暂时没有合适的岗位结果，建议换个关键词再试。"
 
 
 def test_chat_asks_for_resume_when_matching_without_resume(isolated_runtime) -> None:
     CandidateService().create_candidate(name="Need Resume User")
+
+    response = client.post(
+        "/chat",
+        json={"user_id": "need-resume-user", "message": "我适合投哪些岗位"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tool_used"] is None
+    assert body["tool_trace"] == []
+    assert body["plan"]["task_type"] == "job_match"
+    assert body["plan"]["steps"] == []
+    assert body["plan"]["needs_more_context"] is True
+    assert body["plan"]["missing_context"] == ["resume"]
+    assert body["plan"]["planner_source"] == "router"
+    assert "简历" in body["answer"]
+
+
+def test_chat_does_not_borrow_other_users_resume(isolated_runtime) -> None:
+    owner = CandidateService().create_candidate(
+        name="Resume Owner",
+        user_id="resume-owner",
+    )
+    ResumeService().create_resume(
+        candidate_id=int(owner["id"]),
+        title="Owner Resume",
+        content="Python backend FastAPI SQL",
+        version="v1",
+    )
+    CandidateService().create_candidate(
+        name="Need Resume User",
+        user_id="need-resume-user",
+    )
 
     response = client.post(
         "/chat",

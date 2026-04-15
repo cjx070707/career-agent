@@ -24,6 +24,12 @@ class ChatPlan(BaseModel):
     planner_source: Optional[str] = None
 
 
+class LLMTrace(BaseModel):
+    planner_source: str = "not_used"
+    job_search_summary_source: str = "not_used"
+    generate_source: str = "not_used"
+
+
 class ChatResponse(BaseModel):
     answer: str
     memory_used: bool = False
@@ -31,3 +37,4 @@ class ChatResponse(BaseModel):
     tool_used: Optional[str] = None
     plan: Optional[ChatPlan] = None
     tool_trace: list[str] = Field(default_factory=list)
+    llm_trace: LLMTrace = Field(default_factory=LLMTrace)

@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from hashlib import md5
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import chromadb
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
@@ -52,6 +52,69 @@ class RetrievalResult:
     snippet: str
 
 
+@dataclass
+class ReasonedJobHit:
+    type: str
+    title: str
+    snippet: str
+    matched_terms: list[str]
+    reason: str
+
+
+_MAX_MATCHED_TERMS = 3
+_GENERIC_MATCH_TERMS: frozenset[str] = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "being",
+        "but",
+        "by",
+        "can",
+        "did",
+        "do",
+        "does",
+        "engineer",
+        "engineers",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "in",
+        "intern",
+        "interns",
+        "internship",
+        "is",
+        "it",
+        "its",
+        "may",
+        "might",
+        "must",
+        "of",
+        "on",
+        "or",
+        "should",
+        "that",
+        "the",
+        "these",
+        "this",
+        "those",
+        "to",
+        "was",
+        "were",
+        "will",
+        "with",
+        "would",
+    }
+)
+
+
 class RetrievalService:
     """ChromaDB-backed retrieval over local job posting data."""
 
@@ -74,6 +137,13 @@ class RetrievalService:
         self._seed_collection()
 
     def search(self, query: str) -> list[RetrievalResult]:
+        return self._search_ranked(query)
+
+    def search_with_reasons(self, query: str) -> list[ReasonedJobHit]:
+        ranked = self._search_ranked(query)
+        return [self._to_reasoned_hit(query, hit) for hit in ranked]
+
+    def _search_ranked(self, query: str) -> list[RetrievalResult]:
         if not query.strip():
             return []
         n_results = min(max(self._collection.count(), 3), 10)
@@ -91,6 +161,44 @@ class RetrievalService:
             for metadata in metadatas
         ]
         return self._rerank(query, results)
+
+    def _to_reasoned_hit(self, query: str, hit: RetrievalResult) -> ReasonedJobHit:
+        matched_terms = self._matched_terms(query, hit.title, hit.snippet)
+        reason = self._reason_text(query, hit, matched_terms)
+        return ReasonedJobHit(
+            type=hit.type,
+            title=hit.title,
+            snippet=hit.snippet,
+            matched_terms=matched_terms,
+            reason=reason,
+        )
+
+    def _matched_terms(self, query: str, title: str, snippet: str) -> list[str]:
+        doc_tokens = self._tokenize(f"{title} {snippet}")
+        matched_terms: list[str] = []
+        for token in self._ordered_tokens(query):
+            if token in _GENERIC_MATCH_TERMS:
+                continue
+            if token not in doc_tokens:
+                continue
+            matched_terms.append(token)
+            if len(matched_terms) == _MAX_MATCHED_TERMS:
+                break
+        return matched_terms
+
+    def _reason_text(
+        self,
+        query: str,
+        hit: RetrievalResult,
+        matched_terms: Sequence[str],
+    ) -> str:
+        if matched_terms:
+            return f"命中关键词：{'、'.join(matched_terms)}。"
+        body_tokens = self._tokenize(f"{hit.title} {hit.snippet}")
+        query_tokens = self._tokenize(query)
+        if query_tokens & body_tokens:
+            return "命中关键词：仅匹配到低信号通用词，排序仍依据标题与摘要中的词面重合度。"
+        return "未命中显性关键词；排序依据为语义向量与职位标题及摘要的相关性。"
 
     def document_count(self) -> int:
         return self._collection.count()
@@ -134,6 +242,7 @@ class RetrievalService:
     ) -> list[RetrievalResult]:
         query_tokens = self._tokenize(query)
         scored_results: list[tuple[int, RetrievalResult]] = []
+        zero_score_results: list[RetrievalResult] = []
         for candidate in candidates:
             body_tokens = self._tokenize(f"{candidate.title} {candidate.snippet}")
             overlap = len(query_tokens & body_tokens)
@@ -141,12 +250,27 @@ class RetrievalService:
             score = overlap + (title_overlap * 2)
             if score > 0:
                 scored_results.append((score, candidate))
+            else:
+                zero_score_results.append(candidate)
+
+        if not scored_results:
+            return candidates
 
         scored_results.sort(key=lambda item: (-item[0], item[1].title))
-        return [candidate for _, candidate in scored_results]
+        return [candidate for _, candidate in scored_results] + zero_score_results
 
     def _tokenize(self, text: str) -> set[str]:
         return set(re.findall(r"[a-zA-Z0-9]+", text.lower()))
+
+    def _ordered_tokens(self, text: str) -> list[str]:
+        ordered_tokens: list[str] = []
+        seen: set[str] = set()
+        for token in re.findall(r"[a-zA-Z0-9]+", text.lower()):
+            if token in seen:
+                continue
+            seen.add(token)
+            ordered_tokens.append(token)
+        return ordered_tokens
 
     def _resolve_default_persist_directory(self) -> Path:
         configured = Path(settings.chroma_persist_directory)

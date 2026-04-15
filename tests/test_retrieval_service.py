@@ -3,7 +3,76 @@ from pathlib import Path
 from app.db.session import init_db
 from app.env import settings
 from app.services.job_service import JobService
-from app.services.retrieval_service import RetrievalService
+from app.services.retrieval_service import RetrievalResult, RetrievalService
+
+
+def test_search_with_reasons_includes_matched_terms_and_reason_text(tmp_path: Path) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_reasons",
+        collection_name="reason_jobs",
+    )
+
+    hits = service.search_with_reasons("python fastapi backend")
+
+    assert hits
+    assert hits[0].title == "Backend Engineer Intern"
+    assert hits[0].type == "job_posting"
+    assert set(hits[0].matched_terms) >= {"python", "fastapi", "backend"}
+    assert "命中关键词" in hits[0].reason
+
+
+def test_search_with_reasons_caps_terms_and_filters_noisy_domain_words(
+    tmp_path: Path,
+) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_reason_caps",
+        collection_name="reason_caps_jobs",
+    )
+
+    hit = service._to_reasoned_hit(
+        "python fastapi backend engineer intern sql rest api cloud",
+        service.search("python fastapi backend internship")[0],
+    )
+
+    assert hit.matched_terms == ["python", "fastapi", "backend"]
+    assert hit.reason == "命中关键词：python、fastapi、backend。"
+    assert "engineer" not in hit.reason
+    assert "intern" not in hit.reason
+
+
+def test_reason_text_uses_generic_overlap_fallback(tmp_path: Path) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_generic_reason",
+        collection_name="generic_reason_jobs",
+    )
+
+    reason = service._reason_text(
+        "engineer intern",
+        service.search("backend fastapi python internship")[0],
+        matched_terms=[],
+    )
+
+    assert "低信号" in reason
+    assert "词面重合" in reason
+
+
+def test_reason_text_uses_semantic_fallback_without_lexical_overlap(
+    tmp_path: Path,
+) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_semantic_reason",
+        collection_name="semantic_reason_jobs",
+    )
+
+    reason = service._reason_text(
+        "golang kubernetes distributed-systems",
+        service.search("backend fastapi python internship")[0],
+        matched_terms=[],
+    )
+
+    assert "语义向量" in reason
+    assert "标题及摘要的相关性" in reason
+    assert "命中关键词" not in reason
 
 
 def test_retrieval_service_ranks_backend_fastapi_role_first(tmp_path: Path) -> None:
@@ -19,7 +88,9 @@ def test_retrieval_service_ranks_backend_fastapi_role_first(tmp_path: Path) -> N
     assert all(result.type == "job_posting" for result in results)
 
 
-def test_retrieval_service_filters_irrelevant_roles(tmp_path: Path) -> None:
+def test_retrieval_service_keeps_zero_score_hits_after_scored_results(
+    tmp_path: Path,
+) -> None:
     service = RetrievalService(
         persist_directory=tmp_path / "chroma_filter",
         collection_name="filter_jobs",
@@ -29,8 +100,11 @@ def test_retrieval_service_filters_irrelevant_roles(tmp_path: Path) -> None:
 
     assert results
     titles = [result.title for result in results]
-    assert "AI Platform Backend Engineer" in titles
-    assert "Frontend Engineer Intern" not in titles
+    assert titles == [
+        "AI Platform Backend Engineer",
+        "Backend Engineer Intern",
+        "Frontend Engineer Intern",
+    ]
 
 
 def test_retrieval_service_matches_content_terms_without_job_keywords(tmp_path: Path) -> None:
@@ -43,6 +117,74 @@ def test_retrieval_service_matches_content_terms_without_job_keywords(tmp_path: 
 
     assert results
     assert results[0].title == "Frontend Engineer Intern"
+
+
+def test_search_preserves_chroma_hits_for_chinese_query_with_zero_lexical_overlap(
+    tmp_path: Path,
+) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_chinese_zero_lex",
+        collection_name="chinese_zero_lex_jobs",
+    )
+
+    results = service.search("找后端实习岗位")
+
+    assert results
+    assert all(result.type == "job_posting" for result in results)
+
+
+def test_search_preserves_chroma_hits_when_english_query_has_no_corpus_token_overlap(
+    tmp_path: Path,
+) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_k8s_zero_lex",
+        collection_name="k8s_zero_lex_jobs",
+    )
+
+    results = service.search("kubernetes helm sre")
+
+    assert results
+    assert all(result.type == "job_posting" for result in results)
+
+
+def test_rerank_keeps_zero_score_candidates_after_scored_block_in_original_order(
+    tmp_path: Path,
+) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_mixed_rerank",
+        collection_name="mixed_rerank_jobs",
+    )
+    candidates = [
+        RetrievalResult(
+            type="job_posting",
+            title="Frontend Engineer Intern",
+            snippet="React, TypeScript, component libraries, UI implementation.",
+        ),
+        RetrievalResult(
+            type="job_posting",
+            title="AI Platform Backend Engineer",
+            snippet="Backend services for LLM products and platform APIs.",
+        ),
+        RetrievalResult(
+            type="job_posting",
+            title="Site Reliability Engineer",
+            snippet="Observability, incident response, and production operations.",
+        ),
+        RetrievalResult(
+            type="job_posting",
+            title="Backend Engineer Intern",
+            snippet="Python, FastAPI, REST APIs, SQL, and basic cloud exposure.",
+        ),
+    ]
+
+    reranked = service._rerank("backend fastapi", candidates)
+
+    assert [result.title for result in reranked] == [
+        "Backend Engineer Intern",
+        "AI Platform Backend Engineer",
+        "Frontend Engineer Intern",
+        "Site Reliability Engineer",
+    ]
 
 
 def test_retrieval_service_builds_persistent_chroma_collection(tmp_path: Path) -> None:

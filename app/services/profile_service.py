@@ -68,6 +68,7 @@ class ProfileService:
     def augment_job_query(self, user_id: str, message: str) -> str:
         profile = self.get_profile(user_id)
         query_parts: List[str] = [message]
+        query_parts.extend(self._job_query_defaults(message))
         if profile["target_role_preference"]:
             query_parts.append(str(profile["target_role_preference"]))
         if profile["skill_keywords"]:
@@ -79,3 +80,24 @@ class ProfileService:
         allowed = ("python", "fastapi", "sql", "react", "frontend", "backend")
         tokens = set(re.findall(r"[a-zA-Z0-9]+", lowered))
         return [keyword for keyword in allowed if keyword in tokens]
+
+    def _job_query_defaults(self, message: str) -> List[str]:
+        lowered = message.lower()
+        defaults: List[str] = ["sydney", "university of sydney", "usyd"]
+
+        if "数据分析" in message or "data analys" in lowered:
+            defaults.extend(["data", "analyst", "analytics"])
+        if "实习" in message or "intern" in lowered:
+            defaults.extend(["intern", "internship"])
+        if "后端" in message or "backend" in lowered:
+            defaults.append("backend")
+        if "前端" in message or "frontend" in lowered:
+            defaults.append("frontend")
+
+        deduped: List[str] = []
+        seen = set()
+        for item in defaults:
+            if item not in seen:
+                deduped.append(item)
+                seen.add(item)
+        return deduped
