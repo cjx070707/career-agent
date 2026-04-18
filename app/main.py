@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.db.session import init_db
 from app.api.candidates import router as candidates_router
@@ -18,3 +21,7 @@ app.include_router(candidates_router)
 app.include_router(jobs_router)
 app.include_router(resumes_router)
 app.include_router(matches_router)
+
+demo_directory = Path(__file__).resolve().parents[1] / "demo"
+if demo_directory.exists():
+    app.mount("/demo", StaticFiles(directory=demo_directory, html=True), name="demo")

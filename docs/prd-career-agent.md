@@ -92,6 +92,8 @@
 2. 候选人和简历读取已经开始按当前聊天用户优先绑定，避免误用“系统里最新的一份简历”。
 3. 搜索 query 会注入 `Sydney / University of Sydney / usyd` 等默认语境增强，以支撑当前 Career Hub 背景下的首轮搜索。
 4. 推荐型回答已经带有结构化理由和候选岗位提示，但后续仍可继续打磨为更自然的产品文案。
+5. `POST /chat` 当前稳定返回 `answer / memory_used / sources / tool_used / plan / tool_trace / llm_trace`。
+6. 项目已经提供一个最小静态 demo 页面，直接基于上述 contract 演示闭环能力。
 
 ## 7. 功能架构
 产品功能由以下模块组成：
@@ -182,6 +184,14 @@
 
 由 Agent 根据用户问题自动选择工具并整合结果。
 
+在当前 Stage B 中，边界需要明确：
+
+- retrieval：负责岗位召回、排序和 grounded evidence，例如 `matched_terms` 与 `reason`
+- tool：负责把检索和匹配结果转成稳定结构化 payload
+- answer synthesis：负责把结构化 payload 转成用户可读回答
+- router：负责明显 query 的稳定入口
+- planner：只负责灰区问题与规则未覆盖场景
+
 ### 8.8 多模态交互
 第一版支持：
 - 上传简历截图
@@ -256,6 +266,8 @@
 ### 12.1 Query 页面
 支持输入问题、上传图片、获取回答，用于单次任务型问答。
 
+当前 Stage B 已有一个最小实现：单页 demo 直接调用 `POST /chat`，展示 `answer`、`plan`、`sources`、`tool_trace`、`llm_trace`，用于验证闭环能力与接口 contract。
+
 ### 12.2 Chat 页面
 支持多轮对话，展示上下文与持续辅导过程。
 
@@ -287,7 +299,7 @@
    - 简历优化
    - 面试复盘
 9. 在 `University of Sydney Career Hub` 背景下，系统对明显岗位搜索问题能够先给出 `Sydney / USYD` 上下文下的岗位结果，再在后续对话中细化条件。
-   - 下一步行动建议
+10. 当前最小 demo 页面可以直接展示 `POST /chat` 的稳定 contract 与可观测字段。
 
 ## 15. 一句话总结
 这是一个面向学生求职场景的多模态智能 Agent 项目，核心是把候选人私域数据、岗位 JD、投递与面试记录、记忆系统和工具调用整合进一条可持续演进的求职辅导链路中，形成一个具备真实业务感和较强工程表达能力的 AI 应用项目。

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Career Agent Demo</title>
+    <link rel="stylesheet" href="/demo/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="panel">
+        <h1>Career Agent Demo</h1>
+        <p class="muted">
+          Stage B demo for the frozen <code>/chat</code> contract.
+        </p>
+        <form id="chat-form" class="form">
+          <label>
+            <span>User ID</span>
+            <input id="user-id" name="user_id" type="text" value="demo-user" required />
+          </label>
+          <label>
+            <span>Message</span>
+            <textarea
+              id="message"
+              name="message"
+              rows="4"
+              required
+            >帮我找一些 Python backend 岗位</textarea>
+          </label>
+          <button id="submit-button" type="submit">Send</button>
+        </form>
+        <p id="status" class="status" aria-live="polite"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Answer</h2>
+        <pre id="answer" class="output">Waiting for request...</pre>
+      </section>
+
+      <section class="grid">
+        <section class="panel">
+          <h2>Plan Summary</h2>
+          <pre id="plan" class="output"></pre>
+        </section>
+
+        <section class="panel">
+          <h2>Sources</h2>
+          <ul id="sources" class="list"></ul>
+        </section>
+
+        <section class="panel">
+          <h2>Tool Trace</h2>
+          <pre id="tool-trace" class="output"></pre>
+        </section>
+
+        <section class="panel">
+          <h2>LLM Trace</h2>
+          <pre id="llm-trace" class="output"></pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="/demo/app.js" defer></script>
+  </body>
+</html>

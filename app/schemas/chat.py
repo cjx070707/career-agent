@@ -9,25 +9,28 @@ class ChatRequest(BaseModel):
 
 
 class ChatSource(BaseModel):
-    type: str
-    title: str
-    snippet: str
+    type: str = Field(..., description="Evidence source category")
+    title: str = Field(..., description="Short source title for display")
+    snippet: str = Field(..., description="Short grounded evidence text")
 
 
 class ChatPlan(BaseModel):
-    task_type: str
-    reason: str
+    task_type: str = Field(..., description="Machine-readable task label")
+    reason: str = Field(..., description="Human-readable routing rationale")
     steps: list[str] = Field(default_factory=list)
     needs_more_context: bool = False
     missing_context: list[str] = Field(default_factory=list)
     follow_up_question: Optional[str] = None
-    planner_source: Optional[str] = None
+    planner_source: Optional[str] = Field(
+        default=None,
+        description="Where the plan came from: router, model, or fallback",
+    )
 
 
 class LLMTrace(BaseModel):
-    planner_source: str = "not_used"
-    job_search_summary_source: str = "not_used"
-    generate_source: str = "not_used"
+    planner_source: str = Field(default="not_used")
+    job_search_summary_source: str = Field(default="not_used")
+    generate_source: str = Field(default="not_used")
 
 
 class ChatResponse(BaseModel):

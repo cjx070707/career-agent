@@ -286,11 +286,12 @@ class AgentService:
 
     def _extract_sources(self, tool_name: str, tool_result: Any) -> List[ChatSource]:
         if tool_name == "search_jobs":
+            # /chat sources expose short evidence text, not the raw tool payload.
             return [
                 ChatSource(
                     type=result["type"],
                     title=result["title"],
-                    snippet=result["snippet"],
+                    snippet=str(result.get("reason") or result.get("snippet") or "").strip(),
                 )
                 for result in tool_result
             ]

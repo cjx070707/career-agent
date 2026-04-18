@@ -163,6 +163,7 @@ class RetrievalService:
         return self._rerank(query, results)
 
     def _to_reasoned_hit(self, query: str, hit: RetrievalResult) -> ReasonedJobHit:
+        # Retrieval owns ranking plus grounded evidence, not final user-facing prose.
         matched_terms = self._matched_terms(query, hit.title, hit.snippet)
         reason = self._reason_text(query, hit, matched_terms)
         return ReasonedJobHit(

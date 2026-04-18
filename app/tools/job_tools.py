@@ -10,6 +10,7 @@ def build_job_tools() -> list[ToolDefinition]:
             name="search_jobs",
             description="Search jobs using a natural language query.",
             input_model=SearchJobsToolInput,
+            # Tool layer transports the structured retrieval payload unchanged.
             handler=lambda payload: [
                 {
                     "type": hit.type,

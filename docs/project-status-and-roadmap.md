@@ -70,6 +70,7 @@
 - 本地 deterministic embedding function
 - 检索结果召回
 - 轻量 rerank，提升小样本排序质量
+- 检索证据理由生成：`matched_terms` + `reason`
 
 核心文件：
 
@@ -106,7 +107,7 @@
 当前验证命令：
 
 ```bash
-python3 -m pytest tests/test_app.py tests/test_memory_service.py tests/test_retrieval_service.py -v
+python3 -m pytest tests/test_stage_b_contracts.py tests/test_app.py tests/test_agent_service.py tests/test_llm_client.py tests/test_retrieval_service.py tests/test_tools.py -q
 ```
 
 ## 3. 当前架构理解
@@ -154,9 +155,15 @@ python3 -m pytest tests/test_app.py tests/test_memory_service.py tests/test_retr
 职责：
 
 - `memory_service`：短期记忆管理
-- `retrieval_service`：岗位数据检索与 Chroma 查询
+- `retrieval_service`：岗位数据检索、排序与 grounded evidence 生成
 - `candidate_service`：候选人数据读写
 - `job_service`：岗位数据读写
+
+补充边界说明：
+
+- retrieval 负责召回、排序和证据理由，不负责最终回答文案
+- tool 负责把能力层结果转成稳定结构，不负责做自然语言总结
+- answer synthesis 负责把结构化结果整理成用户可读回答
 
 ### 3.4 模型层
 
@@ -167,7 +174,7 @@ python3 -m pytest tests/test_app.py tests/test_memory_service.py tests/test_retr
 职责：
 
 - 统一模型调用入口
-- 承担 fallback 响应逻辑
+- 承担 planner / summarizer / fallback 响应逻辑
 - 后续承接真实 OpenAI API 调用
 
 ### 3.5 存储层
@@ -183,6 +190,15 @@ python3 -m pytest tests/test_app.py tests/test_memory_service.py tests/test_retr
 - SQLite：结构化业务数据、对话记忆
 - ChromaDB：岗位向量检索
 - data：本地数据文件和持久化数据目录
+
+### 3.6 Stage B 当前入口形态
+
+当前已经明确采用 `router-first, planner-second`：
+
+- router：处理明显 query，如岗位搜索、资料查询、简历匹配
+- planner：仅处理灰区问题和规则未覆盖场景
+- `/chat`：输出稳定 contract，当前固定暴露 `answer / memory_used / sources / tool_used / plan / tool_trace / llm_trace`
+- `/demo/`：作为最小演示面，直接依赖上述 contract
 
 ## 4. 对照 PRD 的完成情况
 
@@ -354,9 +370,10 @@ python3 -m pytest tests/test_app.py tests/test_memory_service.py tests/test_retr
 
 - retrieval 的输出结构
 - `search_jobs` 等核心 tool 的输入输出 contract
-- response schema
+- `/chat` response schema
 - 推荐理由的生成方式
 - profile / memory 如何参与搜索和解释
+- 最小 demo 对稳定 contract 的依赖方式
 
 这一阶段的核心思想是：
 
@@ -372,11 +389,14 @@ python3 -m pytest tests/test_app.py tests/test_memory_service.py tests/test_retr
 
 当前状态判断：
 
-- 现在已经进入这一阶段的起点，当前优先沉淀的内容应包括：
+- 现在已经进入阶段 B，并已完成第一批沉淀：
   - 用户级 candidate / resume 绑定边界
   - `search_jobs` 的 query augmentation 规则
   - 推荐理由输出 contract
-  - `/chat` 返回中的 `plan / tool_trace / source trace` 可观测性
+  - `/chat` 返回中的 `plan / tool_trace / llm_trace` 可观测性
+  - `search_jobs.reason` 作为 canonical grounded rationale
+  - `/demo/` 最小静态演示页
+- 当前阶段后续重点，不是新增 planner 复杂度，而是继续稳住结果质量、contract 与可演示性
 
 ### 阶段 C：Agent 收口期
 
