@@ -37,11 +37,14 @@ def test_chat_search_contract_is_stable(isolated_runtime) -> None:
     assert body["llm_trace"]["generate_source"] == "not_used"
     assert body["sources"]
     first_source = body["sources"][0]
-    assert set(first_source.keys()) == {"type", "title", "snippet"}
+    assert {"type", "title", "snippet"} <= set(first_source.keys())
+    assert "location" in first_source
+    assert "work_type" in first_source
     assert first_source["type"] == "job_posting"
-    assert first_source["title"] == "Python FastAPI Backend Engineer"
+    assert isinstance(first_source["title"], str) and first_source["title"]
     assert "命中关键词" in first_source["snippet"]
-    assert "Python FastAPI Backend Engineer" in body["answer"]
+    titles = [source["title"] for source in body["sources"]]
+    assert "Python FastAPI Backend Engineer" in titles
 
 
 def test_chat_recommendation_contract_is_stable(isolated_runtime) -> None:
@@ -118,10 +121,12 @@ def test_search_jobs_tool_contract_is_stable(isolated_runtime) -> None:
     body = response.json()
     first_source = body["sources"][0]
 
-    assert first_source["title"] == "Python FastAPI Backend Engineer"
+    assert isinstance(first_source["title"], str) and first_source["title"]
     assert isinstance(first_source["snippet"], str)
     assert first_source["snippet"]
     assert "命中关键词" in first_source["snippet"]
+    titles = [source["title"] for source in body["sources"]]
+    assert "Python FastAPI Backend Engineer" in titles
 
 
 def test_chat_search_contract_supports_chinese_query(isolated_runtime) -> None:
@@ -160,6 +165,33 @@ def test_chat_search_contract_supports_low_lexical_overlap_query(
     assert body["sources"][0]["type"] == "job_posting"
     assert isinstance(body["sources"][0]["snippet"], str)
     assert body["sources"][0]["snippet"]
+
+
+def test_chat_recommendation_answer_does_not_repeat_job_titles(isolated_runtime) -> None:
+    candidate = CandidateService().create_candidate(name="Dedupe User")
+    client.post("/jobs", json={"title": "Python FastAPI Backend Engineer"})
+    client.post("/jobs", json={"title": "Python FastAPI Backend Engineer"})
+    client.post("/jobs", json={"title": "Python FastAPI Backend Engineer"})
+    client.post(
+        "/resumes",
+        json={
+            "candidate_id": candidate["id"],
+            "title": "Backend Resume",
+            "content": "Python FastAPI backend SQL APIs",
+            "version": "v1",
+        },
+    )
+
+    response = client.post(
+        "/chat",
+        json={"user_id": "dedupe-user", "message": "结合我的情况推荐适合投的岗位"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    answer = body["answer"]
+    assert answer.count("Python FastAPI Backend Engineer") <= 1
+    assert "Python FastAPI Backend Engineer、Python FastAPI Backend Engineer" not in answer
 
 
 def test_demo_page_is_served_by_fastapi(isolated_runtime) -> None:

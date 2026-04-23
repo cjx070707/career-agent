@@ -98,3 +98,24 @@ button:disabled {
   min-height: 24px;
   margin: 0;
 }
+
+.samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+button.sample {
+  background: #eef2ff;
+  color: #1d4ed8;
+  border: 1px solid #c7d2fe;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  width: auto;
+}
+
+button.sample:hover {
+  background: #e0e7ff;
+}

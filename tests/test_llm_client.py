@@ -444,6 +444,98 @@ def test_generate_plan_falls_back_when_task_type_is_not_allowed_label() -> None:
     assert plan["task_type"] == "job_match"
 
 
+def test_generate_plan_falls_back_when_step_is_not_in_available_tools() -> None:
+    client = ModelFirstLLMClient(
+        model_result={
+            "task_type": "job_match_planning",
+            "reason": "hallucinated tool",
+            "steps": ["search_jobs", "imaginary_tool"],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": None,
+        }
+    )
+
+    plan = client.generate_plan(
+        message="结合我的情况推荐适合投的岗位",
+        memory_context=[],
+        profile={},
+        available_tools=["search_jobs", "match_resume_to_jobs"],
+        user_state={"has_candidate": True, "has_resume": True},
+    )
+
+    assert client.fallback_calls == 1
+    assert plan["planner_source"] == "fallback"
+    for step in plan["steps"]:
+        assert step in {"search_jobs", "match_resume_to_jobs"}
+
+
+def test_generate_plan_falls_back_when_job_match_planning_step_order_is_wrong() -> None:
+    client = ModelFirstLLMClient(
+        model_result={
+            "task_type": "job_match_planning",
+            "reason": "match before search is invalid",
+            "steps": ["match_resume_to_jobs", "search_jobs"],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": None,
+        }
+    )
+
+    plan = client.generate_plan(
+        message="结合我的情况推荐适合投的岗位",
+        memory_context=[],
+        profile={},
+        available_tools=[
+            "get_candidate_profile",
+            "get_resume_by_id",
+            "search_jobs",
+            "match_resume_to_jobs",
+        ],
+        user_state={"has_candidate": True, "has_resume": True},
+    )
+
+    assert client.fallback_calls == 1
+    assert plan["planner_source"] == "fallback"
+
+
+def test_generate_plan_falls_back_when_steps_exceed_length_cap() -> None:
+    client = ModelFirstLLMClient(
+        model_result={
+            "task_type": "job_match_planning",
+            "reason": "too many steps",
+            "steps": [
+                "get_candidate_profile",
+                "get_resume_by_id",
+                "search_jobs",
+                "match_resume_to_jobs",
+                "search_jobs",
+                "match_resume_to_jobs",
+                "search_jobs",
+            ],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": None,
+        }
+    )
+
+    plan = client.generate_plan(
+        message="结合我的情况推荐适合投的岗位",
+        memory_context=[],
+        profile={},
+        available_tools=[
+            "get_candidate_profile",
+            "get_resume_by_id",
+            "search_jobs",
+            "match_resume_to_jobs",
+        ],
+        user_state={"has_candidate": True, "has_resume": True},
+    )
+
+    assert client.fallback_calls == 1
+    assert plan["planner_source"] == "fallback"
+
+
 def test_generate_plan_falls_back_when_missing_context_contract_is_broken() -> None:
     client = ModelFirstLLMClient(
         model_result={

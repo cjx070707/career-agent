@@ -6,6 +6,8 @@ const sourcesNode = document.getElementById("sources");
 const toolTraceNode = document.getElementById("tool-trace");
 const llmTraceNode = document.getElementById("llm-trace");
 const submitButton = document.getElementById("submit-button");
+const messageNode = document.getElementById("message");
+const sampleButtons = document.querySelectorAll("button.sample");
 
 function renderPlan(plan) {
   if (!plan) {
@@ -34,25 +36,53 @@ function renderSources(sources) {
   sourcesNode.innerHTML = "";
   if (!sources?.length) {
     const emptyItem = document.createElement("li");
-    emptyItem.textContent = "No sources.";
+    emptyItem.className = "muted";
+    emptyItem.textContent = "本次没有检索到匹配岗位。";
     sourcesNode.appendChild(emptyItem);
     return;
   }
 
   for (const source of sources) {
     const item = document.createElement("li");
-    const title = document.createElement("strong");
-    title.textContent = `${source.title} `;
+    const title = document.createElement(source.url ? "a" : "strong");
+    if (source.url) {
+      title.href = source.url;
+      title.target = "_blank";
+      title.rel = "noopener noreferrer";
+      title.textContent = source.title;
+    } else {
+      title.textContent = source.title;
+    }
     const meta = document.createElement("span");
     meta.className = "muted";
     meta.textContent = `[${source.type}]`;
+    const subtitle = document.createElement("p");
+    subtitle.className = "muted";
+    const parts = [source.company, source.location, source.work_type].filter(Boolean);
+    subtitle.textContent = parts.length ? parts.join(" · ") : "";
     const snippet = document.createElement("p");
     snippet.textContent = source.snippet;
     item.appendChild(title);
+    item.appendChild(document.createTextNode(" "));
     item.appendChild(meta);
+    if (subtitle.textContent) {
+      item.appendChild(subtitle);
+    }
     item.appendChild(snippet);
     sourcesNode.appendChild(item);
   }
+}
+
+function clearOutputsOnError() {
+  answerNode.textContent = "";
+  answerNode.classList.remove("muted");
+  planNode.textContent = "";
+  planNode.classList.remove("muted");
+  sourcesNode.innerHTML = "";
+  toolTraceNode.textContent = "";
+  toolTraceNode.classList.remove("muted");
+  llmTraceNode.textContent = "";
+  llmTraceNode.classList.remove("muted");
 }
 
 async function submitChat(event) {
@@ -72,36 +102,65 @@ async function submitChat(event) {
   submitButton.disabled = true;
   statusNode.textContent = "Calling /chat...";
 
+  let response;
   try {
-    const response = await fetch("/chat", {
+    response = await fetch("/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
     });
-    const body = await response.json();
-
-    if (!response.ok) {
-      throw new Error(body.detail || "Request failed.");
-    }
-
-    answerNode.textContent = body.answer || "";
-    planNode.textContent = renderPlan(body.plan);
-    renderSources(body.sources || []);
-    toolTraceNode.textContent = JSON.stringify(body.tool_trace || [], null, 2);
-    llmTraceNode.textContent = JSON.stringify(body.llm_trace || {}, null, 2);
-    statusNode.textContent = "Success.";
   } catch (error) {
-    answerNode.textContent = "";
-    planNode.textContent = "";
-    sourcesNode.innerHTML = "";
-    toolTraceNode.textContent = "";
-    llmTraceNode.textContent = "";
-    statusNode.textContent = error instanceof Error ? error.message : "Request failed.";
-  } finally {
+    clearOutputsOnError();
+    statusNode.textContent = "网络异常，请重试";
     submitButton.disabled = false;
+    return;
   }
+
+  let body;
+  try {
+    body = await response.json();
+  } catch (error) {
+    clearOutputsOnError();
+    statusNode.textContent = `HTTP ${response.status}：响应解析失败，请重试`;
+    submitButton.disabled = false;
+    return;
+  }
+
+  if (!response.ok) {
+    clearOutputsOnError();
+    const detail =
+      typeof body?.detail === "string"
+        ? body.detail
+        : JSON.stringify(body?.detail ?? body ?? "Request failed.");
+    statusNode.textContent = `HTTP ${response.status}：${detail}`;
+    submitButton.disabled = false;
+    return;
+  }
+
+  answerNode.classList.remove("muted");
+  planNode.classList.remove("muted");
+  toolTraceNode.classList.remove("muted");
+  llmTraceNode.classList.remove("muted");
+
+  answerNode.textContent = body.answer || "";
+  planNode.textContent = renderPlan(body.plan);
+  renderSources(body.sources || []);
+  toolTraceNode.textContent = JSON.stringify(body.tool_trace || [], null, 2);
+  llmTraceNode.textContent = JSON.stringify(body.llm_trace || {}, null, 2);
+  statusNode.textContent = "Success.";
+  submitButton.disabled = false;
+}
+
+for (const button of sampleButtons) {
+  button.addEventListener("click", () => {
+    const sample = button.dataset.sample || "";
+    if (!sample) return;
+    messageNode.value = sample;
+    messageNode.focus();
+    statusNode.textContent = "已填入样例，点 Send 发送。";
+  });
 }
 
 form.addEventListener("submit", submitChat);

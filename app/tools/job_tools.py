@@ -16,6 +16,12 @@ def build_job_tools() -> list[ToolDefinition]:
                     "type": hit.type,
                     "title": hit.title,
                     "snippet": hit.snippet,
+                    "company": hit.company,
+                    "location": hit.location,
+                    "work_type": hit.work_type,
+                    "posted_at": hit.posted_at,
+                    "url": hit.url,
+                    "tags": hit.tags,
                     "matched_terms": hit.matched_terms,
                     "reason": hit.reason,
                 }

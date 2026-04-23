@@ -44,6 +44,7 @@ class Settings(BaseModel):
     planner_model: str = get_setting("PLANNER_MODEL", get_setting("DEFAULT_MODEL", "gpt-4.1-mini"))
     planner_disable_thinking: bool = get_bool_setting("PLANNER_DISABLE_THINKING", False)
     db_path: str = get_setting("DB_PATH", "data/career_agent.db")
+    job_postings_file: str = get_setting("JOB_POSTINGS_FILE", "data/job_postings.json")
     chroma_persist_directory: str = get_setting("CHROMA_PERSIST_DIRECTORY", "data/chroma")
     chroma_collection_name: str = get_setting("CHROMA_COLLECTION_NAME", "job_postings_v2")
 

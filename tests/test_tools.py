@@ -55,7 +55,9 @@ def test_search_jobs_and_match_tools_return_structured_results(isolated_runtime)
     assert search_result["data"]
     assert search_result["data"][0]["title"] == "Python FastAPI Backend Engineer"
     first = search_result["data"][0]
-    assert set(first.keys()) == {"type", "title", "snippet", "matched_terms", "reason"}
+    assert {"type", "title", "snippet", "matched_terms", "reason"} <= set(first.keys())
+    assert "location" in first
+    assert "work_type" in first
     assert first["type"] == "job_posting"
     assert isinstance(first["snippet"], str)
     assert isinstance(first["matched_terms"], list)

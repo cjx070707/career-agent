@@ -18,6 +18,18 @@
             <span>User ID</span>
             <input id="user-id" name="user_id" type="text" value="demo-user" required />
           </label>
+          <div class="samples" role="group" aria-label="Preset examples">
+            <span class="muted">Try:</span>
+            <button type="button" class="sample" data-sample="帮我找一些 Python backend 岗位">
+              搜索岗位
+            </button>
+            <button type="button" class="sample" data-sample="结合我的情况推荐适合投的岗位">
+              结合简历推荐
+            </button>
+            <button type="button" class="sample" data-sample="我适合投哪些岗位">
+              适合投哪些岗位
+            </button>
+          </div>
           <label>
             <span>Message</span>
             <textarea
@@ -34,13 +46,13 @@
 
       <section class="panel">
         <h2>Answer</h2>
-        <pre id="answer" class="output">Waiting for request...</pre>
+        <pre id="answer" class="output muted">尚未发送请求，先点一个预置样例或直接输入 message 后按 Send。</pre>
       </section>
 
       <section class="grid">
         <section class="panel">
           <h2>Plan Summary</h2>
-          <pre id="plan" class="output"></pre>
+          <pre id="plan" class="output muted">发送后会展示路由出的 plan（task_type / steps / planner_source 等）。</pre>
         </section>
 
         <section class="panel">
@@ -50,12 +62,12 @@
 
         <section class="panel">
           <h2>Tool Trace</h2>
-          <pre id="tool-trace" class="output"></pre>
+          <pre id="tool-trace" class="output muted">发送后会展示实际执行的 tool 调用链。</pre>
         </section>
 
         <section class="panel">
           <h2>LLM Trace</h2>
-          <pre id="llm-trace" class="output"></pre>
+          <pre id="llm-trace" class="output muted">发送后会展示 planner / summary / generate 各环节是走了 model 还是 fallback。</pre>
         </section>
       </section>
     </main>

@@ -396,6 +396,7 @@ python3 -m pytest tests/test_stage_b_contracts.py tests/test_app.py tests/test_a
   - `/chat` 返回中的 `plan / tool_trace / llm_trace` 可观测性
   - `search_jobs.reason` 作为 canonical grounded rationale
   - `/demo/` 最小静态演示页
+  - `job_postings` 扩展为结构化语料（company/location/work_type/url/tags）并引入 `scripts/ingest_jobs.py` 校验入口
 - 当前阶段后续重点，不是新增 planner 复杂度，而是继续稳住结果质量、contract 与可演示性
 
 ### 阶段 C：Agent 收口期
@@ -423,6 +424,29 @@ planner 在这一阶段的职责应当是：
 - 可以清楚评估 planner 带来的增益，而不是把所有问题都归因到模型本身
 
 只有满足这些前提，planner 的输出质量问题才值得被当作主问题来解决。
+
+#### Router vs Planner 的职责边界（Milestone 2 落地）
+
+为了让 planner 真正承担灰区调度，而不是被 router 的宽松规则替代掉，职责划分如下：
+
+- **router（`app/routing/intent_router.py`）只处理高置信度意图**：
+  - 明确的搜索动作或对象：`找` / `搜` / `岗位` / `招聘` / `实习`、英文 `job`/`jobs`/`position`/`vacancy`
+  - 明确的画像查询：`资料` / `画像` / `我是谁`
+  - 明确的简历匹配：`适合投` / `适合哪些岗位`
+  - 明确的推荐型复合意图：`结合我的情况` / `推荐适合投`
+  - 新增的复合分支：同时出现 搜索信号 + `简历/匹配度/resume match` → 触发 `job_match_planning` 的完整四步链
+- **planner（`LLMClient.generate_plan`）接管灰区**，例如：
+  - 职业规划类（"大三想进 AI 方向，现在该怎么准备"）
+  - 纯技术关键词但无搜索意图（"如何准备 backend internship 面试"）
+  - 公司/项目名查询（"有 Atlassian 的 grad program 吗"）
+- **planner 输出经过契约护栏校验**（`LLMClient._validate_plan_contract`）：
+  - 所有 `steps` 必须属于 `available_tools`；出现未知工具 → 降级
+  - `job_match_planning` 任务必须让 `search_jobs` 出现在 `match_resume_to_jobs` 之前
+  - `steps` 长度不得超过 `MAX_PLAN_STEPS=6`
+  - 非法输出会走 2 次重试，最终落到 `_fallback_plan` 同义降级，不会 500
+- **工具执行层也具备抗降级能力**：当 planner 要求的 step 缺少前提（例如用户还没有 candidate 时要求 `get_candidate_profile`），`AgentService._execute_plan` 会捕获 `ValueError` 并让请求转回通用检索 + LLM 回答路径，而不是抛 500
+
+观测方式：`llm_trace.planner_source` 会标注 `router` / `model` / `fallback` 三档，对应规则命中、LLM 真正规划、兜底降级。Eval harness 在 14 条用例中至少让 2 条灰区 case 稳定走 `planner_source=model`，作为 planner 真的在工作的最低证据。
 
 ### 阶段 D：长期记忆与个性化增强
 

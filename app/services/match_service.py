@@ -20,7 +20,13 @@ class MatchService:
         retrieval_results = self.retrieval_service.search(str(resume["content"]))
 
         matches: list[JobMatch] = []
+        seen_titles: set[str] = set()
         for result in retrieval_results:
+            # Dedupe by job_title so repeated postings (or noisy re-indexing) do not
+            # surface the same role twice in the recommendation answer.
+            if result.title in seen_titles:
+                continue
+            seen_titles.add(result.title)
             job_tokens = self._tokenize(f"{result.title} {result.snippet}")
             matched_keywords = sorted(resume_tokens & job_tokens)
             if not matched_keywords:

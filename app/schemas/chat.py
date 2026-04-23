@@ -12,6 +12,11 @@ class ChatSource(BaseModel):
     type: str = Field(..., description="Evidence source category")
     title: str = Field(..., description="Short source title for display")
     snippet: str = Field(..., description="Short grounded evidence text")
+    company: Optional[str] = Field(default=None, description="Hiring organization name")
+    location: Optional[str] = Field(default=None, description="Job location")
+    work_type: Optional[str] = Field(default=None, description="Job type such as intern or graduate")
+    posted_at: Optional[str] = Field(default=None, description="Posting date")
+    url: Optional[str] = Field(default=None, description="Source link")
 
 
 class ChatPlan(BaseModel):

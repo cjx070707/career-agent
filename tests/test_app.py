@@ -38,7 +38,10 @@ def test_chat_endpoint_returns_mock_agent_response(isolated_runtime) -> None:
     assert body["memory_used"] is False
     assert body["sources"] == []
     assert body["tool_used"] is None
-    assert body["plan"] is None
+    assert body["plan"] is not None
+    assert body["plan"]["task_type"] == "fallback"
+    assert body["plan"]["planner_source"] in {"router", "model", "fallback"}
+    assert body["plan"]["steps"] == []
     assert body["tool_trace"] == []
     assert body["llm_trace"] == {
         "planner_source": "fallback",
@@ -74,8 +77,9 @@ def test_chat_endpoint_returns_job_sources_for_matching_queries(isolated_runtime
     assert response.status_code == 200
     body = response.json()
     assert body["sources"]
-    assert any(source["type"] == "job_posting" for source in body["sources"])
-    assert body["sources"][0]["title"] == "Backend Engineer Intern"
+    assert all(source["type"] == "job_posting" for source in body["sources"])
+    titles = [source["title"] for source in body["sources"]]
+    assert "Backend Engineer Intern" in titles
 
 
 def test_candidates_endpoint_reads_from_sqlite(isolated_runtime) -> None:

@@ -33,9 +33,28 @@ class ProfileService:
     def update_from_message(self, user_id: str, message: str) -> Dict[str, object]:
         current = self.get_profile(user_id)
         lowered = message.lower()
+        tokens = set(re.findall(r"[a-zA-Z0-9]+", lowered))
 
         target_role = current["target_role_preference"]
-        if "后端" in message or "backend" in lowered:
+        if (
+            "全栈" in message
+            or "full-stack" in lowered
+            or "full stack" in lowered
+            or "fullstack" in tokens
+        ):
+            target_role = "full-stack"
+        elif "devops" in tokens:
+            target_role = "devops"
+        elif (
+            "机器学习" in message
+            or "machine learning" in lowered
+            or "ai" in tokens
+            or "ml" in tokens
+        ):
+            target_role = "ai/ml"
+        elif "数据" in message or "data" in tokens:
+            target_role = "data"
+        elif "后端" in message or "backend" in lowered:
             target_role = "backend"
         elif "前端" in message or "frontend" in lowered:
             target_role = "frontend"
@@ -77,22 +96,55 @@ class ProfileService:
 
     def _extract_skill_keywords(self, message: str) -> List[str]:
         lowered = message.lower()
-        allowed = ("python", "fastapi", "sql", "react", "frontend", "backend")
+        allowed = (
+            "python",
+            "fastapi",
+            "sql",
+            "react",
+            "frontend",
+            "backend",
+            "typescript",
+            "go",
+            "rust",
+            "docker",
+            "kubernetes",
+            "aws",
+            "gcp",
+            "pandas",
+            "pytorch",
+        )
         tokens = set(re.findall(r"[a-zA-Z0-9]+", lowered))
         return [keyword for keyword in allowed if keyword in tokens]
 
     def _job_query_defaults(self, message: str) -> List[str]:
         lowered = message.lower()
+        tokens = set(re.findall(r"[a-zA-Z0-9]+", lowered))
         defaults: List[str] = ["sydney", "university of sydney", "usyd"]
 
         if "数据分析" in message or "data analys" in lowered:
             defaults.extend(["data", "analyst", "analytics"])
         if "实习" in message or "intern" in lowered:
             defaults.extend(["intern", "internship"])
+        if "graduate" in lowered or "校招" in message or "应届" in message:
+            defaults.extend(["graduate", "grad program"])
         if "后端" in message or "backend" in lowered:
             defaults.append("backend")
         if "前端" in message or "frontend" in lowered:
             defaults.append("frontend")
+        if (
+            "全栈" in message
+            or "full-stack" in lowered
+            or "full stack" in lowered
+            or "fullstack" in tokens
+        ):
+            defaults.extend(["fullstack", "full stack"])
+        if (
+            "机器学习" in message
+            or "machine learning" in lowered
+            or "ai" in tokens
+            or "ml" in tokens
+        ):
+            defaults.extend(["ai", "ml", "machine learning"])
 
         deduped: List[str] = []
         seen = set()

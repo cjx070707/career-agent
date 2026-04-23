@@ -78,6 +78,39 @@ def test_agent_service_uses_llm_layer_for_gray_query(isolated_runtime) -> None:
     }
 
 
+class PlannerRequestingMissingCandidateLLM(FakeLLMClient):
+    def generate_plan(self, **kwargs):
+        self.called = True
+        self.last_plan_source = "model"
+        return {
+            "task_type": "candidate_profile",
+            "reason": "planner asked for candidate profile",
+            "steps": ["get_candidate_profile"],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": None,
+            "planner_source": "model",
+        }
+
+
+def test_agent_service_degrades_gracefully_when_plan_step_prerequisites_missing(
+    isolated_runtime,
+) -> None:
+    # User has no candidate seeded; planner still wants get_candidate_profile.
+    # The agent must not crash — it should degrade to a graceful answer with
+    # plan preserved and tool_trace empty.
+    fake_llm = PlannerRequestingMissingCandidateLLM()
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("brand-new-user", "随便问一句")
+
+    assert fake_llm.called is True
+    assert result.plan is not None
+    assert result.plan.task_type == "candidate_profile"
+    assert result.tool_trace == []
+    assert isinstance(result.answer, str) and result.answer
+
+
 def test_agent_service_search_jobs_uses_summarize_job_search(isolated_runtime) -> None:
     fake_llm = FakeLLMClient()
     CandidateService().create_candidate(name="Search Summarizer User")
@@ -95,8 +128,10 @@ def test_agent_service_search_jobs_uses_summarize_job_search(isolated_runtime) -
     assert call["memory_context"] == ["上一轮：偏好外企", "好的，记住了。"]
     assert isinstance(call["jobs"], list)
     assert len(call["jobs"]) >= 1
-    assert call["jobs"][0]["title"] == "Rust Systems Engineer"
-    assert result.sources[0].title == "Rust Systems Engineer"
+    job_titles = [job["title"] for job in call["jobs"]]
+    assert "Rust Systems Engineer" in job_titles
+    source_titles = [source.title for source in result.sources]
+    assert "Rust Systems Engineer" in source_titles
     assert result.llm_trace.model_dump() == {
         "planner_source": "router",
         "job_search_summary_source": "model",

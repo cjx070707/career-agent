@@ -1,6 +1,6 @@
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import md5
 from pathlib import Path
 from typing import Optional, Sequence
@@ -50,6 +50,12 @@ class RetrievalResult:
     type: str
     title: str
     snippet: str
+    company: Optional[str] = None
+    location: Optional[str] = None
+    work_type: Optional[str] = None
+    posted_at: Optional[str] = None
+    url: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -57,6 +63,12 @@ class ReasonedJobHit:
     type: str
     title: str
     snippet: str
+    company: Optional[str]
+    location: Optional[str]
+    work_type: Optional[str]
+    posted_at: Optional[str]
+    url: Optional[str]
+    tags: list[str]
     matched_terms: list[str]
     reason: str
 
@@ -79,6 +91,8 @@ _GENERIC_MATCH_TERMS: frozenset[str] = frozenset(
         "did",
         "do",
         "does",
+        "developer",
+        "developers",
         "engineer",
         "engineers",
         "for",
@@ -93,13 +107,22 @@ _GENERIC_MATCH_TERMS: frozenset[str] = frozenset(
         "is",
         "it",
         "its",
+        "job",
+        "jobs",
         "may",
         "might",
         "must",
         "of",
         "on",
         "or",
+        "position",
+        "positions",
+        "role",
+        "roles",
         "should",
+        "software",
+        "team",
+        "teams",
         "that",
         "the",
         "these",
@@ -110,6 +133,8 @@ _GENERIC_MATCH_TERMS: frozenset[str] = frozenset(
         "were",
         "will",
         "with",
+        "work",
+        "works",
         "would",
     }
 )
@@ -123,10 +148,12 @@ class RetrievalService:
         persist_directory: Optional[Path] = None,
         collection_name: Optional[str] = None,
     ) -> None:
-        corpus_path = Path(__file__).resolve().parents[2] / "data" / "job_postings.json"
+        corpus_path = Path(settings.job_postings_file)
+        if not corpus_path.is_absolute():
+            corpus_path = Path(__file__).resolve().parents[2] / corpus_path
         with corpus_path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
-        self._job_postings = [RetrievalResult(**item) for item in payload]
+        self._job_postings = [self._to_retrieval_result(item) for item in payload]
         self._persist_directory = persist_directory or self._resolve_default_persist_directory()
         self._persist_directory.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(self._persist_directory))
@@ -157,6 +184,12 @@ class RetrievalService:
                 type=metadata["type"],
                 title=metadata["title"],
                 snippet=metadata["snippet"],
+                company=metadata.get("company") or None,
+                location=metadata.get("location") or None,
+                work_type=metadata.get("work_type") or None,
+                posted_at=metadata.get("posted_at") or None,
+                url=metadata.get("url") or None,
+                tags=self._parse_tags(metadata.get("tags") or ""),
             )
             for metadata in metadatas
         ]
@@ -170,6 +203,12 @@ class RetrievalService:
             type=hit.type,
             title=hit.title,
             snippet=hit.snippet,
+            company=hit.company,
+            location=hit.location,
+            work_type=hit.work_type,
+            posted_at=hit.posted_at,
+            url=hit.url,
+            tags=hit.tags,
             matched_terms=matched_terms,
             reason=reason,
         )
@@ -194,12 +233,18 @@ class RetrievalService:
         matched_terms: Sequence[str],
     ) -> str:
         if matched_terms:
-            return f"命中关键词：{'、'.join(matched_terms)}。"
+            return f"命中关键词：{'、'.join(matched_terms)}。{self._format_job_context(hit)}"
         body_tokens = self._tokenize(f"{hit.title} {hit.snippet}")
         query_tokens = self._tokenize(query)
         if query_tokens & body_tokens:
-            return "命中关键词：仅匹配到低信号通用词，排序仍依据标题与摘要中的词面重合度。"
-        return "未命中显性关键词；排序依据为语义向量与职位标题及摘要的相关性。"
+            return (
+                "命中关键词：仅匹配到低信号通用词，排序仍依据标题与摘要中的词面重合度。"
+                f"{self._format_job_context(hit)}"
+            )
+        return (
+            "未命中显性关键词；排序依据为语义向量与职位标题及摘要的相关性。"
+            f"{self._format_job_context(hit)}"
+        )
 
     def document_count(self) -> int:
         return self._collection.count()
@@ -231,6 +276,12 @@ class RetrievalService:
                     "type": posting.type,
                     "title": posting.title,
                     "snippet": posting.snippet,
+                    "company": posting.company or "",
+                    "location": posting.location or "",
+                    "work_type": posting.work_type or "",
+                    "posted_at": posting.posted_at or "",
+                    "url": posting.url or "",
+                    "tags": ",".join(posting.tags or []),
                 }
                 for posting in self._job_postings
             ],
@@ -278,3 +329,26 @@ class RetrievalService:
         if not configured.is_absolute():
             configured = Path(__file__).resolve().parents[2] / configured
         return configured
+
+    def _to_retrieval_result(self, payload: dict) -> RetrievalResult:
+        normalized = dict(payload)
+        normalized["tags"] = list(payload.get("tags") or [])
+        return RetrievalResult(**normalized)
+
+    def _format_job_context(self, hit: RetrievalResult) -> str:
+        parts: list[str] = []
+        if hit.company:
+            parts.append(f"公司：{hit.company}")
+        if hit.location:
+            parts.append(f"地点：{hit.location}")
+        if hit.work_type:
+            parts.append(f"类型：{hit.work_type}")
+        if not parts:
+            return ""
+        return "（" + "，".join(parts) + "）"
+
+    def _parse_tags(self, raw: str) -> list[str]:
+        text = str(raw).strip()
+        if not text:
+            return []
+        return [item.strip() for item in text.split(",") if item.strip()]

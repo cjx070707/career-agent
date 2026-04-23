@@ -63,8 +63,16 @@ class AgentService:
             )
         if plan.steps:
             tool_trace, execution_state = self._execute_plan(user_id, message, plan.steps)
+            # If `_execute_plan` could not run any step (e.g., the planner asked
+            # for `get_candidate_profile` but the user has no candidate yet), we
+            # fall through to the generic retrieval+LLM answer path so the
+            # request still produces a helpful response rather than 500-ing.
             final_tool_name = tool_trace[-1] if tool_trace else None
             final_result = execution_state.get("last_result")
+        else:
+            tool_trace, final_tool_name, final_result = [], None, None
+
+        if tool_trace:
             if final_tool_name == "search_jobs":
                 jobs = final_result if isinstance(final_result, list) else []
                 answer = self.llm_client.summarize_job_search(
@@ -101,7 +109,10 @@ class AgentService:
             memory_used=bool(recent_turns),
             sources=[self._to_chat_source(result) for result in retrieval_results],
             tool_used=None,
-            plan=None,
+            # Keep `plan` present across every path so the /chat contract stays
+            # stable; clients should always be able to read plan.task_type and
+            # plan.planner_source without null-checking.
+            plan=plan,
             tool_trace=[],
             llm_trace=self._build_llm_trace(plan),
         )
@@ -126,6 +137,11 @@ class AgentService:
             type=result.type,
             title=result.title,
             snippet=result.snippet,
+            company=result.company,
+            location=result.location,
+            work_type=result.work_type,
+            posted_at=result.posted_at,
+            url=result.url,
         )
 
     def _build_plan(
@@ -159,6 +175,10 @@ class AgentService:
                 available_tools=available_tools,
                 user_state=user_state,
             )
+        # Ensure `planner_source` is always populated so the /chat contract is
+        # stable even when the payload comes from an older fallback path.
+        if not plan_payload.get("planner_source"):
+            plan_payload["planner_source"] = self.llm_client.last_plan_source
         return ChatPlan.model_validate(plan_payload)
 
     def _execute_plan(
@@ -171,8 +191,14 @@ class AgentService:
         state: Dict[str, Any] = {}
 
         for step in steps:
-            payload = self._build_tool_payload(user_id, message, step, state)
-            tool_result = self.tool_registry.run(step, payload)
+            try:
+                payload = self._build_tool_payload(user_id, message, step, state)
+                tool_result = self.tool_registry.run(step, payload)
+            except ValueError:
+                # Planner asked for a step whose prerequisite is missing
+                # (e.g., no candidate / resume for this user). Stop executing
+                # and let the caller fall back to the generic answer path.
+                break
             trace.append(step)
             state[step] = tool_result["data"]
             state["last_result"] = tool_result["data"]
@@ -292,6 +318,11 @@ class AgentService:
                     type=result["type"],
                     title=result["title"],
                     snippet=str(result.get("reason") or result.get("snippet") or "").strip(),
+                    company=result.get("company"),
+                    location=result.get("location"),
+                    work_type=result.get("work_type"),
+                    posted_at=result.get("posted_at"),
+                    url=result.get("url"),
                 )
                 for result in tool_result
             ]

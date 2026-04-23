@@ -192,6 +192,8 @@
 - router：负责明显 query 的稳定入口
 - planner：只负责灰区问题与规则未覆盖场景
 
+Stage C 起，planner 输出必须通过契约护栏：`steps` 必须落在 `available_tools` 白名单内、`job_match_planning` 任务必须先 `search_jobs` 再 `match_resume_to_jobs`、`steps` 长度不得超过 `MAX_PLAN_STEPS`。护栏命中即降级，不向客户端抛异常。工具执行层在遇到缺少 candidate / resume 等前提条件时，同样以静默降级为默认行为，让请求回落到通用回答路径而不是 500。
+
 ### 8.8 多模态交互
 第一版支持：
 - 上传简历截图
@@ -221,6 +223,16 @@
 - `conversation_memories`：短期对话记忆
 - `career_profiles`：长期职业画像
 - `career_events`：关键事件
+
+当前 Stage C 的 `job_postings` 本地语料采用结构化字段：
+
+- `type`（固定为 `job_posting`）
+- `title` / `snippet`
+- `company` / `location`
+- `work_type`（如 `intern` / `graduate` / `fulltime`）
+- `posted_at`（日期字符串）
+- `url`（原始岗位链接或内部占位链接）
+- `tags`（技能与方向标签）
 
 ## 10. Agent 主链路
 

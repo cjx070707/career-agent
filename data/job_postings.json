@@ -2,16 +2,706 @@
   {
     "type": "job_posting",
     "title": "Backend Engineer Intern",
-    "snippet": "Python, FastAPI, REST APIs, SQL, and basic cloud exposure."
+    "snippet": "Python, FastAPI, REST APIs, SQL, and basic cloud exposure.",
+    "company": "USYD CareerHub Partner",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-02",
+    "url": "https://usyd-careerhub.internal/job/backend-engineer-intern",
+    "tags": [
+      "python",
+      "fastapi",
+      "backend",
+      "sql"
+    ]
   },
   {
     "type": "job_posting",
     "title": "AI Platform Backend Engineer",
-    "snippet": "Backend services for LLM products, tool orchestration, retrieval systems, and platform APIs."
+    "snippet": "Backend services for LLM products, tool orchestration, retrieval systems, and platform APIs.",
+    "company": "Canva",
+    "location": "Sydney",
+    "work_type": "fulltime",
+    "posted_at": "2026-04-03",
+    "url": "https://usyd-careerhub.internal/job/ai-platform-backend-engineer",
+    "tags": [
+      "llm",
+      "backend",
+      "platform",
+      "python"
+    ]
   },
   {
     "type": "job_posting",
     "title": "Frontend Engineer Intern",
-    "snippet": "React, TypeScript, component libraries, UI implementation, and interaction polish."
+    "snippet": "React, TypeScript, component libraries, UI implementation, and interaction polish.",
+    "company": "Atlassian",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-03-29",
+    "url": "https://usyd-careerhub.internal/job/frontend-engineer-intern",
+    "tags": [
+      "frontend",
+      "react",
+      "typescript"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Sydney Fintech Backend Intern",
+    "snippet": "Backend intern at a Sydney fintech startup working on Python services, Postgres, and payment APIs.",
+    "company": "Airwallex",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-05",
+    "url": "https://usyd-careerhub.internal/job/sydney-fintech-backend-intern",
+    "tags": [
+      "backend",
+      "python",
+      "postgres",
+      "payments"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "USYD Data Analyst Intern",
+    "snippet": "Data analyst intern with a University of Sydney research lab, using Python, pandas, and SQL for health analytics.",
+    "company": "University of Sydney",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-01",
+    "url": "https://usyd-careerhub.internal/job/usyd-data-analyst-intern",
+    "tags": [
+      "data",
+      "analytics",
+      "python",
+      "pandas",
+      "sql"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Sydney AI Platform Engineer",
+    "snippet": "AI platform engineer in Sydney building ML inference services with Docker, Kubernetes, and AWS.",
+    "company": "Google",
+    "location": "Sydney",
+    "work_type": "fulltime",
+    "posted_at": "2026-03-26",
+    "url": "https://usyd-careerhub.internal/job/sydney-ai-platform-engineer",
+    "tags": [
+      "ai",
+      "platform",
+      "kubernetes",
+      "aws"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Sydney SaaS Frontend Intern",
+    "snippet": "Frontend intern at a Sydney-based SaaS company, working with TypeScript, React, and component design systems.",
+    "company": "SafetyCulture",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-06",
+    "url": "https://usyd-careerhub.internal/job/sydney-saas-frontend-intern",
+    "tags": [
+      "frontend",
+      "react",
+      "typescript",
+      "ui"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Sydney Graduate Software Engineer",
+    "snippet": "Graduate software engineer with work rights in Sydney, full-stack role with Python, TypeScript, and GCP.",
+    "company": "Atlassian",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-20",
+    "url": "https://usyd-careerhub.internal/job/sydney-graduate-software-engineer",
+    "tags": [
+      "graduate",
+      "full-stack",
+      "python",
+      "typescript",
+      "gcp"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "USYD Machine Learning Research Intern",
+    "snippet": "Assist a USYD lab on model training, evaluation pipelines, and experiment tracking using PyTorch.",
+    "company": "University of Sydney",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-07",
+    "url": "https://usyd-careerhub.internal/job/usyd-ml-research-intern",
+    "tags": [
+      "ai",
+      "ml",
+      "pytorch",
+      "research"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Graduate Data Engineer Program",
+    "snippet": "Build data pipelines and warehouse models with Python, SQL, and cloud tooling for analytics teams.",
+    "company": "CBA",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-18",
+    "url": "https://usyd-careerhub.internal/job/graduate-data-engineer-program",
+    "tags": [
+      "graduate",
+      "data",
+      "python",
+      "sql"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Canva Backend Internship Program",
+    "snippet": "Work on backend microservices and APIs using Java or Python, with strong code review culture.",
+    "company": "Canva",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-08",
+    "url": "https://usyd-careerhub.internal/job/canva-backend-internship-program",
+    "tags": [
+      "intern",
+      "backend",
+      "api",
+      "microservices"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Westpac Technology Graduate",
+    "snippet": "Rotate across engineering teams including cloud platform, backend systems, and digital channels.",
+    "company": "Westpac",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-14",
+    "url": "https://usyd-careerhub.internal/job/westpac-technology-graduate",
+    "tags": [
+      "graduate",
+      "backend",
+      "cloud",
+      "platform"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "DevOps Engineer Internship",
+    "snippet": "Support CI/CD, observability, and container operations with Docker, Kubernetes, and Terraform.",
+    "company": "Macquarie",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-04",
+    "url": "https://usyd-careerhub.internal/job/devops-engineer-internship",
+    "tags": [
+      "devops",
+      "docker",
+      "kubernetes",
+      "terraform"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Cloud Platform Graduate Engineer",
+    "snippet": "Graduate role building cloud infrastructure automation on AWS with Python and IaC.",
+    "company": "AWS",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-22",
+    "url": "https://usyd-careerhub.internal/job/cloud-platform-graduate-engineer",
+    "tags": [
+      "graduate",
+      "aws",
+      "cloud",
+      "python"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Junior Full Stack Engineer",
+    "snippet": "Build internal web platforms with React, Node.js, and PostgreSQL in a product-led team.",
+    "company": "Linktree",
+    "location": "Sydney",
+    "work_type": "fulltime",
+    "posted_at": "2026-03-31",
+    "url": "https://usyd-careerhub.internal/job/junior-full-stack-engineer",
+    "tags": [
+      "full-stack",
+      "react",
+      "node",
+      "postgres"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Graduate Cyber Security Analyst",
+    "snippet": "Monitor security events, triage incidents, and improve SOC workflows with SIEM tooling.",
+    "company": "Deloitte AU",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-15",
+    "url": "https://usyd-careerhub.internal/job/graduate-cyber-security-analyst",
+    "tags": [
+      "graduate",
+      "security",
+      "soc",
+      "siem"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "USYD Product Analytics Intern",
+    "snippet": "Analyze student platform usage, build dashboards, and run A/B experiment analysis.",
+    "company": "University of Sydney",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-09",
+    "url": "https://usyd-careerhub.internal/job/usyd-product-analytics-intern",
+    "tags": [
+      "intern",
+      "analytics",
+      "sql",
+      "dashboard"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Graduate Quant Developer",
+    "snippet": "Work with trading engineers on low-latency systems using C++, Python, and performance tooling.",
+    "company": "Optiver",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-16",
+    "url": "https://usyd-careerhub.internal/job/graduate-quant-developer",
+    "tags": [
+      "graduate",
+      "quant",
+      "c++",
+      "python"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Software Engineer Intern - Developer Experience",
+    "snippet": "Improve CI pipelines, build tooling, and maintain internal developer portal services.",
+    "company": "Atlassian",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-10",
+    "url": "https://usyd-careerhub.internal/job/software-engineer-intern-dx",
+    "tags": [
+      "intern",
+      "devex",
+      "tooling",
+      "ci"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Graduate AI Engineer Program",
+    "snippet": "Deliver applied ML features for customer products including model serving and monitoring.",
+    "company": "Microsoft",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-23",
+    "url": "https://usyd-careerhub.internal/job/graduate-ai-engineer-program",
+    "tags": [
+      "graduate",
+      "ai",
+      "ml",
+      "model-serving"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Data Science Intern - Risk Analytics",
+    "snippet": "Prototype risk models, validate assumptions, and present findings to product teams.",
+    "company": "NAB",
+    "location": "Melbourne",
+    "work_type": "intern",
+    "posted_at": "2026-04-01",
+    "url": "https://usyd-careerhub.internal/job/data-science-intern-risk-analytics",
+    "tags": [
+      "intern",
+      "data-science",
+      "risk",
+      "python"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Graduate Site Reliability Engineer",
+    "snippet": "Support production reliability, alerting, and incident response for mission critical systems.",
+    "company": "Canva",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-21",
+    "url": "https://usyd-careerhub.internal/job/graduate-site-reliability-engineer",
+    "tags": [
+      "graduate",
+      "sre",
+      "observability",
+      "incident-response"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Backend Engineer Intern - Payments",
+    "snippet": "Build payment APIs, event-driven services, and reconciliation tooling for transactions.",
+    "company": "Stripe",
+    "location": "Remote (AU)",
+    "work_type": "intern",
+    "posted_at": "2026-04-11",
+    "url": "https://usyd-careerhub.internal/job/backend-engineer-intern-payments",
+    "tags": [
+      "intern",
+      "backend",
+      "payments",
+      "api"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Graduate Software Engineer - Banking Platforms",
+    "snippet": "Develop APIs and internal tools for business banking platform modernization.",
+    "company": "Westpac",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-19",
+    "url": "https://usyd-careerhub.internal/job/graduate-software-engineer-banking-platforms",
+    "tags": [
+      "graduate",
+      "backend",
+      "api",
+      "banking"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "USYD Health AI Research Assistant",
+    "snippet": "Assist model evaluation and data preprocessing for health AI research projects.",
+    "company": "University of Sydney",
+    "location": "Sydney",
+    "work_type": "parttime",
+    "posted_at": "2026-04-12",
+    "url": "https://usyd-careerhub.internal/job/usyd-health-ai-research-assistant",
+    "tags": [
+      "ai",
+      "research",
+      "health",
+      "python"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Frontend Graduate Program",
+    "snippet": "Graduate pathway focused on frontend architecture, accessibility, and design system delivery.",
+    "company": "Canva",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-24",
+    "url": "https://usyd-careerhub.internal/job/frontend-graduate-program",
+    "tags": [
+      "graduate",
+      "frontend",
+      "react",
+      "accessibility"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Junior Data Analyst",
+    "snippet": "Support reporting pipelines and dashboard maintenance using SQL and BI tools.",
+    "company": "PwC AU",
+    "location": "Sydney",
+    "work_type": "fulltime",
+    "posted_at": "2026-03-30",
+    "url": "https://usyd-careerhub.internal/job/junior-data-analyst",
+    "tags": [
+      "data",
+      "sql",
+      "bi",
+      "analytics"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Software Engineer Intern - Mobile Backend",
+    "snippet": "Build backend APIs for mobile features with strong focus on reliability and testing.",
+    "company": "SafetyCulture",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-13",
+    "url": "https://usyd-careerhub.internal/job/software-engineer-intern-mobile-backend",
+    "tags": [
+      "intern",
+      "backend",
+      "api",
+      "testing"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Graduate Data Scientist",
+    "snippet": "Join a two-year graduate program applying ML and analytics to customer lifecycle optimization.",
+    "company": "Macquarie",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-17",
+    "url": "https://usyd-careerhub.internal/job/graduate-data-scientist",
+    "tags": [
+      "graduate",
+      "data-science",
+      "ml",
+      "python"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Cloud Support Engineer Intern",
+    "snippet": "Assist cloud migration and infrastructure automation work for enterprise customers.",
+    "company": "AWS",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-14",
+    "url": "https://usyd-careerhub.internal/job/cloud-support-engineer-intern",
+    "tags": [
+      "intern",
+      "cloud",
+      "aws",
+      "automation"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Graduate Product Manager - Platforms",
+    "snippet": "Partner with engineering to define roadmap for internal platform capabilities.",
+    "company": "Atlassian",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-27",
+    "url": "https://usyd-careerhub.internal/job/graduate-product-manager-platforms",
+    "tags": [
+      "graduate",
+      "product",
+      "platform",
+      "roadmap"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Junior DevOps Engineer",
+    "snippet": "Maintain CI/CD workflows, improve infrastructure reliability, and manage container orchestration.",
+    "company": "Employment Hero",
+    "location": "Melbourne",
+    "work_type": "fulltime",
+    "posted_at": "2026-03-28",
+    "url": "https://usyd-careerhub.internal/job/junior-devops-engineer",
+    "tags": [
+      "devops",
+      "ci/cd",
+      "kubernetes",
+      "terraform"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "USYD Software Engineering Capstone Assistant",
+    "snippet": "Support capstone project teams with code reviews and backend architecture guidance.",
+    "company": "University of Sydney",
+    "location": "Sydney",
+    "work_type": "parttime",
+    "posted_at": "2026-04-15",
+    "url": "https://usyd-careerhub.internal/job/usyd-capstone-assistant",
+    "tags": [
+      "usyd",
+      "backend",
+      "mentoring",
+      "architecture"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Machine Learning Engineer Intern",
+    "snippet": "Prototype ranking and recommendation models with Python, feature pipelines, and experiment tooling.",
+    "company": "Canva",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-16",
+    "url": "https://usyd-careerhub.internal/job/machine-learning-engineer-intern",
+    "tags": [
+      "intern",
+      "ml",
+      "python",
+      "recommendation"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Graduate Software Engineer - Trading Systems",
+    "snippet": "Build and optimize trading infrastructure with strong focus on performance and reliability.",
+    "company": "IMC",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-25",
+    "url": "https://usyd-careerhub.internal/job/graduate-software-engineer-trading-systems",
+    "tags": [
+      "graduate",
+      "trading",
+      "performance",
+      "c++"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Remote Data Engineering Intern",
+    "snippet": "Help build ETL pipelines and data quality checks for distributed analytics teams.",
+    "company": "Deloitte AU",
+    "location": "Remote (AU)",
+    "work_type": "intern",
+    "posted_at": "2026-04-17",
+    "url": "https://usyd-careerhub.internal/job/remote-data-engineering-intern",
+    "tags": [
+      "intern",
+      "data-engineering",
+      "etl",
+      "sql"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Graduate AI Consultant",
+    "snippet": "Deliver AI proof-of-concepts and analytics strategy recommendations for enterprise clients.",
+    "company": "EY AU",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-13",
+    "url": "https://usyd-careerhub.internal/job/graduate-ai-consultant",
+    "tags": [
+      "graduate",
+      "ai",
+      "consulting",
+      "analytics"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Junior Backend Engineer - Identity Platform",
+    "snippet": "Develop identity and authentication services with secure API design practices.",
+    "company": "Okta",
+    "location": "Sydney",
+    "work_type": "fulltime",
+    "posted_at": "2026-04-18",
+    "url": "https://usyd-careerhub.internal/job/junior-backend-engineer-identity",
+    "tags": [
+      "backend",
+      "security",
+      "api",
+      "identity"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "USYD Research Data Engineer",
+    "snippet": "Build reproducible research data workflows, metadata standards, and validation tooling.",
+    "company": "University of Sydney",
+    "location": "Sydney",
+    "work_type": "fulltime",
+    "posted_at": "2026-04-19",
+    "url": "https://usyd-careerhub.internal/job/usyd-research-data-engineer",
+    "tags": [
+      "usyd",
+      "data-engineering",
+      "python",
+      "research"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Software Engineer Internship - Platform Security",
+    "snippet": "Implement security automation and policy checks across cloud services and developer workflows.",
+    "company": "Google",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-20",
+    "url": "https://usyd-careerhub.internal/job/software-engineer-intern-platform-security",
+    "tags": [
+      "intern",
+      "security",
+      "cloud",
+      "automation"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Graduate Full Stack Developer",
+    "snippet": "Join product squads delivering customer-facing features across React frontend and API backend.",
+    "company": "CBA",
+    "location": "Sydney",
+    "work_type": "graduate",
+    "posted_at": "2026-03-12",
+    "url": "https://usyd-careerhub.internal/job/graduate-full-stack-developer",
+    "tags": [
+      "graduate",
+      "full-stack",
+      "react",
+      "backend"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Data Analyst Intern - Marketing Analytics",
+    "snippet": "Analyze funnel and campaign performance, create dashboards, and support experimentation insights.",
+    "company": "Canva",
+    "location": "Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-21",
+    "url": "https://usyd-careerhub.internal/job/data-analyst-intern-marketing-analytics",
+    "tags": [
+      "intern",
+      "data",
+      "analytics",
+      "sql"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Remote Graduate Cloud Engineer",
+    "snippet": "Participate in a remote-first graduate cloud engineering pathway with AWS and Kubernetes.",
+    "company": "NAB",
+    "location": "Remote (AU)",
+    "work_type": "graduate",
+    "posted_at": "2026-03-11",
+    "url": "https://usyd-careerhub.internal/job/remote-graduate-cloud-engineer",
+    "tags": [
+      "graduate",
+      "cloud",
+      "aws",
+      "kubernetes"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Junior Product Analyst",
+    "snippet": "Support product teams with SQL analysis, KPI tracking, and hypothesis-driven reporting.",
+    "company": "Atlassian",
+    "location": "Melbourne",
+    "work_type": "fulltime",
+    "posted_at": "2026-03-10",
+    "url": "https://usyd-careerhub.internal/job/junior-product-analyst",
+    "tags": [
+      "product",
+      "analytics",
+      "sql",
+      "kpi"
+    ]
   }
 ]

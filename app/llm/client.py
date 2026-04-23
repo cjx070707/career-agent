@@ -19,6 +19,9 @@ class LLMClient:
         "job_match_planning",
         "fallback",
     }
+    # Hard cap on planner-produced step chains. Anything longer is treated as a
+    # hallucinated tool loop and falls back to the deterministic plan.
+    MAX_PLAN_STEPS = 6
 
     def __init__(self) -> None:
         self.model = settings.default_model
@@ -59,7 +62,11 @@ class LLMClient:
                     user_state=normalized_user_state,
                 )
                 self.last_plan_source = "model"
-                return self._validated_plan(plan_payload, planner_source="model")
+                return self._validated_plan(
+                    plan_payload,
+                    planner_source="model",
+                    available_tools=available_tools,
+                )
             except (RuntimeError, ValidationError, ValueError, httpx.HTTPError) as exc:
                 last_error = exc
 
@@ -74,6 +81,7 @@ class LLMClient:
                 normalized_user_state,
             ),
             planner_source="fallback",
+            available_tools=available_tools,
         )
 
     def generate(
@@ -283,6 +291,7 @@ class LLMClient:
         self,
         plan_payload: Dict[str, Any],
         planner_source: str,
+        available_tools: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         normalized_payload = self._normalize_plan(plan_payload)
         plan = ChatPlan.model_validate(
@@ -291,7 +300,7 @@ class LLMClient:
                 "planner_source": planner_source,
             }
         )
-        self._validate_plan_contract(plan)
+        self._validate_plan_contract(plan, available_tools=available_tools)
         return plan.model_dump()
 
     def _normalize_plan(self, plan_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -304,7 +313,11 @@ class LLMClient:
         normalized["steps"] = ["search_jobs"]
         return normalized
 
-    def _validate_plan_contract(self, plan: ChatPlan) -> None:
+    def _validate_plan_contract(
+        self,
+        plan: ChatPlan,
+        available_tools: Optional[List[str]] = None,
+    ) -> None:
         if plan.task_type not in self.ALLOWED_TASK_TYPES:
             raise ValueError(f"Invalid task_type: {plan.task_type}")
 
@@ -313,6 +326,30 @@ class LLMClient:
                 raise ValueError("missing_context is required when more context is needed")
             if not plan.follow_up_question:
                 raise ValueError("follow_up_question is required when more context is needed")
+
+        steps = list(plan.steps or [])
+
+        if len(steps) > self.MAX_PLAN_STEPS:
+            raise ValueError(
+                f"plan steps exceed MAX_PLAN_STEPS={self.MAX_PLAN_STEPS}"
+            )
+
+        if available_tools is not None:
+            allowed_tools = set(available_tools)
+            unknown = [step for step in steps if step not in allowed_tools]
+            if unknown:
+                raise ValueError(
+                    f"plan contains steps not in available_tools: {unknown}"
+                )
+
+        if plan.task_type == "job_match_planning" and steps:
+            # For recommendation plans, we must search before matching so the
+            # match step has candidate jobs to score against.
+            if "search_jobs" in steps and "match_resume_to_jobs" in steps:
+                if steps.index("search_jobs") > steps.index("match_resume_to_jobs"):
+                    raise ValueError(
+                        "job_match_planning requires search_jobs before match_resume_to_jobs"
+                    )
 
     def _post_responses(
         self,
@@ -392,9 +429,16 @@ class LLMClient:
         if not jobs:
             return "暂时没有合适的岗位结果，建议换个关键词再试。"
 
-        intro = "推荐岗位："
         if has_memory_context:
-            intro = "结合你最近提到的偏好，推荐岗位："
+            intro = (
+                "结合你最近提到的偏好，系统优先在 Sydney / University of Sydney "
+                "语境下为你筛选了以下岗位："
+            )
+        else:
+            intro = (
+                "根据你的提问，系统优先在 Sydney / University of Sydney "
+                "语境下筛选了以下岗位："
+            )
 
         lines: List[str] = [intro]
         for idx, job in enumerate(jobs, start=1):
@@ -404,6 +448,7 @@ class LLMClient:
                 lines.append(f"{idx}. {title}：{reason}")
             else:
                 lines.append(f"{idx}. {title}")
+        lines.append("如果需要，我可以结合你的简历再做一次精细匹配。")
         return "\n".join(lines)
 
     def _fallback_plan(
