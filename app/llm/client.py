@@ -5,7 +5,11 @@ import httpx
 from pydantic import ValidationError
 
 from app.env import settings
-from app.llm.prompts import JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT, PLANNER_SYSTEM_PROMPT
+from app.llm.prompts import (
+    CAREER_EVENT_EXTRACTOR_SYSTEM_PROMPT,
+    JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT,
+    PLANNER_SYSTEM_PROMPT,
+)
 from app.schemas.chat import ChatPlan
 
 
@@ -142,6 +146,29 @@ class LLMClient:
             self.last_job_search_summary_source = "fallback"
             return self._fallback_job_search_summary(top_jobs, bool(memory_context))
 
+    def extract_career_events(
+        self,
+        user_id: str,
+        message: str,
+    ) -> List[Dict[str, str]]:
+        if not self._career_event_extractor_is_configured():
+            return []
+        try:
+            request = self._build_career_event_extract_request(
+                user_id=user_id,
+                message=message,
+            )
+            response_payload = self._post_responses(
+                f"{self._planner_base_url().rstrip('/')}/responses",
+                api_key=self._planner_api_key(),
+                payload=request,
+                timeout=45.0,
+            )
+            text = self._extract_responses_text(response_payload)
+            return self._normalize_extracted_career_events(json.loads(text))
+        except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
+            return []
+
     def _generate_plan_with_model(
         self,
         message: str,
@@ -269,13 +296,19 @@ class LLMClient:
         return request
 
     def _extract_plan_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        text = self._extract_responses_text(payload)
+        if text:
+            return json.loads(text)
+        raise ValueError("No structured planner payload returned by model")
+
+    def _extract_responses_text(self, payload: Dict[str, Any]) -> str:
         output = payload.get("output", [])
         for item in output:
             for content in item.get("content", []):
                 text = content.get("text")
                 if text:
-                    return json.loads(text)
-        raise ValueError("No structured planner payload returned by model")
+                    return text
+        return ""
 
     def _extract_chat_completions_plan_payload(
         self,
@@ -399,6 +432,75 @@ class LLMClient:
             ],
         }
 
+    def _build_career_event_extract_request(
+        self,
+        user_id: str,
+        message: str,
+    ) -> Dict[str, Any]:
+        return {
+            "model": self._planner_model(),
+            "input": [
+                {
+                    "role": "system",
+                    "content": CAREER_EVENT_EXTRACTOR_SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "user_id": user_id,
+                            "message": message,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "career_events",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "events": {
+                                "type": "array",
+                                "maxItems": 3,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "properties": {
+                                        "event_type": {
+                                            "type": "string",
+                                            "enum": [
+                                                "application_status",
+                                                "interview_feedback",
+                                                "assessment_result",
+                                                "career_milestone",
+                                            ],
+                                        },
+                                        "title": {"type": "string"},
+                                        "summary": {"type": "string"},
+                                        "occurred_at": {
+                                            "type": ["string", "null"],
+                                        },
+                                    },
+                                    "required": [
+                                        "event_type",
+                                        "title",
+                                        "summary",
+                                        "occurred_at",
+                                    ],
+                                },
+                            }
+                        },
+                        "required": ["events"],
+                    },
+                }
+            },
+        }
+
     def _extract_chat_completion_text(self, payload: Dict[str, Any]) -> str:
         choices = payload.get("choices", [])
         for choice in choices:
@@ -419,6 +521,48 @@ class LLMClient:
 
     def _job_search_summarizer_is_configured(self) -> bool:
         return bool(self._planner_api_key())
+
+    def _career_event_extractor_is_configured(self) -> bool:
+        return bool(self._planner_api_key())
+
+    def _normalize_extracted_career_events(
+        self,
+        payload: Any,
+    ) -> List[Dict[str, str]]:
+        if isinstance(payload, list):
+            raw_events = payload
+        elif isinstance(payload, dict):
+            raw_events = payload.get("events", [])
+        else:
+            return []
+
+        allowed_event_types = {
+            "application_status",
+            "interview_feedback",
+            "assessment_result",
+            "career_milestone",
+        }
+        events: List[Dict[str, str]] = []
+        for raw_event in raw_events[:3]:
+            if not isinstance(raw_event, dict):
+                continue
+            event_type = str(raw_event.get("event_type") or "").strip()
+            title = str(raw_event.get("title") or "").strip()
+            summary = str(raw_event.get("summary") or "").strip()
+            occurred_at = str(raw_event.get("occurred_at") or "").strip()
+            if event_type not in allowed_event_types:
+                continue
+            if not title or not summary:
+                continue
+            events.append(
+                {
+                    "event_type": event_type,
+                    "title": title,
+                    "summary": summary,
+                    "occurred_at": occurred_at,
+                }
+            )
+        return events
 
     def _top_job_search_hits(self, jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return jobs[:3]

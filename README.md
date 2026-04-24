@@ -144,6 +144,9 @@ After refresh, the career profile summary is indexed into retrieval as a
 `career_profile` source so later answers can cite profile evidence.
 Structured application and interview records are also synced into `career_events`
 and indexed as `career_event` sources.
+When planner LLM credentials are configured, concrete career events mentioned in
+free-text chat messages are extracted into the same `career_events` store and
+indexed as `career_event` retrieval evidence; extraction failures degrade to no-op.
 
 ### search_jobs tool payload
 

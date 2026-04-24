@@ -1,12 +1,19 @@
-from typing import Dict, List, Union
+import hashlib
+from typing import Any, Dict, List, Optional, Union
 
 from app.db.session import get_connection
+from app.llm.client import LLMClient
 from app.services.retrieval_service import RetrievalService
 
 
 class CareerEventService:
-    def __init__(self, retrieval_service: RetrievalService = None) -> None:
+    def __init__(
+        self,
+        retrieval_service: RetrievalService = None,
+        llm_client: Optional[LLMClient] = None,
+    ) -> None:
         self.retrieval_service = retrieval_service or RetrievalService()
+        self.llm_client = llm_client or LLMClient()
 
     def sync_from_career_records(
         self,
@@ -16,6 +23,29 @@ class CareerEventService:
         synced: List[Dict[str, Union[int, str]]] = []
         for event in events:
             saved = self._upsert_event(event)
+            self.retrieval_service.upsert_career_event(saved)
+            synced.append(saved)
+        return synced
+
+    def sync_from_message(
+        self,
+        user_id: str,
+        message: str,
+    ) -> List[Dict[str, Union[int, str]]]:
+        try:
+            extracted_events = self.llm_client.extract_career_events(
+                user_id=user_id,
+                message=message,
+            )
+        except Exception:
+            return []
+
+        synced: List[Dict[str, Union[int, str]]] = []
+        for event in extracted_events:
+            normalized = self._message_event(user_id, message, event)
+            if normalized is None:
+                continue
+            saved = self._upsert_event(normalized)
             self.retrieval_service.upsert_career_event(saved)
             synced.append(saved)
         return synced
@@ -91,6 +121,55 @@ class CareerEventService:
                 }
             )
         return events
+
+    def _message_event(
+        self,
+        user_id: str,
+        message: str,
+        event: Dict[str, Any],
+    ) -> Optional[Dict[str, Union[int, str]]]:
+        event_type = str(event.get("event_type") or "").strip()
+        title = str(event.get("title") or "").strip()
+        summary = str(event.get("summary") or "").strip()
+        occurred_at = str(event.get("occurred_at") or "").strip()
+        allowed_event_types = {
+            "application_status",
+            "interview_feedback",
+            "assessment_result",
+            "career_milestone",
+        }
+        if event_type not in allowed_event_types:
+            return None
+        if not title or not summary:
+            return None
+        return {
+            "user_id": user_id,
+            "event_type": event_type,
+            "title": title,
+            "summary": summary,
+            "source_type": "message",
+            "source_id": self._message_source_id(
+                user_id=user_id,
+                message=message,
+                event_type=event_type,
+                title=title,
+                summary=summary,
+            ),
+            "occurred_at": occurred_at,
+        }
+
+    def _message_source_id(
+        self,
+        user_id: str,
+        message: str,
+        event_type: str,
+        title: str,
+        summary: str,
+    ) -> int:
+        digest = hashlib.sha256(
+            f"{user_id}:{message}:{event_type}:{title}:{summary}".encode("utf-8")
+        ).hexdigest()
+        return int(digest[:12], 16) % 2_147_483_647
 
     def _upsert_event(self, event: Dict[str, Union[int, str]]) -> Dict[str, Union[int, str]]:
         with get_connection() as connection:

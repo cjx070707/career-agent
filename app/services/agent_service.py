@@ -7,6 +7,7 @@ from app.routing.filter_extractor import extract_filters
 from app.routing.intent_router import IntentRouter
 from app.schemas.chat import ChatPlan, ChatSource, LLMTrace
 from app.services.candidate_service import CandidateService
+from app.services.career_event_service import CareerEventService
 from app.services.memory_service import MemoryService
 from app.services.profile_service import ProfileService
 from app.services.retrieval_service import RetrievalResult, RetrievalService
@@ -44,11 +45,16 @@ class AgentService:
         self.candidate_service = CandidateService()
         self.resume_service = ResumeService()
         self.profile_service = ProfileService()
+        self.career_event_service = CareerEventService(
+            retrieval_service=self.retrieval_service,
+            llm_client=self.llm_client,
+        )
 
     def respond(self, user_id: str, message: str) -> AgentResult:
         self._reset_llm_trace_markers()
         recent_turns = self.memory_service.load_recent_messages(user_id)
         profile = self.profile_service.update_from_message(user_id, message)
+        self.career_event_service.sync_from_message(user_id, message)
         plan = self._build_plan(user_id, message, bool(recent_turns), profile)
         if plan.needs_more_context and not plan.steps:
             answer = plan.follow_up_question or "我还需要更多信息，才能继续。"

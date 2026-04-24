@@ -109,6 +109,17 @@ class RetrievalOnlyLLM(FakeLLMClient):
         }
 
 
+class CareerEventExtractingLLM(RetrievalOnlyLLM):
+    def extract_career_events(self, **kwargs):
+        return [
+            {
+                "event_type": "interview_feedback",
+                "title": "Canva backend interview feedback",
+                "summary": "Canva feedback said to prepare system design fundamentals.",
+            }
+        ]
+
+
 def test_agent_service_degrades_gracefully_when_plan_step_prerequisites_missing(
     isolated_runtime,
 ) -> None:
@@ -298,6 +309,25 @@ def test_agent_retrieval_can_use_indexed_career_event_source(
     service = AgentService(llm_client=RetrievalOnlyLLM())
 
     result = service.respond("indexed-event-user", "Atlassian system design fundamentals")
+
+    assert result.sources
+    assert result.sources[0].type == "career_event"
+    assert "system design fundamentals" in result.sources[0].snippet
+
+
+def test_agent_syncs_llm_extracted_message_events_for_later_retrieval(
+    isolated_runtime,
+) -> None:
+    service = AgentService(llm_client=CareerEventExtractingLLM())
+
+    service.respond(
+        "message-memory-user",
+        "Canva backend 面试没过，反馈是 system design fundamentals 要补。",
+    )
+    result = service.respond(
+        "message-memory-user",
+        "Canva system design fundamentals",
+    )
 
     assert result.sources
     assert result.sources[0].type == "career_event"

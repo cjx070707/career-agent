@@ -44,3 +44,19 @@ JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT = (
     "Do not invent employers, locations, compensation, or requirements not "
     "supported by the hits."
 )
+
+
+CAREER_EVENT_EXTRACTOR_SYSTEM_PROMPT = (
+    "You extract durable career events from a user's chat message. "
+    "Return a JSON object with an events array. "
+    "Only extract concrete career facts worth remembering, such as application "
+    "status changes, interview feedback, offers, rejections, assessment results, "
+    "or clear career milestones. "
+    "Ignore casual messages, preferences, questions, and advice requests that do "
+    "not state a concrete event. "
+    "Allowed event_type values are exactly: application_status, interview_feedback, "
+    "assessment_result, career_milestone. "
+    "Each event must include event_type, title, summary, and optional occurred_at. "
+    "Keep title short and summary grounded only in the message. "
+    "If there are no durable events, return {\"events\": []}."
+)

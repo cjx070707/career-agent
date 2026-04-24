@@ -7,6 +7,20 @@ from app.env import settings
 from app.llm.prompts import JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT
 
 
+CAREER_EVENT_RESPONSE_TEXT = json.dumps(
+    {
+        "events": [
+            {
+                "event_type": "interview_feedback",
+                "title": "Canva backend interview feedback",
+                "summary": "Rejected after Canva backend interview; prepare system design fundamentals.",
+                "occurred_at": "2026-04-20",
+            }
+        ]
+    }
+)
+
+
 class ModelFirstLLMClient(LLMClient):
     def __init__(self, model_result=None, model_error=None) -> None:
         super().__init__()
@@ -109,6 +123,23 @@ class TimeoutCaptureLLMClient(LLMClient):
                 ]
             }
         return {"choices": [{"message": {"content": "Model job-search summary."}}]}
+
+
+class CareerEventExtractionClient(LLMClient):
+    def __init__(self, response_text=CAREER_EVENT_RESPONSE_TEXT, error=None) -> None:
+        super().__init__()
+        self.response_text = response_text
+        self.error = error
+        self.calls = []
+
+    def is_configured(self) -> bool:
+        return True
+
+    def _post_responses(self, url, payload=None, api_key=None, **kwargs):
+        self.calls.append((url, payload, kwargs))
+        if self.error is not None:
+            raise self.error
+        return {"output": [{"content": [{"text": self.response_text}]}]}
 
 
 def test_generate_plan_uses_profile_and_memory_for_job_search() -> None:
@@ -672,3 +703,35 @@ def test_planner_and_summarizer_requests_use_45_second_timeout() -> None:
 
     assert client.calls[0][1]["timeout"] == 45.0
     assert client.calls[1][1]["timeout"] == 45.0
+
+
+def test_extract_career_events_uses_structured_responses_payload() -> None:
+    client = CareerEventExtractionClient()
+
+    events = client.extract_career_events(
+        user_id="event-user",
+        message="Canva backend 面试没过，反馈是 system design fundamentals。",
+    )
+
+    assert events == [
+        {
+            "event_type": "interview_feedback",
+            "title": "Canva backend interview feedback",
+            "summary": "Rejected after Canva backend interview; prepare system design fundamentals.",
+            "occurred_at": "2026-04-20",
+        }
+    ]
+    assert client.calls
+    payload = client.calls[0][1]
+    user_blob = json.loads(payload["input"][1]["content"])
+    assert user_blob["user_id"] == "event-user"
+    assert "Canva backend" in user_blob["message"]
+
+
+def test_extract_career_events_returns_empty_when_model_payload_is_invalid() -> None:
+    client = CareerEventExtractionClient(response_text="{not-json")
+
+    assert client.extract_career_events(
+        user_id="event-user",
+        message="Canva backend 面试没过。",
+    ) == []
