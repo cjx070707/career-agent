@@ -127,7 +127,6 @@ API 层          app/api/             HTTP 入口、参数校验
 | BM25 lexical 召回 + RRF 融合 | #4 | ~3 天 | eval 中至少 2 条 case 的召回质量因融合而提升 |
 | ~~投递记录数据模型 + 服务 + 工具~~ | ~~#1, #2~~ | ~~完成~~ | ✅ `POST /applications` + `GET` + `PATCH` + `get_applications` 工具 + router 命中 |
 | ~~面试反馈数据模型 + 服务 + 工具~~ | ~~#1, #2~~ | ~~完成~~ | ✅ `POST /interviews` + `GET` + `PATCH` + `get_interview_feedback` 工具 + router/planner 命中 |
-| ~~求职画像聚合查询第一版~~ | ~~#1, #2~~ | ~~完成~~ | ✅ 聚合 profile + applications + interviews，并通过 `get_career_insights` 回答下一步建议 |
 | MCP 协议 SDK 接入 | #2 | ~3 天 | 外部 MCP 客户端能连上并调用 `search_jobs` |
 | React 双页面（Query + Chat） | #5, #6 | ~2 周 | 前端能独立运行、调 /chat、展示 sources |
 
@@ -155,8 +154,8 @@ API 层          app/api/             HTTP 入口、参数校验
 
 | 简历条 | 当前完成度 | 还需要做什么 |
 |---|---|---|
-| #1 双层记忆 | 60% — 短期记忆 ✅，profile augment ✅，投递记录 ✅，面试反馈 ✅，画像聚合查询 ✅；长期画像落库 ❌，关键事件 ❌ | 长期画像落库 → 关键事件抽取 |
-| #2 MCP 工具层 | 75% — 7 个工具 ✅（含 get_applications / get_interview_feedback / get_career_insights），ToolRegistry ✅；MCP 协议 ❌ | MCP SDK 接入 |
+| #1 双层记忆 | 55% — 短期记忆 ✅，profile augment ✅，投递记录 ✅，面试反馈 ✅，画像聚合查询前置能力 ✅；长期画像落库 ❌，关键事件 ❌ | 长期画像落库 → 关键事件抽取 |
+| #2 MCP 工具层 | 70% — 7 个工具 ✅（含 get_applications / get_interview_feedback / get_career_insights），ToolRegistry ✅；MCP 协议 ❌ | MCP SDK 接入 |
 | #3 双层决策 + 可观测 | **90%** — Router ✅，Planner ✅，护栏 ✅，降级 ✅，trace ✅ | 基本完成，可打磨 |
 | #4 混合召回 RAG | 60% — 向量召回 ✅，rerank ✅，metadata filter ✅，reason ✅；BM25 ❌，RRF ❌ | BM25 + RRF 融合 |
 | #5 图像输入 + 多端交互 | **0%** — React ❌，GPT-4V ❌，TTS ❌ | React 双页面 → GPT-4V → TTS |
