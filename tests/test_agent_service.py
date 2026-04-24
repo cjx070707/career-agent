@@ -269,5 +269,36 @@ def test_agent_retrieval_can_use_indexed_career_profile_source(
     result = service.respond("indexed-profile-user", "system design fundamentals")
 
     assert result.sources
-    assert result.sources[0].type == "career_profile"
+    profile_sources = [
+        source for source in result.sources if source.type == "career_profile"
+    ]
+    assert profile_sources
+    assert "system design fundamentals" in profile_sources[0].snippet
+
+
+def test_agent_retrieval_can_use_indexed_career_event_source(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Indexed Event User",
+        user_id="indexed-event-user",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Backend Grad",
+        interview_round="tech1",
+        result="rejected",
+        feedback="system design fundamentals",
+    )
+    AgentService(llm_client=FakeLLMClient()).respond(
+        "indexed-event-user",
+        "结合我的投递和面试反馈，我下一步该准备什么？",
+    )
+    service = AgentService(llm_client=RetrievalOnlyLLM())
+
+    result = service.respond("indexed-event-user", "Atlassian system design fundamentals")
+
+    assert result.sources
+    assert result.sources[0].type == "career_event"
     assert "system design fundamentals" in result.sources[0].snippet

@@ -142,6 +142,8 @@ The refreshed `career_profiles` fields include:
 
 After refresh, the career profile summary is indexed into retrieval as a
 `career_profile` source so later answers can cite profile evidence.
+Structured application and interview records are also synced into `career_events`
+and indexed as `career_event` sources.
 
 ### search_jobs tool payload
 

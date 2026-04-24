@@ -82,6 +82,19 @@ def init_db(db_path: Optional[str] = None) -> None:
                 last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(candidate_id) REFERENCES candidates(id)
             );
+
+            CREATE TABLE IF NOT EXISTS career_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source_id INTEGER NOT NULL,
+                occurred_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, event_type, source_type, source_id)
+            );
             """
         )
         candidate_columns = {

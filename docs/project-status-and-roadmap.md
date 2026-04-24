@@ -88,7 +88,8 @@ API 层          app/api/             HTTP 入口、参数校验
 | 用户偏好 profile + query augment | ✅ | `app/services/profile_service.py` | #1 |
 | 长期职业画像落库（career_profiles 表） | ✅ | `app/services/profile_service.py` | #1 |
 | 长期职业画像向量化 | ✅ | `app/services/retrieval_service.py` | #1, #4 |
-| 关键事件抽取与沉淀 | ❌ | — | #1 |
+| 关键事件结构化沉淀 + 向量入库 | ✅ | `app/services/career_event_service.py` `app/services/retrieval_service.py` | #1, #4 |
+| LLM 泛化关键事件抽取 | ❌ | — | #1 |
 
 ### 4.4 工具与数据模型
 
@@ -137,7 +138,8 @@ API 层          app/api/             HTTP 入口、参数校验
 |---|---|---|---|---|
 | ~~长期职业画像存储~~ | ~~面试反馈模型~~ | ~~#1~~ | ~~完成~~ | ✅ 投递/面试信号沉淀进 `career_profiles`，画像字段参与 query augment |
 | ~~长期职业画像向量化~~ | ~~长期画像存储~~ | ~~#1, #4~~ | ~~完成~~ | ✅ 画像摘要进入向量检索，并能以 `career_profile` source 作为回答证据 |
-| 关键事件抽取（LLM 提取 + 向量入库） | 长期画像向量化 | #1, #4 | ~3 天 | 关键事件可被向量检索命中 |
+| ~~关键事件结构化沉淀 + 向量入库~~ | ~~长期画像向量化~~ | ~~#1, #4~~ | ~~完成~~ | ✅ 投递/面试记录沉淀为 `career_event`，并可被向量检索命中 |
+| LLM 泛化关键事件抽取 | 关键事件结构化沉淀 | #1 | ~3 天 | 能从自由文本对话中抽取关键事件并去重入库 |
 | GPT-4V 图像输入（简历/JD 截图解析） | React 前端 | #5 | ~5 天 | 截图上传 → 结构化字段输出完整链路 |
 | TTS 语音播报 | React 前端 | #5 | ~3 天 | 回答可语音播放 |
 
@@ -156,7 +158,7 @@ API 层          app/api/             HTTP 入口、参数校验
 
 | 简历条 | 当前完成度 | 还需要做什么 |
 |---|---|---|
-| #1 双层记忆 | 75% — 短期记忆 ✅，profile augment ✅，投递记录 ✅，面试反馈 ✅，长期画像落库 ✅，画像向量化 ✅；关键事件 ❌ | 关键事件抽取 |
+| #1 双层记忆 | 85% — 短期记忆 ✅，profile augment ✅，投递记录 ✅，面试反馈 ✅，长期画像落库 ✅，画像向量化 ✅，结构化关键事件 ✅；LLM 泛化抽取 ❌ | LLM 泛化关键事件抽取 |
 | #2 MCP 工具层 | 70% — 7 个工具 ✅（含 get_applications / get_interview_feedback / get_career_insights），ToolRegistry ✅；MCP 协议 ❌ | MCP SDK 接入 |
 | #3 双层决策 + 可观测 | **90%** — Router ✅，Planner ✅，护栏 ✅，降级 ✅，trace ✅ | 基本完成，可打磨 |
 | #4 混合召回 RAG | 60% — 向量召回 ✅，rerank ✅，metadata filter ✅，reason ✅；BM25 ❌，RRF ❌ | BM25 + RRF 融合 |

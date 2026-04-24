@@ -423,3 +423,25 @@ def test_retrieval_service_indexes_career_profile_source(tmp_path: Path) -> None
     assert results[0].type == "career_profile"
     assert results[0].title == "Career Profile"
     assert "system design fundamentals" in results[0].snippet
+
+
+def test_retrieval_service_indexes_career_event_source(tmp_path: Path) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_career_event",
+        collection_name="career_event_source",
+    )
+
+    service.upsert_career_event(
+        event={
+            "id": 1,
+            "event_type": "interview_feedback",
+            "title": "Atlassian - Backend Grad (tech1/rejected)",
+            "summary": "Interview feedback: system design fundamentals",
+        },
+    )
+
+    results = service.search("system design fundamentals")
+
+    assert results
+    assert results[0].type == "career_event"
+    assert results[0].title == "Atlassian - Backend Grad (tech1/rejected)"

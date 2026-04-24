@@ -4,6 +4,7 @@ from app.services.career_insight_service import CareerInsightService
 from app.services.interview_service import InterviewService
 from app.services.profile_service import ProfileService
 from app.services.retrieval_service import RetrievalService
+from app.db.session import get_connection
 
 
 def test_career_insight_service_aggregates_profile_applications_and_interviews(
@@ -123,5 +124,44 @@ def test_career_insight_service_indexes_refreshed_profile_for_retrieval(
 
     results = RetrievalService().search("system design fundamentals")
     assert results
-    assert results[0].type == "career_profile"
-    assert "system design fundamentals" in results[0].snippet
+    profile_sources = [result for result in results if result.type == "career_profile"]
+    assert profile_sources
+    assert "system design fundamentals" in profile_sources[0].snippet
+
+
+def test_career_insight_service_syncs_career_events(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Career Event Insight User",
+        user_id="career-event-insight-user",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Backend Grad",
+        interview_round="tech1",
+        result="rejected",
+        feedback="system design fundamentals",
+    )
+
+    CareerInsightService().get_career_insights(
+        user_id="career-event-insight-user",
+        limit=10,
+    )
+
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT event_type, summary
+            FROM career_events
+            WHERE user_id = ?
+            """,
+            ("career-event-insight-user",),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["event_type"] == "interview_feedback"
+    assert "system design fundamentals" in rows[0]["summary"]
+
+    results = RetrievalService().search("system design fundamentals")
+    assert results[0].type == "career_event"

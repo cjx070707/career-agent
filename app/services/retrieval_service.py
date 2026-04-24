@@ -321,6 +321,30 @@ class RetrievalService:
             ],
         )
 
+    def upsert_career_event(self, event: dict) -> None:
+        summary = str(event.get("summary") or "").strip()
+        title = str(event.get("title") or "Career Event").strip()
+        event_id = int(event["id"])
+        if not summary:
+            return
+        self._collection.upsert(
+            ids=[f"career-event-{event_id}"],
+            documents=[f"{title}. {summary}"],
+            metadatas=[
+                {
+                    "type": "career_event",
+                    "title": title,
+                    "snippet": summary,
+                    "company": "",
+                    "location": "",
+                    "work_type": "",
+                    "posted_at": str(event.get("occurred_at") or ""),
+                    "url": "",
+                    "tags": str(event.get("event_type") or "career_event"),
+                }
+            ],
+        )
+
     def _seed_collection(self) -> None:
         if self._collection.count() > 0:
             return

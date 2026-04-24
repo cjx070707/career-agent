@@ -2,6 +2,7 @@ from collections import Counter
 from typing import Dict, List, Optional, Union
 
 from app.services.application_service import ApplicationService
+from app.services.career_event_service import CareerEventService
 from app.services.interview_service import InterviewService
 from app.services.profile_service import ProfileService
 from app.services.retrieval_service import RetrievalService
@@ -14,11 +15,15 @@ class CareerInsightService:
         application_service: Optional[ApplicationService] = None,
         interview_service: Optional[InterviewService] = None,
         retrieval_service: Optional[RetrievalService] = None,
+        career_event_service: Optional[CareerEventService] = None,
     ) -> None:
         self.profile_service = profile_service or ProfileService()
         self.application_service = application_service or ApplicationService()
         self.interview_service = interview_service or InterviewService()
         self.retrieval_service = retrieval_service or RetrievalService()
+        self.career_event_service = career_event_service or CareerEventService(
+            retrieval_service=self.retrieval_service,
+        )
 
     def get_career_insights(
         self,
@@ -28,6 +33,7 @@ class CareerInsightService:
         safe_limit = max(1, min(int(limit), 50))
         profile = self.profile_service.refresh_from_career_records(user_id)
         self.retrieval_service.upsert_career_profile(user_id=user_id, profile=profile)
+        self.career_event_service.sync_from_career_records(user_id)
         applications = self.application_service.list_applications_by_user(
             user_id=user_id,
             limit=safe_limit,
