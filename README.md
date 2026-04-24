@@ -127,12 +127,18 @@ The `get_career_insights` tool is automatically invoked when the user asks for a
 career status diagnosis that combines profile, application, and interview signals
 (e.g. "结合我的投递和面试反馈，我下一步该准备什么？").
 
-The tool returns a read-only aggregation of:
+The tool refreshes persisted long-term profile fields and returns an aggregation of:
 
 - `profile`: target role, skill keywords, and focus notes
 - `application_summary`: recent application records and status counts
 - `interview_summary`: recent interview records, result counts, and feedback highlights
 - `suggestions`: deterministic next-step suggestions derived from the available data
+
+The refreshed `career_profiles` fields include:
+
+- `application_patterns`
+- `interview_weaknesses`
+- `next_focus_areas`
 
 ### search_jobs tool payload
 

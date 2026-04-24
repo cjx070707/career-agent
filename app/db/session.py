@@ -52,6 +52,9 @@ def init_db(db_path: Optional[str] = None) -> None:
                 target_role_preference TEXT NOT NULL DEFAULT '',
                 skill_keywords TEXT NOT NULL DEFAULT '',
                 career_focus_notes TEXT NOT NULL DEFAULT '',
+                application_patterns TEXT NOT NULL DEFAULT '',
+                interview_weaknesses TEXT NOT NULL DEFAULT '',
+                next_focus_areas TEXT NOT NULL DEFAULT '',
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -87,3 +90,16 @@ def init_db(db_path: Optional[str] = None) -> None:
         }
         if "user_id" not in candidate_columns:
             connection.execute("ALTER TABLE candidates ADD COLUMN user_id TEXT")
+        career_profile_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(career_profiles)").fetchall()
+        }
+        for column in (
+            "application_patterns",
+            "interview_weaknesses",
+            "next_focus_areas",
+        ):
+            if column not in career_profile_columns:
+                connection.execute(
+                    f"ALTER TABLE career_profiles ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                )

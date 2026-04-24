@@ -23,7 +23,7 @@ class CareerInsightService:
         limit: int = 10,
     ) -> Dict[str, Union[Dict, List[str]]]:
         safe_limit = max(1, min(int(limit), 50))
-        profile = self.profile_service.get_profile(user_id)
+        profile = self.profile_service.refresh_from_career_records(user_id)
         applications = self.application_service.list_applications_by_user(
             user_id=user_id,
             limit=safe_limit,

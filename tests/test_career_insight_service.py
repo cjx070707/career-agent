@@ -71,3 +71,29 @@ def test_career_insight_service_returns_sparse_data_suggestions(
     assert insights["application_summary"]["total"] == 0
     assert insights["interview_summary"]["total"] == 0
     assert "先补充投递记录和面试反馈" in " ".join(insights["suggestions"])
+
+
+def test_career_insight_service_refreshes_persisted_profile_signals(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Persisted Insight User",
+        user_id="persisted-insight-user",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Backend Intern",
+        interview_round="tech1",
+        result="rejected",
+        feedback="system design fundamentals",
+    )
+
+    CareerInsightService().get_career_insights(
+        user_id="persisted-insight-user",
+        limit=10,
+    )
+
+    profile = ProfileService().get_profile("persisted-insight-user")
+    assert profile["interview_weaknesses"] == "system design fundamentals"
+    assert profile["next_focus_areas"] == "system design fundamentals"

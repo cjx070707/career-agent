@@ -1,4 +1,8 @@
 from app.services.profile_service import ProfileService
+from app.services.application_service import ApplicationService
+from app.services.candidate_service import CandidateService
+from app.services.interview_service import InterviewService
+from app.db.session import get_connection, init_db
 
 
 def test_profile_service_updates_role_and_skills_from_message(isolated_runtime) -> None:
@@ -78,3 +82,90 @@ def test_augment_job_query_keeps_work_type_signals_for_intern_and_graduate(
     assert "intern" in intern_query.lower()
     assert "internship" in intern_query.lower()
     assert "graduate" in graduate_query.lower()
+
+
+def test_profile_service_refreshes_long_term_profile_from_records(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Long Profile User",
+        user_id="long-profile-user",
+    )
+    ApplicationService().create_application(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Backend Intern",
+        status="applied",
+    )
+    ApplicationService().create_application(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Backend Grad",
+        status="interview",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Backend Grad",
+        interview_round="tech1",
+        result="rejected",
+        feedback="need stronger system design examples",
+    )
+    service = ProfileService()
+
+    profile = service.refresh_from_career_records("long-profile-user")
+
+    assert profile["application_patterns"] == "applied: 1; interview: 1"
+    assert profile["interview_weaknesses"] == "need stronger system design examples"
+    assert profile["next_focus_areas"] == "need stronger system design examples"
+
+
+def test_augment_job_query_includes_persisted_long_term_profile_signals(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Query Profile User",
+        user_id="query-profile-user",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Backend Intern",
+        interview_round="tech1",
+        result="rejected",
+        feedback="system design fundamentals",
+    )
+    service = ProfileService()
+    service.refresh_from_career_records("query-profile-user")
+
+    query = service.augment_job_query("query-profile-user", "帮我找 backend 岗位")
+
+    assert "system design fundamentals" in query
+
+
+def test_init_db_adds_long_term_profile_columns_to_existing_table(
+    isolated_runtime,
+) -> None:
+    db_path = isolated_runtime["db_path"]
+    with get_connection(str(db_path)) as connection:
+        connection.execute("DROP TABLE career_profiles")
+        connection.execute(
+            """
+            CREATE TABLE career_profiles (
+                user_id TEXT PRIMARY KEY,
+                target_role_preference TEXT NOT NULL DEFAULT '',
+                skill_keywords TEXT NOT NULL DEFAULT '',
+                career_focus_notes TEXT NOT NULL DEFAULT '',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+    init_db(str(db_path))
+
+    with get_connection(str(db_path)) as connection:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(career_profiles)").fetchall()
+        }
+    assert {"application_patterns", "interview_weaknesses", "next_focus_areas"} <= columns

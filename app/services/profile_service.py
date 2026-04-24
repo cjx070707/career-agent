@@ -1,3 +1,4 @@
+from collections import Counter
 import re
 from typing import Dict, List
 
@@ -9,7 +10,8 @@ class ProfileService:
         with get_connection() as connection:
             row = connection.execute(
                 """
-                SELECT user_id, target_role_preference, skill_keywords, career_focus_notes
+                SELECT user_id, target_role_preference, skill_keywords, career_focus_notes,
+                       application_patterns, interview_weaknesses, next_focus_areas
                 FROM career_profiles
                 WHERE user_id = ?
                 """,
@@ -21,6 +23,9 @@ class ProfileService:
                 "target_role_preference": "",
                 "skill_keywords": [],
                 "career_focus_notes": "",
+                "application_patterns": "",
+                "interview_weaknesses": "",
+                "next_focus_areas": "",
             }
         keywords = [item for item in row["skill_keywords"].split(",") if item]
         return {
@@ -28,6 +33,9 @@ class ProfileService:
             "target_role_preference": row["target_role_preference"],
             "skill_keywords": keywords,
             "career_focus_notes": row["career_focus_notes"],
+            "application_patterns": row["application_patterns"],
+            "interview_weaknesses": row["interview_weaknesses"],
+            "next_focus_areas": row["next_focus_areas"],
         }
 
     def update_from_message(self, user_id: str, message: str) -> Dict[str, object]:
@@ -84,6 +92,41 @@ class ProfileService:
 
         return self.get_profile(user_id)
 
+    def refresh_from_career_records(self, user_id: str) -> Dict[str, object]:
+        applications = self._list_application_statuses(user_id)
+        feedback_highlights = self._list_interview_feedback(user_id)
+
+        application_patterns = self._format_status_counts(applications)
+        interview_weaknesses = " | ".join(feedback_highlights[:3])
+        next_focus_areas = feedback_highlights[0] if feedback_highlights else ""
+
+        current = self.get_profile(user_id)
+        with get_connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO career_profiles (
+                    user_id, target_role_preference, skill_keywords, career_focus_notes,
+                    application_patterns, interview_weaknesses, next_focus_areas, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    application_patterns = excluded.application_patterns,
+                    interview_weaknesses = excluded.interview_weaknesses,
+                    next_focus_areas = excluded.next_focus_areas,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    user_id,
+                    str(current["target_role_preference"]),
+                    ",".join(current["skill_keywords"]),
+                    str(current["career_focus_notes"]),
+                    application_patterns,
+                    interview_weaknesses,
+                    next_focus_areas,
+                ),
+            )
+
+        return self.get_profile(user_id)
+
     def augment_job_query(self, user_id: str, message: str) -> str:
         profile = self.get_profile(user_id)
         query_parts: List[str] = [message]
@@ -92,6 +135,13 @@ class ProfileService:
             query_parts.append(str(profile["target_role_preference"]))
         if profile["skill_keywords"]:
             query_parts.extend(profile["skill_keywords"][:3])
+        for long_term_signal in (
+            "application_patterns",
+            "interview_weaknesses",
+            "next_focus_areas",
+        ):
+            if profile.get(long_term_signal):
+                query_parts.append(str(profile[long_term_signal]))
         return " ".join(part for part in query_parts if part).strip()
 
     def _extract_skill_keywords(self, message: str) -> List[str]:
@@ -153,3 +203,39 @@ class ProfileService:
                 deduped.append(item)
                 seen.add(item)
         return deduped
+
+    def _list_application_statuses(self, user_id: str) -> List[str]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT a.status
+                FROM applications a
+                JOIN candidates c ON c.id = a.candidate_id
+                WHERE c.user_id = ?
+                ORDER BY a.id DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [str(row["status"]).strip() for row in rows if str(row["status"]).strip()]
+
+    def _list_interview_feedback(self, user_id: str) -> List[str]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT i.feedback
+                FROM interviews i
+                JOIN candidates c ON c.id = i.candidate_id
+                WHERE c.user_id = ?
+                ORDER BY i.id DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [
+            str(row["feedback"]).strip()
+            for row in rows
+            if str(row["feedback"]).strip()
+        ]
+
+    def _format_status_counts(self, statuses: List[str]) -> str:
+        counts = Counter(statuses)
+        return "; ".join(f"{status}: {counts[status]}" for status in sorted(counts))
