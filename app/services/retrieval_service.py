@@ -166,14 +166,28 @@ class RetrievalService:
     def search(self, query: str) -> list[RetrievalResult]:
         return self._search_ranked(query)
 
-    def search_with_reasons(self, query: str) -> list[ReasonedJobHit]:
-        ranked = self._search_ranked(query)
+    def search_with_reasons(
+        self,
+        query: str,
+        filters: Optional[dict] = None,
+    ) -> list[ReasonedJobHit]:
+        ranked = self._search_ranked(query, filters=filters)
         return [self._to_reasoned_hit(query, hit) for hit in ranked]
 
-    def _search_ranked(self, query: str) -> list[RetrievalResult]:
+    def _search_ranked(
+        self,
+        query: str,
+        filters: Optional[dict] = None,
+    ) -> list[RetrievalResult]:
         if not query.strip():
             return []
-        n_results = min(max(self._collection.count(), 3), 10)
+        # When filters are requested we sweep the whole collection so the
+        # post-filter doesn't starve behind a short top-k window. Corpus is
+        # small enough (tens of items) that this stays cheap.
+        if filters:
+            n_results = max(self._collection.count(), 1)
+        else:
+            n_results = min(max(self._collection.count(), 3), 10)
         response = self._collection.query(query_texts=[query], n_results=n_results)
         metadatas = response.get("metadatas", [[]])[0]
         if not metadatas:
@@ -193,7 +207,30 @@ class RetrievalService:
             )
             for metadata in metadatas
         ]
-        return self._rerank(query, results)
+        reranked = self._rerank(query, results)
+        return self._apply_filters(reranked, filters)
+
+    def _apply_filters(
+        self,
+        results: list[RetrievalResult],
+        filters: Optional[dict],
+    ) -> list[RetrievalResult]:
+        if not filters:
+            return results
+        location_q = str(filters.get("location") or "").strip().lower()
+        work_type_q = str(filters.get("work_type") or "").strip().lower()
+        if not location_q and not work_type_q:
+            return results
+        filtered: list[RetrievalResult] = []
+        for result in results:
+            if location_q:
+                if not result.location or location_q not in result.location.lower():
+                    continue
+            if work_type_q:
+                if not result.work_type or work_type_q not in result.work_type.lower():
+                    continue
+            filtered.append(result)
+        return filtered
 
     def _to_reasoned_hit(self, query: str, hit: RetrievalResult) -> ReasonedJobHit:
         # Retrieval owns ranking plus grounded evidence, not final user-facing prose.

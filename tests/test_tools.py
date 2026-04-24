@@ -73,6 +73,37 @@ def test_search_jobs_and_match_tools_return_structured_results(isolated_runtime)
     )
 
 
+def test_search_jobs_tool_forwards_structured_filters(isolated_runtime) -> None:
+    registry = build_default_tool_registry()
+
+    # Sanity: without filters we may see any location.
+    search_result = registry.run(
+        "search_jobs",
+        {
+            "query": "engineer",
+            "filters": {"location": "Sydney", "work_type": "intern"},
+        },
+    )
+
+    assert search_result["ok"] is True
+    assert search_result["data"]
+    for hit in search_result["data"]:
+        location = str(hit.get("location") or "").lower()
+        work_type = str(hit.get("work_type") or "").lower()
+        assert "sydney" in location, f"expected Sydney, got {location}"
+        assert "intern" in work_type, f"expected intern, got {work_type}"
+
+
+def test_search_jobs_tool_without_filters_is_backward_compatible(isolated_runtime) -> None:
+    registry = build_default_tool_registry()
+
+    # Existing call shape (no filters key) must continue to work.
+    result = registry.run("search_jobs", {"query": "python fastapi backend"})
+
+    assert result["ok"] is True
+    assert result["data"]
+
+
 def test_mcp_server_lists_and_calls_tools(isolated_runtime) -> None:
     candidate = CandidateService().create_candidate(name="MCP User")
 

@@ -5,27 +5,38 @@ from app.tools.base import ToolDefinition
 
 def build_job_tools() -> list[ToolDefinition]:
     retrieval_service = RetrievalService()
+
+    def _search(payload: SearchJobsToolInput) -> list[dict]:
+        filters = (
+            payload.filters.model_dump(exclude_none=True)
+            if payload.filters is not None
+            else None
+        )
+        return [
+            {
+                "type": hit.type,
+                "title": hit.title,
+                "snippet": hit.snippet,
+                "company": hit.company,
+                "location": hit.location,
+                "work_type": hit.work_type,
+                "posted_at": hit.posted_at,
+                "url": hit.url,
+                "tags": hit.tags,
+                "matched_terms": hit.matched_terms,
+                "reason": hit.reason,
+            }
+            for hit in retrieval_service.search_with_reasons(
+                payload.query, filters=filters
+            )
+        ]
+
     return [
         ToolDefinition(
             name="search_jobs",
             description="Search jobs using a natural language query.",
             input_model=SearchJobsToolInput,
             # Tool layer transports the structured retrieval payload unchanged.
-            handler=lambda payload: [
-                {
-                    "type": hit.type,
-                    "title": hit.title,
-                    "snippet": hit.snippet,
-                    "company": hit.company,
-                    "location": hit.location,
-                    "work_type": hit.work_type,
-                    "posted_at": hit.posted_at,
-                    "url": hit.url,
-                    "tags": hit.tags,
-                    "matched_terms": hit.matched_terms,
-                    "reason": hit.reason,
-                }
-                for hit in retrieval_service.search_with_reasons(payload.query)
-            ],
+            handler=_search,
         )
     ]

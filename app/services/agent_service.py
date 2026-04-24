@@ -3,6 +3,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from app.llm.client import LLMClient
+from app.routing.filter_extractor import extract_filters
 from app.routing.intent_router import IntentRouter
 from app.schemas.chat import ChatPlan, ChatSource, LLMTrace
 from app.services.candidate_service import CandidateService
@@ -275,7 +276,14 @@ class AgentService:
             if resume_data is not None:
                 query_parts.append(str(resume_data.get("content", "")))
             query = self.profile_service.augment_job_query(user_id, " ".join(query_parts))
-            return {"query": query}
+            # Structured slots come from the user's own message only; resume
+            # text is free-form and would produce noisy location/work_type
+            # signals (e.g., a Melbourne alumnus asking about Sydney jobs).
+            payload: Dict[str, Any] = {"query": query}
+            slot_filters = extract_filters(message)
+            if slot_filters:
+                payload["filters"] = slot_filters
+            return payload
 
         return {}
 

@@ -240,6 +240,31 @@ def _run_expectations(
             want=needles,
         )
 
+    # Stricter variant used for filter/slot enforcement: every source must
+    # match at least one needle. Accepts either a single spec dict or a list
+    # of spec dicts so a case can assert on multiple fields at once.
+    if "source_field_all_contain" in expect:
+        raw_specs = expect["source_field_all_contain"]
+        specs = raw_specs if isinstance(raw_specs, list) else [raw_specs]
+        for spec in specs:
+            field_name = str(spec.get("field") or "")
+            needles = list(spec.get("any") or [])
+            field_values = [str(s.get(field_name) or "") for s in sources]
+            ok = (
+                bool(field_name and needles and sources)
+                and all(
+                    any(needle.lower() in value.lower() for needle in needles)
+                    for value in field_values
+                )
+            )
+            _check(
+                checks,
+                f"source_field_all_contain:{field_name}",
+                ok,
+                got=field_values,
+                want=needles,
+            )
+
     if "llm_trace_allowed" in expect:
         for field_name, allowed in expect["llm_trace_allowed"].items():
             allowed_list = _as_list(allowed)

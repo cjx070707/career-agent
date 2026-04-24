@@ -111,6 +111,30 @@ def test_agent_service_degrades_gracefully_when_plan_step_prerequisites_missing(
     assert isinstance(result.answer, str) and result.answer
 
 
+def test_agent_service_applies_structured_filters_from_user_message(
+    isolated_runtime,
+) -> None:
+    # Router hits job_search; _build_tool_payload should extract location +
+    # work_type slots from the natural-language message and pass them as
+    # filters into the retrieval layer, so every returned source respects
+    # the constraints.
+    fake_llm = FakeLLMClient()
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("filter-user", "帮我找 Sydney 的 intern 岗位")
+
+    assert fake_llm.called is False
+    assert result.plan is not None
+    assert result.plan.task_type == "job_search"
+    assert result.tool_trace == ["search_jobs"]
+    assert result.sources, "filter query should still return some sources"
+    for source in result.sources:
+        location = str(getattr(source, "location", "") or "").lower()
+        work_type = str(getattr(source, "work_type", "") or "").lower()
+        assert "sydney" in location, f"expected Sydney, got {location!r}"
+        assert "intern" in work_type, f"expected intern, got {work_type!r}"
+
+
 def test_agent_service_search_jobs_uses_summarize_job_search(isolated_runtime) -> None:
     fake_llm = FakeLLMClient()
     CandidateService().create_candidate(name="Search Summarizer User")

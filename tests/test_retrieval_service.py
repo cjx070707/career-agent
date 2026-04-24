@@ -285,6 +285,83 @@ def test_retrieval_service_uses_job_postings_file_setting(tmp_path: Path) -> Non
     assert results[0].title == "Custom USYD Role"
 
 
+def test_search_with_reasons_filter_by_location_only(tmp_path: Path) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_filter_loc",
+        collection_name="filter_loc_jobs",
+    )
+
+    hits = service.search_with_reasons(
+        "data analyst", filters={"location": "Melbourne"}
+    )
+
+    assert hits
+    for hit in hits:
+        assert hit.location is not None
+        assert "melbourne" in hit.location.lower()
+
+
+def test_search_with_reasons_filter_by_work_type_only(tmp_path: Path) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_filter_wt",
+        collection_name="filter_wt_jobs",
+    )
+
+    hits = service.search_with_reasons(
+        "engineer", filters={"work_type": "intern"}
+    )
+
+    assert hits
+    for hit in hits:
+        assert hit.work_type is not None
+        assert "intern" in hit.work_type.lower()
+
+
+def test_search_with_reasons_filter_by_location_and_work_type(tmp_path: Path) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_filter_both",
+        collection_name="filter_both_jobs",
+    )
+
+    hits = service.search_with_reasons(
+        "data", filters={"location": "Sydney", "work_type": "intern"}
+    )
+
+    assert hits
+    for hit in hits:
+        assert hit.location is not None and "sydney" in hit.location.lower()
+        assert hit.work_type is not None and "intern" in hit.work_type.lower()
+
+
+def test_search_with_reasons_empty_filters_is_passthrough(tmp_path: Path) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_filter_empty",
+        collection_name="filter_empty_jobs",
+    )
+
+    without = service.search_with_reasons("backend fastapi python")
+    with_empty = service.search_with_reasons(
+        "backend fastapi python", filters={}
+    )
+    with_none = service.search_with_reasons("backend fastapi python", filters=None)
+
+    assert [h.title for h in without] == [h.title for h in with_empty]
+    assert [h.title for h in without] == [h.title for h in with_none]
+
+
+def test_search_with_reasons_filter_returns_empty_when_no_match(tmp_path: Path) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_filter_nomatch",
+        collection_name="filter_nomatch_jobs",
+    )
+
+    hits = service.search_with_reasons(
+        "engineer", filters={"location": "Auckland"}
+    )
+
+    assert hits == []
+
+
 def test_reasoned_hit_preserves_structured_metadata(tmp_path: Path) -> None:
     custom_payload = """
 [
