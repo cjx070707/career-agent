@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from hashlib import md5
@@ -74,6 +75,9 @@ class ReasonedJobHit:
 
 
 _MAX_MATCHED_TERMS = 3
+_BM25_K1 = 1.5
+_BM25_B = 0.75
+_RRF_K = 60
 _GENERIC_MATCH_TERMS: frozenset[str] = frozenset(
     {
         "a",
@@ -188,27 +192,21 @@ class RetrievalService:
             n_results = max(self._collection.count(), 1)
         else:
             n_results = min(max(self._collection.count(), 3), 10)
-        response = self._collection.query(query_texts=[query], n_results=n_results)
-        metadatas = response.get("metadatas", [[]])[0]
-        if not metadatas:
+        vector_results = self._vector_search(query, n_results=n_results)
+        lexical_candidates = self._all_indexed_results()
+        lexical_results = self._bm25_rank(query, lexical_candidates)[:n_results]
+        results = self._rrf_merge(
+            vector_results=vector_results,
+            lexical_results=lexical_results,
+        )
+        if not results:
             return []
 
-        results = [
-            RetrievalResult(
-                type=metadata["type"],
-                title=metadata["title"],
-                snippet=metadata["snippet"],
-                company=metadata.get("company") or None,
-                location=metadata.get("location") or None,
-                work_type=metadata.get("work_type") or None,
-                posted_at=metadata.get("posted_at") or None,
-                url=metadata.get("url") or None,
-                tags=self._parse_tags(metadata.get("tags") or ""),
-            )
-            for metadata in metadatas
-        ]
         reranked = self._rerank(query, results)
-        return self._apply_filters(reranked, filters)
+        filtered = self._apply_filters(reranked, filters)
+        if filters:
+            return filtered
+        return filtered[:n_results]
 
     def _apply_filters(
         self,
@@ -370,6 +368,127 @@ class RetrievalService:
             ],
         )
 
+    def _vector_search(
+        self,
+        query: str,
+        n_results: int,
+    ) -> list[RetrievalResult]:
+        response = self._collection.query(query_texts=[query], n_results=n_results)
+        metadatas = response.get("metadatas", [[]])[0]
+        return [self._metadata_to_result(metadata) for metadata in metadatas]
+
+    def _all_indexed_results(self) -> list[RetrievalResult]:
+        response = self._collection.get(include=["metadatas"])
+        metadatas = response.get("metadatas", [])
+        return [self._metadata_to_result(metadata) for metadata in metadatas]
+
+    def _metadata_to_result(self, metadata: dict) -> RetrievalResult:
+        return RetrievalResult(
+            type=metadata["type"],
+            title=metadata["title"],
+            snippet=metadata["snippet"],
+            company=metadata.get("company") or None,
+            location=metadata.get("location") or None,
+            work_type=metadata.get("work_type") or None,
+            posted_at=metadata.get("posted_at") or None,
+            url=metadata.get("url") or None,
+            tags=self._parse_tags(metadata.get("tags") or ""),
+        )
+
+    def _bm25_rank(
+        self,
+        query: str,
+        candidates: list[RetrievalResult],
+    ) -> list[RetrievalResult]:
+        query_tokens = self._ordered_tokens(query)
+        if not query_tokens or not candidates:
+            return candidates
+
+        doc_tokens = [
+            self._ordered_document_tokens(candidate) for candidate in candidates
+        ]
+        avg_doc_length = sum(len(tokens) for tokens in doc_tokens) / len(doc_tokens)
+        if avg_doc_length == 0:
+            return candidates
+
+        document_frequency: dict[str, int] = {}
+        for tokens in doc_tokens:
+            for token in set(tokens):
+                document_frequency[token] = document_frequency.get(token, 0) + 1
+
+        scored: list[tuple[float, int, RetrievalResult]] = []
+        zero_score: list[tuple[int, RetrievalResult]] = []
+        total_documents = len(candidates)
+        for index, candidate in enumerate(candidates):
+            tokens = doc_tokens[index]
+            score = self._bm25_score(
+                query_tokens=query_tokens,
+                doc_tokens=tokens,
+                document_frequency=document_frequency,
+                total_documents=total_documents,
+                avg_doc_length=avg_doc_length,
+            )
+            if score > 0:
+                scored.append((score, index, candidate))
+            else:
+                zero_score.append((index, candidate))
+
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return [candidate for _, _, candidate in scored] + [
+            candidate for _, candidate in zero_score
+        ]
+
+    def _bm25_score(
+        self,
+        query_tokens: list[str],
+        doc_tokens: list[str],
+        document_frequency: dict[str, int],
+        total_documents: int,
+        avg_doc_length: float,
+    ) -> float:
+        if not doc_tokens:
+            return 0.0
+        term_frequency: dict[str, int] = {}
+        for token in doc_tokens:
+            term_frequency[token] = term_frequency.get(token, 0) + 1
+
+        score = 0.0
+        doc_length = len(doc_tokens)
+        for token in query_tokens:
+            frequency = term_frequency.get(token, 0)
+            if frequency == 0:
+                continue
+            df = document_frequency.get(token, 0)
+            idf = math.log(1 + (total_documents - df + 0.5) / (df + 0.5))
+            denominator = frequency + _BM25_K1 * (
+                1 - _BM25_B + _BM25_B * (doc_length / avg_doc_length)
+            )
+            score += idf * ((frequency * (_BM25_K1 + 1)) / denominator)
+        return score
+
+    def _rrf_merge(
+        self,
+        vector_results: list[RetrievalResult],
+        lexical_results: list[RetrievalResult],
+    ) -> list[RetrievalResult]:
+        scores: dict[tuple[str, str, str], float] = {}
+        results_by_key: dict[tuple[str, str, str], RetrievalResult] = {}
+        first_seen: dict[tuple[str, str, str], int] = {}
+
+        for ranking in (vector_results, lexical_results):
+            for rank, result in enumerate(ranking, start=1):
+                key = self._result_key(result)
+                if key not in results_by_key:
+                    results_by_key[key] = result
+                    first_seen[key] = len(first_seen)
+                scores[key] = scores.get(key, 0.0) + (1 / (_RRF_K + rank))
+
+        ordered_keys = sorted(
+            scores,
+            key=lambda key: (-scores[key], first_seen[key]),
+        )
+        return [results_by_key[key] for key in ordered_keys]
+
     def _rerank(
         self,
         query: str,
@@ -406,6 +525,15 @@ class RetrievalService:
             seen.add(token)
             ordered_tokens.append(token)
         return ordered_tokens
+
+    def _ordered_document_tokens(self, hit: RetrievalResult) -> list[str]:
+        return re.findall(
+            r"[a-zA-Z0-9]+",
+            f"{hit.title} {hit.snippet} {' '.join(hit.tags)}".lower(),
+        )
+
+    def _result_key(self, result: RetrievalResult) -> tuple[str, str, str]:
+        return (result.type, result.title, result.snippet)
 
     def _resolve_default_persist_directory(self) -> Path:
         configured = Path(settings.chroma_persist_directory)

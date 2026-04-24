@@ -150,6 +150,10 @@ indexed as `career_event` retrieval evidence; extraction failures degrade to no-
 
 ### search_jobs tool payload
 
+`search_jobs` uses hybrid retrieval: ChromaDB vector recall is combined with
+BM25 lexical recall through Reciprocal Rank Fusion (RRF), then the existing
+rerank and structured filters are applied.
+
 The tool response payload (visible via `tool_trace` + `sources`) carries:
 
 - `type`, `title`, `snippet`: same as source

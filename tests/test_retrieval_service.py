@@ -212,6 +212,109 @@ def test_rerank_keeps_zero_score_candidates_after_scored_block_in_original_order
     ]
 
 
+def test_bm25_rank_prioritizes_exact_lexical_matches(tmp_path: Path) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_bm25_rank",
+        collection_name="bm25_rank_jobs",
+    )
+    candidates = [
+        RetrievalResult(
+            type="job_posting",
+            title="Generic Backend Engineer",
+            snippet="Backend APIs, cloud services, and platform engineering.",
+        ),
+        RetrievalResult(
+            type="job_posting",
+            title="Payments Reliability Intern",
+            snippet="Stripe webhook reconciliation, ledger repair, and payment event debugging.",
+        ),
+        RetrievalResult(
+            type="job_posting",
+            title="Frontend Engineer Intern",
+            snippet="React, TypeScript, component libraries, and UI implementation.",
+        ),
+    ]
+
+    ranked = service._bm25_rank("stripe webhook reconciliation", candidates)
+
+    assert [result.title for result in ranked[:2]] == [
+        "Payments Reliability Intern",
+        "Generic Backend Engineer",
+    ]
+
+
+def test_rrf_merge_combines_vector_and_bm25_rankings_without_duplicates(
+    tmp_path: Path,
+) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_rrf_merge",
+        collection_name="rrf_merge_jobs",
+    )
+    semantic_hit = RetrievalResult(
+        type="job_posting",
+        title="AI Platform Backend Engineer",
+        snippet="Backend services for LLM products and retrieval systems.",
+    )
+    lexical_hit = RetrievalResult(
+        type="job_posting",
+        title="Payments Reliability Intern",
+        snippet="Stripe webhook reconciliation and payment event debugging.",
+    )
+    shared_hit = RetrievalResult(
+        type="job_posting",
+        title="Backend Engineer Intern",
+        snippet="Python, FastAPI, REST APIs, SQL, and basic cloud exposure.",
+    )
+
+    merged = service._rrf_merge(
+        vector_results=[shared_hit, semantic_hit],
+        lexical_results=[lexical_hit, shared_hit],
+    )
+
+    assert merged[0].title == "Backend Engineer Intern"
+    assert {result.title for result in merged} == {
+        "AI Platform Backend Engineer",
+        "Payments Reliability Intern",
+        "Backend Engineer Intern",
+    }
+    assert [result.title for result in merged].count("Backend Engineer Intern") == 1
+
+
+def test_search_includes_bm25_candidate_when_vector_window_misses_it(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_bm25_window",
+        collection_name="bm25_window_jobs",
+    )
+    semantic_hit = RetrievalResult(
+        type="job_posting",
+        title="Generic Backend Engineer",
+        snippet="Backend APIs, cloud services, and platform engineering.",
+    )
+    exact_hit = RetrievalResult(
+        type="job_posting",
+        title="Payments Reliability Intern",
+        snippet="Stripe webhook reconciliation, ledger repair, and payment event debugging.",
+    )
+    monkeypatch.setattr(
+        service,
+        "_vector_search",
+        lambda query, n_results: [semantic_hit],
+    )
+    monkeypatch.setattr(
+        service,
+        "_all_indexed_results",
+        lambda: [semantic_hit, exact_hit],
+    )
+
+    results = service.search("stripe webhook reconciliation")
+
+    assert results
+    assert results[0].title == "Payments Reliability Intern"
+
+
 def test_retrieval_service_builds_persistent_chroma_collection(tmp_path: Path) -> None:
     service = RetrievalService(
         persist_directory=tmp_path / "chroma",
