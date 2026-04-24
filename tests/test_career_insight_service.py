@@ -3,6 +3,7 @@ from app.services.candidate_service import CandidateService
 from app.services.career_insight_service import CareerInsightService
 from app.services.interview_service import InterviewService
 from app.services.profile_service import ProfileService
+from app.services.retrieval_service import RetrievalService
 
 
 def test_career_insight_service_aggregates_profile_applications_and_interviews(
@@ -97,3 +98,30 @@ def test_career_insight_service_refreshes_persisted_profile_signals(
     profile = ProfileService().get_profile("persisted-insight-user")
     assert profile["interview_weaknesses"] == "system design fundamentals"
     assert profile["next_focus_areas"] == "system design fundamentals"
+
+
+def test_career_insight_service_indexes_refreshed_profile_for_retrieval(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Indexed Insight User",
+        user_id="indexed-insight-user",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Backend Intern",
+        interview_round="tech1",
+        result="rejected",
+        feedback="system design fundamentals",
+    )
+
+    CareerInsightService().get_career_insights(
+        user_id="indexed-insight-user",
+        limit=10,
+    )
+
+    results = RetrievalService().search("system design fundamentals")
+    assert results
+    assert results[0].type == "career_profile"
+    assert "system design fundamentals" in results[0].snippet

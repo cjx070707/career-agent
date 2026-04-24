@@ -140,6 +140,9 @@ The refreshed `career_profiles` fields include:
 - `interview_weaknesses`
 - `next_focus_areas`
 
+After refresh, the career profile summary is indexed into retrieval as a
+`career_profile` source so later answers can cite profile evidence.
+
 ### search_jobs tool payload
 
 The tool response payload (visible via `tool_trace` + `sources`) carries:

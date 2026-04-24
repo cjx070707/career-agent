@@ -398,3 +398,28 @@ def test_reasoned_hit_preserves_structured_metadata(tmp_path: Path) -> None:
     assert hit.posted_at == "2026-04-01"
     assert hit.url == "https://usyd-careerhub.internal/job/structured-role"
     assert hit.tags == ["backend", "python", "fastapi"]
+
+
+def test_retrieval_service_indexes_career_profile_source(tmp_path: Path) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_career_profile",
+        collection_name="career_profile_source",
+    )
+
+    service.upsert_career_profile(
+        user_id="profile-user",
+        profile={
+            "target_role_preference": "backend",
+            "skill_keywords": ["python", "fastapi"],
+            "application_patterns": "applied: 1; interview: 1",
+            "interview_weaknesses": "system design fundamentals",
+            "next_focus_areas": "system design fundamentals",
+        },
+    )
+
+    results = service.search("system design fundamentals")
+
+    assert results
+    assert results[0].type == "career_profile"
+    assert results[0].title == "Career Profile"
+    assert "system design fundamentals" in results[0].snippet

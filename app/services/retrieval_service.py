@@ -299,6 +299,28 @@ class RetrievalService:
             ],
         )
 
+    def upsert_career_profile(self, user_id: str, profile: dict) -> None:
+        snippet = self._career_profile_snippet(profile)
+        if not snippet:
+            return
+        self._collection.upsert(
+            ids=[f"career-profile-{user_id}"],
+            documents=[snippet],
+            metadatas=[
+                {
+                    "type": "career_profile",
+                    "title": "Career Profile",
+                    "snippet": snippet,
+                    "company": "",
+                    "location": "",
+                    "work_type": "",
+                    "posted_at": "",
+                    "url": "",
+                    "tags": "career_profile",
+                }
+            ],
+        )
+
     def _seed_collection(self) -> None:
         if self._collection.count() > 0:
             return
@@ -389,3 +411,22 @@ class RetrievalService:
         if not text:
             return []
         return [item.strip() for item in text.split(",") if item.strip()]
+
+    def _career_profile_snippet(self, profile: dict) -> str:
+        parts: list[str] = []
+        role = str(profile.get("target_role_preference") or "").strip()
+        if role:
+            parts.append(f"Target role: {role}")
+        skills = profile.get("skill_keywords") or []
+        if skills:
+            parts.append("Skills: " + ", ".join(str(item) for item in skills))
+        for key, label in (
+            ("career_focus_notes", "Focus notes"),
+            ("application_patterns", "Application patterns"),
+            ("interview_weaknesses", "Interview weaknesses"),
+            ("next_focus_areas", "Next focus areas"),
+        ):
+            value = str(profile.get(key) or "").strip()
+            if value:
+                parts.append(f"{label}: {value}")
+        return ". ".join(parts)

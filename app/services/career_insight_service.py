@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Union
 from app.services.application_service import ApplicationService
 from app.services.interview_service import InterviewService
 from app.services.profile_service import ProfileService
+from app.services.retrieval_service import RetrievalService
 
 
 class CareerInsightService:
@@ -12,10 +13,12 @@ class CareerInsightService:
         profile_service: Optional[ProfileService] = None,
         application_service: Optional[ApplicationService] = None,
         interview_service: Optional[InterviewService] = None,
+        retrieval_service: Optional[RetrievalService] = None,
     ) -> None:
         self.profile_service = profile_service or ProfileService()
         self.application_service = application_service or ApplicationService()
         self.interview_service = interview_service or InterviewService()
+        self.retrieval_service = retrieval_service or RetrievalService()
 
     def get_career_insights(
         self,
@@ -24,6 +27,7 @@ class CareerInsightService:
     ) -> Dict[str, Union[Dict, List[str]]]:
         safe_limit = max(1, min(int(limit), 50))
         profile = self.profile_service.refresh_from_career_records(user_id)
+        self.retrieval_service.upsert_career_profile(user_id=user_id, profile=profile)
         applications = self.application_service.list_applications_by_user(
             user_id=user_id,
             limit=safe_limit,

@@ -94,6 +94,21 @@ class PlannerRequestingMissingCandidateLLM(FakeLLMClient):
         }
 
 
+class RetrievalOnlyLLM(FakeLLMClient):
+    def generate_plan(self, **kwargs):
+        self.called = True
+        self.last_plan_source = "model"
+        return {
+            "task_type": "job_search",
+            "reason": "retrieve evidence without tool execution",
+            "steps": [],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": None,
+            "planner_source": "model",
+        }
+
+
 def test_agent_service_degrades_gracefully_when_plan_step_prerequisites_missing(
     isolated_runtime,
 ) -> None:
@@ -228,3 +243,31 @@ def test_chat_routes_to_career_insights_tool(isolated_runtime) -> None:
     }
     assert "下一步" in result.answer
     assert "system design" in result.answer
+
+
+def test_agent_retrieval_can_use_indexed_career_profile_source(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Indexed Profile User",
+        user_id="indexed-profile-user",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Backend Intern",
+        interview_round="tech1",
+        result="rejected",
+        feedback="system design fundamentals",
+    )
+    AgentService(llm_client=FakeLLMClient()).respond(
+        "indexed-profile-user",
+        "结合我的投递和面试反馈，我下一步该准备什么？",
+    )
+    service = AgentService(llm_client=RetrievalOnlyLLM())
+
+    result = service.respond("indexed-profile-user", "system design fundamentals")
+
+    assert result.sources
+    assert result.sources[0].type == "career_profile"
+    assert "system design fundamentals" in result.sources[0].snippet
