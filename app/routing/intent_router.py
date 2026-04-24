@@ -134,6 +134,33 @@ class IntentRouter:
                 "planner_source": "router",
             }
 
+        has_application_signal = any(
+            marker in message or marker in lowered_message
+            for marker in (
+                "投递",
+                "申请",
+                "投了",
+                "申请了",
+                "application",
+                "applications",
+                "applied",
+            )
+        )
+        has_application_history_signal = any(
+            marker in message or marker in lowered_message
+            for marker in ("最近", "记录", "状态", "进展", "history", "哪些")
+        )
+        if has_application_signal and has_application_history_signal:
+            return {
+                "task_type": "application_history",
+                "reason": "这是投递记录查询问题，直接读取最近投递历史即可。",
+                "steps": keep_available(["get_applications"]),
+                "needs_more_context": "get_applications" not in tools,
+                "missing_context": [],
+                "follow_up_question": None,
+                "planner_source": "router",
+            }
+
         if has_job_search_signal:
             reason_parts = ["这是岗位搜索问题"]
             if profile_role:

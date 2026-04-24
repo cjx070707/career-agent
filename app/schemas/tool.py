@@ -11,6 +11,11 @@ class ResumeByIdToolInput(BaseModel):
     resume_id: int = Field(..., gt=0)
 
 
+class ApplicationsByUserToolInput(BaseModel):
+    user_id: str = Field(..., min_length=1)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
 class SearchJobsFilters(BaseModel):
     """Structured slots forwarded to the retrieval layer.
 

@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 
+from app.tools.application_tools import build_application_tools
 from app.tools.base import ToolDefinition, ToolResult
 from app.tools.candidate_tools import build_candidate_tools
 from app.tools.job_tools import build_job_tools
@@ -57,6 +58,7 @@ def build_default_tool_registry() -> ToolRegistry:
     tools: List[ToolDefinition] = []
     tools.extend(build_candidate_tools())
     tools.extend(build_resume_tools())
+    tools.extend(build_application_tools())
     tools.extend(build_job_tools())
     tools.extend(build_match_tools())
     return ToolRegistry(tools)

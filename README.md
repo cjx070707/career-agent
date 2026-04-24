@@ -72,7 +72,38 @@ The Stage B `/chat` contract is frozen at these fields. The demo only reads thes
   - `job_search_summary_source`: `"model"` / `"fallback"` / `"not_used"`
   - `generate_source`: `"model"` / `"fallback"` / `"not_used"`
 
-The `search_jobs` tool payload (visible via `tool_trace` + `sources`) carries:
+The `search_jobs` tool accepts:
+
+- `query`: string, required — natural language search text
+- `filters`: optional object — structured slots extracted from the user message
+  - `location`: string | null (e.g. `"Sydney"`, `"Melbourne"`, `"Remote (AU)"`)
+  - `work_type`: string | null (e.g. `"intern"`, `"graduate"`, `"fulltime"`, `"parttime"`)
+
+When filters are present, the retrieval layer does a full-collection sweep and
+applies case-insensitive substring matching on job metadata **after** reranking,
+so results always satisfy the requested constraints.
+
+### Application Records API
+
+`POST /applications` — create an application record:
+
+- `candidate_id`: int, required
+- `company`: string, required
+- `job_title`: string, required
+- `status`: string, required (e.g. `"applied"`, `"interviewing"`, `"offered"`, `"rejected"`)
+- `note`: string, optional
+
+`GET /applications?candidate_id={id}&limit={n}` — list applications for a candidate.
+
+`PATCH /applications/{application_id}` — update status and/or note.
+
+The `get_applications` tool is automatically invoked when the user asks about their
+application history (e.g. "我最近投了哪些岗位？"). Results appear in `sources[]` with
+`type="application"`.
+
+### search_jobs tool payload
+
+The tool response payload (visible via `tool_trace` + `sources`) carries:
 
 - `type`, `title`, `snippet`: same as source
 - `company`, `location`, `work_type`, `posted_at`, `url`, `tags`: structured job metadata
@@ -114,14 +145,14 @@ for planning and job-search summarization.
 
 ## Test
 
-Focused Stage B verification:
-
-```bash
-python3 -m pytest tests/test_stage_b_contracts.py tests/test_retrieval_service.py tests/test_tools.py tests/test_app.py tests/test_agent_service.py tests/test_llm_client.py -q
-```
-
 Full suite without live model dependencies:
 
 ```bash
 env -u OPENAI_API_KEY -u OPENAI_BASE_URL -u DEFAULT_MODEL -u PLANNER_API_KEY -u PLANNER_BASE_URL -u PLANNER_MODEL python3 -m pytest -q
+```
+
+Eval harness against a running server (16 cases, includes filter constraint assertions):
+
+```bash
+python3 evals/run_eval.py --base-url http://127.0.0.1:8000
 ```

@@ -10,6 +10,7 @@ from app.routing.intent_router import IntentRouter
 ALL_TOOLS = [
     "get_candidate_profile",
     "get_resume_by_id",
+    "get_applications",
     "search_jobs",
     "match_resume_to_jobs",
 ]
@@ -74,3 +75,13 @@ def test_career_planning_question_falls_through_to_planner() -> None:
 
     assert _route(router, "我 USYD CS 大三想进 AI 方向，现在该怎么准备") is None
     assert _route(router, "有 Atlassian 的 grad program 吗") is None
+
+
+def test_application_history_routes_to_get_applications() -> None:
+    router = IntentRouter()
+
+    plan = _route(router, "我最近投了哪些岗位？")
+    assert plan is not None
+    assert plan["task_type"] == "application_history"
+    assert plan["steps"] == ["get_applications"]
+    assert plan["planner_source"] == "router"

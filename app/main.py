@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.db.session import init_db
+from app.api.applications import router as applications_router
 from app.api.candidates import router as candidates_router
 from app.api.chat import router as chat_router
 from app.api.health import router as health_router
@@ -17,6 +18,7 @@ init_db()
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 app.include_router(health_router)
 app.include_router(chat_router)
+app.include_router(applications_router)
 app.include_router(candidates_router)
 app.include_router(jobs_router)
 app.include_router(resumes_router)

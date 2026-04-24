@@ -11,6 +11,7 @@ def test_default_tool_registry_exposes_core_tool_names(isolated_runtime) -> None
     assert registry.list_tool_names() == [
         "get_candidate_profile",
         "get_resume_by_id",
+        "get_applications",
         "search_jobs",
         "match_resume_to_jobs",
     ]
@@ -117,3 +118,31 @@ def test_mcp_server_lists_and_calls_tools(isolated_runtime) -> None:
     assert result["ok"] is True
     assert result["tool_name"] == "get_candidate_profile"
     assert result["data"]["name"] == "MCP User"
+
+
+def test_get_applications_tool_returns_user_history(isolated_runtime) -> None:
+    candidate = CandidateService().create_candidate(name="Apply User", user_id="apply-user")
+    from app.services.application_service import ApplicationService
+
+    service = ApplicationService()
+    service.create_application(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Data Analyst Intern",
+        status="applied",
+    )
+    service.create_application(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Backend Intern",
+        status="interview",
+    )
+    registry = build_default_tool_registry()
+
+    result = registry.run("get_applications", {"user_id": "apply-user", "limit": 10})
+
+    assert result["ok"] is True
+    assert result["data"]
+    assert len(result["data"]) == 2
+    assert result["data"][0]["company"] == "Atlassian"
+    assert result["data"][0]["status"] == "interview"

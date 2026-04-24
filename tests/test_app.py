@@ -8,6 +8,7 @@ from app.services.candidate_service import CandidateService
 from app.services.job_service import JobService
 from app.services.retrieval_service import RetrievalService
 from app.services.resume_service import ResumeService
+from app.services.application_service import ApplicationService
 
 
 client = TestClient(app)
@@ -140,6 +141,39 @@ def test_jobs_endpoint_auto_indexes_new_jobs(isolated_runtime) -> None:
 
     assert results
     assert results[0].title == "Chroma Search Backend Engineer"
+
+
+def test_applications_endpoint_create_list_and_update(isolated_runtime) -> None:
+    candidate = CandidateService().create_candidate(name="App User", user_id="app-user")
+    create_response = client.post(
+        "/applications",
+        json={
+            "candidate_id": candidate["id"],
+            "company": "Canva",
+            "job_title": "Data Analyst Intern",
+            "status": "applied",
+            "note": "resume submitted",
+        },
+    )
+    list_response = client.get("/applications", params={"user_id": "app-user"})
+    patch_response = client.patch(
+        f"/applications/{create_response.json()['id']}",
+        json={"status": "interview", "note": "HR screening passed"},
+    )
+    list_after_patch = client.get("/applications", params={"user_id": "app-user"})
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["company"] == "Canva"
+    assert created["job_title"] == "Data Analyst Intern"
+    assert created["status"] == "applied"
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+    assert list_response.json()[0]["company"] == "Canva"
+    assert patch_response.status_code == 200
+    assert patch_response.json()["status"] == "interview"
+    assert list_after_patch.status_code == 200
+    assert list_after_patch.json()[0]["status"] == "interview"
 
 
 def test_resumes_endpoint_reads_from_sqlite(isolated_runtime) -> None:
@@ -460,3 +494,27 @@ def test_chat_does_not_borrow_other_users_resume(isolated_runtime) -> None:
     assert body["plan"]["needs_more_context"] is True
     assert body["plan"]["missing_context"] == ["resume"]
     assert "简历" in body["answer"]
+
+
+def test_chat_routes_to_application_history_tool(isolated_runtime) -> None:
+    candidate = CandidateService().create_candidate(name="History User", user_id="history-user")
+    ApplicationService().create_application(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Grad Program",
+        status="applied",
+    )
+
+    response = client.post(
+        "/chat",
+        json={"user_id": "history-user", "message": "我最近投了哪些岗位？"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tool_used"] == "get_applications"
+    assert body["plan"]["task_type"] == "application_history"
+    assert body["tool_trace"] == ["get_applications"]
+    assert body["sources"]
+    assert body["sources"][0]["type"] == "application"
+    assert "Atlassian" in body["answer"]
