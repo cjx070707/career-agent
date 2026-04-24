@@ -617,3 +617,59 @@ def test_chat_routes_to_career_insights_tool(isolated_runtime) -> None:
     }
     assert "下一步" in body["answer"]
     assert "system design" in body["answer"]
+
+
+def test_chat_career_memory_chain_surfaces_event_evidence(isolated_runtime) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Memory Chain User",
+        user_id="memory-chain-user",
+    )
+    ApplicationService().create_application(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Backend Intern",
+        status="applied",
+        note="resume submitted",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Backend Grad",
+        interview_round="tech1",
+        result="rejected",
+        feedback="system design fundamentals",
+    )
+
+    first_response = client.post(
+        "/chat",
+        json={
+            "user_id": "memory-chain-user",
+            "message": "结合我的投递和面试反馈，我下一步该准备什么？",
+        },
+    )
+    assert first_response.status_code == 200
+    first_body = first_response.json()
+    assert first_body["tool_used"] == "get_career_insights"
+    assert first_body["plan"]["task_type"] == "career_insights"
+    assert first_body["tool_trace"] == ["get_career_insights"]
+
+    second_response = client.post(
+        "/chat",
+        json={
+            "user_id": "memory-chain-user",
+            "message": "system design fundamentals job evidence",
+        },
+    )
+
+    assert second_response.status_code == 200
+    second_body = second_response.json()
+    assert second_body["sources"]
+    event_sources = [
+        source for source in second_body["sources"] if source["type"] == "career_event"
+    ]
+    assert event_sources
+    assert "Atlassian" in event_sources[0]["title"]
+    assert all(
+        term in str(event_sources[0].get("snippet", ""))
+        for term in ("system", "design", "fundamentals")
+    )
