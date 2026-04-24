@@ -21,16 +21,16 @@
 
 **用词注意：** 说"双层"不说"分层"（Hierarchical Memory 有严格学术定义，指 MemGPT 式 main/external 分层，我们的形态是多实体分库，不是同一实体的分级缓存）
 
-## 条 2｜模块化 MCP 工具层
+## 条 2｜MCP-ready 模块化工具层
 
-> 基于 MCP 协议暴露候选人档案、简历、岗位、投递记录、面试反馈五类业务工具，Agent 通过 function-calling 自动选择调用；支持外部 MCP 客户端（Cursor / Claude Desktop 等）直接接入，形成可独立复用的工具层。
+> 设计 MCP-ready 模块化工具层，按业务域封装候选人档案、简历、岗位检索、投递记录、面试反馈与职业画像工具，统一通过 Pydantic schema + ToolRegistry 声明式注册；Agent 通过 Router/Planner 自动选择调用，形成可复用、可扩展、未来可薄适配为 MCP Server 的工具边界。
 
 **面试验收：**
-- 能用 Cursor / Claude Desktop / 任意 MCP 客户端连进来调用一个工具
-- 能说清"MCP 协议"和"function-calling"的区别（MCP 是工具暴露协议，function-calling 是 LLM 调用协议）
-- 能解释工具注册是声明式的（Pydantic schema + ToolRegistry）
+- 能解释工具注册是声明式的（Pydantic schema + ToolRegistry），新增工具不需要改 Agent 主流程
+- 能演示 Router/Planner 自动选择 `search_jobs`、`get_applications`、`get_interview_feedback`、`get_career_insights` 等工具
+- 能说清"MCP-ready 工具模块化"和"真正 MCP 协议接入"的区别：当前主线先稳定内部工具边界，外部 MCP client 接入属于可选薄适配
 
-**用词注意：** 不说"模块化 MCP Server"（模糊），说"基于 MCP 协议暴露 X 类工具"（精确）
+**用词注意：** 当前不要说"已接入 MCP 协议"或"外部 MCP 客户端可直接调用"，除非真的实现 MCP Server；可以说"MCP-ready 工具模块化"或"具备 MCP Server 薄适配边界"。真正 MCP Server 属于未来可选协议适配，不是当前产品主链路。
 
 ## 条 3｜双层决策 + 可观测规划
 
@@ -68,7 +68,7 @@
 
 ## 条 6｜工程基建与评测
 
-> FastAPI + React 前后端分离 + ToolRegistry 声明式工具注册（Pydantic schema + MCP 导出）；自建 evals 评测框架覆盖 16+ 回归用例（路由 / 规划 / 答案质量 / 结构化字段约束），支撑版本迭代的可量化对比。
+> FastAPI + React 前后端分离 + ToolRegistry 声明式工具注册（Pydantic schema + metadata export）；自建 evals 评测框架覆盖 16+ 回归用例（路由 / 规划 / 答案质量 / 结构化字段约束），支撑版本迭代的可量化对比。
 
 **面试验收：**
 - 能跑一遍 eval harness 并解读报告
