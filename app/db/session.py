@@ -66,6 +66,19 @@ def init_db(db_path: Optional[str] = None) -> None:
                 last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(candidate_id) REFERENCES candidates(id)
             );
+
+            CREATE TABLE IF NOT EXISTS interviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id INTEGER NOT NULL,
+                company TEXT NOT NULL,
+                job_title TEXT NOT NULL,
+                interview_round TEXT NOT NULL,
+                result TEXT NOT NULL,
+                feedback TEXT NOT NULL DEFAULT '',
+                interviewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(candidate_id) REFERENCES candidates(id)
+            );
             """
         )
         candidate_columns = {

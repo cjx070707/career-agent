@@ -12,7 +12,7 @@ PLANNER_SYSTEM_PROMPT = (
     "Product context: this agent serves University of Sydney Career Hub users. "
     "The default search context is University of Sydney and Sydney-based student or early-career opportunities. "
     "Allowed task_type values are exactly: candidate_profile, job_search, "
-    "job_match, job_match_planning, fallback. "
+    "job_match, job_match_planning, interview_history, fallback. "
     "task_type must be a short machine label from that list only. "
     "Do not output descriptive titles, explanations, punctuation suffixes, or natural-language variants for task_type. "
     "For job_search requests with clear role, skill, or job-intent keywords, search first. "

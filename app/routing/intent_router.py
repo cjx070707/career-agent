@@ -161,6 +161,33 @@ class IntentRouter:
                 "planner_source": "router",
             }
 
+        has_interview_signal = any(
+            marker in message or marker in lowered_message
+            for marker in (
+                "面试",
+                "interview",
+                "feedback",
+                "复盘",
+                "笔试",
+                "hr 面",
+                "hr面",
+            )
+        )
+        has_interview_history_signal = any(
+            marker in message or marker in lowered_message
+            for marker in ("最近", "记录", "反馈", "进展", "history", "哪些")
+        )
+        if has_interview_signal and has_interview_history_signal:
+            return {
+                "task_type": "interview_history",
+                "reason": "这是面试反馈查询问题，直接读取最近面试反馈即可。",
+                "steps": keep_available(["get_interview_feedback"]),
+                "needs_more_context": "get_interview_feedback" not in tools,
+                "missing_context": [],
+                "follow_up_question": None,
+                "planner_source": "router",
+            }
+
         if has_job_search_signal:
             reason_parts = ["这是岗位搜索问题"]
             if profile_role:

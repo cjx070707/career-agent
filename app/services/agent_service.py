@@ -288,6 +288,9 @@ class AgentService:
         if tool_name == "get_applications":
             return {"user_id": user_id, "limit": 10}
 
+        if tool_name == "get_interview_feedback":
+            return {"user_id": user_id, "limit": 10}
+
         return {}
 
     def _format_tool_answer(self, tool_name: str, tool_result: Any) -> str:
@@ -331,6 +334,19 @@ class AgentService:
                 summary.append(f"{company} - {title}（{status}）")
             return "你最近的投递包括：" + "；".join(summary) + "。"
 
+        if tool_name == "get_interview_feedback":
+            rows = tool_result if isinstance(tool_result, list) else []
+            if not rows:
+                return "你最近还没有面试反馈记录。"
+            summary = []
+            for row in rows[:3]:
+                company = str(row.get("company", "")).strip()
+                title = str(row.get("job_title", "")).strip()
+                round_name = str(row.get("interview_round", "")).strip()
+                result = str(row.get("result", "")).strip()
+                summary.append(f"{company} - {title}（{round_name}/{result}）")
+            return "你最近的面试反馈包括：" + "；".join(summary) + "。"
+
         return "工具执行完成。"
 
     def _extract_sources(self, tool_name: str, tool_result: Any) -> List[ChatSource]:
@@ -366,6 +382,20 @@ class AgentService:
                     type="application",
                     title=f"{item.get('company', '')} - {item.get('job_title', '')}".strip(" -"),
                     snippet=f"状态：{item.get('status', '')}；备注：{item.get('note', '')}".strip(),
+                )
+                for item in (tool_result if isinstance(tool_result, list) else [])
+            ]
+
+        if tool_name == "get_interview_feedback":
+            return [
+                ChatSource(
+                    type="interview_feedback",
+                    title=f"{item.get('company', '')} - {item.get('job_title', '')}".strip(" -"),
+                    snippet=(
+                        f"轮次：{item.get('interview_round', '')}；"
+                        f"结果：{item.get('result', '')}；"
+                        f"反馈：{item.get('feedback', '')}"
+                    ).strip(),
                 )
                 for item in (tool_result if isinstance(tool_result, list) else [])
             ]

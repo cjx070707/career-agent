@@ -321,6 +321,7 @@ def test_build_plan_request_lists_allowed_task_types_and_short_label_rule() -> N
     assert "candidate_profile" in system_content
     assert "job_search" in system_content
     assert "job_match" in system_content
+    assert "interview_history" in system_content
     assert "Do not output descriptive titles" in system_content
 
 
@@ -442,6 +443,32 @@ def test_generate_plan_falls_back_when_task_type_is_not_allowed_label() -> None:
     assert client.fallback_calls == 1
     assert plan["planner_source"] == "fallback"
     assert plan["task_type"] == "job_match"
+
+
+def test_generate_plan_accepts_interview_history_task_type() -> None:
+    client = ModelFirstLLMClient(
+        model_result={
+            "task_type": "interview_history",
+            "reason": "list interview feedback",
+            "steps": ["get_interview_feedback"],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": None,
+        }
+    )
+
+    plan = client.generate_plan(
+        message="what interview feedback do I have?",
+        memory_context=[],
+        profile={},
+        available_tools=["get_interview_feedback"],
+        user_state={"has_candidate": True, "has_resume": True},
+    )
+
+    assert client.fallback_calls == 0
+    assert plan["planner_source"] == "model"
+    assert plan["task_type"] == "interview_history"
+    assert plan["steps"] == ["get_interview_feedback"]
 
 
 def test_generate_plan_falls_back_when_step_is_not_in_available_tools() -> None:

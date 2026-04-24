@@ -12,6 +12,7 @@ def test_default_tool_registry_exposes_core_tool_names(isolated_runtime) -> None
         "get_candidate_profile",
         "get_resume_by_id",
         "get_applications",
+        "get_interview_feedback",
         "search_jobs",
         "match_resume_to_jobs",
     ]
@@ -146,3 +147,33 @@ def test_get_applications_tool_returns_user_history(isolated_runtime) -> None:
     assert len(result["data"]) == 2
     assert result["data"][0]["company"] == "Atlassian"
     assert result["data"][0]["status"] == "interview"
+
+
+def test_get_interview_feedback_tool_returns_user_history(isolated_runtime) -> None:
+    candidate = CandidateService().create_candidate(name="Interview User", user_id="iv-user")
+    from app.services.interview_service import InterviewService
+
+    service = InterviewService()
+    service.create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Data Analyst Intern",
+        interview_round="hr",
+        result="pending",
+    )
+    service.create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Backend Intern",
+        interview_round="tech1",
+        result="passed",
+    )
+    registry = build_default_tool_registry()
+
+    result = registry.run("get_interview_feedback", {"user_id": "iv-user", "limit": 10})
+
+    assert result["ok"] is True
+    assert result["data"]
+    assert len(result["data"]) == 2
+    assert result["data"][0]["company"] == "Atlassian"
+    assert result["data"][0]["result"] == "passed"

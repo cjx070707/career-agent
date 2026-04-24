@@ -50,7 +50,7 @@ The Stage B `/chat` contract is frozen at these fields. The demo only reads thes
 - `tool_used`: string | null, the last tool that produced `answer`
 - `tool_trace`: string[], ordered names of tools that actually ran
 - `sources[]`: list of grounded evidence items
-  - `type`: string, e.g. `"job_posting"`
+  - `type`: string, e.g. `"job_posting"`, `"application"`, or `"interview_feedback"`
   - `title`: string
   - `snippet`: string, evidence text (for search, contains `命中关键词：...`)
   - `company`: string | null
@@ -60,7 +60,7 @@ The Stage B `/chat` contract is frozen at these fields. The demo only reads thes
   - `url`: string | null
 - `plan`: routed plan summary
   - `task_type`: one of `job_search`, `job_match`, `job_match_planning`,
-    `candidate_profile`, `fallback`
+    `candidate_profile`, `application_history`, `interview_history`, `fallback`
   - `reason`: string, why this plan was chosen
   - `steps`: string[], planned tool names
   - `needs_more_context`: boolean
@@ -93,13 +93,32 @@ so results always satisfy the requested constraints.
 - `status`: string, required (e.g. `"applied"`, `"interviewing"`, `"offered"`, `"rejected"`)
 - `note`: string, optional
 
-`GET /applications?candidate_id={id}&limit={n}` — list applications for a candidate.
+`GET /applications?user_id={id}&limit={n}` — list applications for a user.
 
 `PATCH /applications/{application_id}` — update status and/or note.
 
 The `get_applications` tool is automatically invoked when the user asks about their
 application history (e.g. "我最近投了哪些岗位？"). Results appear in `sources[]` with
 `type="application"`.
+
+### Interview Records API
+
+`POST /interviews` — create an interview feedback record:
+
+- `candidate_id`: int, required
+- `company`: string, required
+- `job_title`: string, required
+- `interview_round`: string, required (e.g. `"hr"`, `"oa"`, `"tech1"`, `"final"`)
+- `result`: string, required (e.g. `"pending"`, `"passed"`, `"rejected"`)
+- `feedback`: string, optional
+
+`GET /interviews?user_id={id}&limit={n}` — list recent interview feedback for a user.
+
+`PATCH /interviews/{interview_id}` — update result and optionally feedback.
+
+The `get_interview_feedback` tool is automatically invoked when the user asks about
+recent interview feedback (e.g. "我最近面试反馈怎么样？"). Results appear in
+`sources[]` with `type="interview_feedback"`.
 
 ### search_jobs tool payload
 

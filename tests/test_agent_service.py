@@ -1,4 +1,5 @@
 from app.services.agent_service import AgentService
+from app.services.interview_service import InterviewService
 from app.services.candidate_service import CandidateService
 from app.services.job_service import JobService
 from app.services.memory_service import MemoryService
@@ -161,3 +162,27 @@ def test_agent_service_search_jobs_uses_summarize_job_search(isolated_runtime) -
         "job_search_summary_source": "model",
         "generate_source": "not_used",
     }
+
+
+def test_chat_routes_to_interview_history_tool(isolated_runtime) -> None:
+    candidate = CandidateService().create_candidate(name="Interview History User", user_id="iv-history-user")
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Backend Intern",
+        interview_round="hr",
+        result="pending",
+    )
+    fake_llm = FakeLLMClient()
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("iv-history-user", "我最近面试反馈怎么样？")
+
+    assert fake_llm.called is False
+    assert result.plan is not None
+    assert result.plan.task_type == "interview_history"
+    assert result.tool_trace == ["get_interview_feedback"]
+    assert result.tool_used == "get_interview_feedback"
+    assert result.sources
+    assert result.sources[0].type == "interview_feedback"
+    assert "Atlassian" in result.answer
