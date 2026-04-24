@@ -322,6 +322,7 @@ def test_build_plan_request_lists_allowed_task_types_and_short_label_rule() -> N
     assert "job_search" in system_content
     assert "job_match" in system_content
     assert "interview_history" in system_content
+    assert "career_insights" in system_content
     assert "Do not output descriptive titles" in system_content
 
 
@@ -469,6 +470,32 @@ def test_generate_plan_accepts_interview_history_task_type() -> None:
     assert plan["planner_source"] == "model"
     assert plan["task_type"] == "interview_history"
     assert plan["steps"] == ["get_interview_feedback"]
+
+
+def test_generate_plan_accepts_career_insights_task_type() -> None:
+    client = ModelFirstLLMClient(
+        model_result={
+            "task_type": "career_insights",
+            "reason": "summarize career signals",
+            "steps": ["get_career_insights"],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": None,
+        }
+    )
+
+    plan = client.generate_plan(
+        message="what should I prepare next based on applications and interviews?",
+        memory_context=[],
+        profile={},
+        available_tools=["get_career_insights"],
+        user_state={"has_candidate": True, "has_resume": True},
+    )
+
+    assert client.fallback_calls == 0
+    assert plan["planner_source"] == "model"
+    assert plan["task_type"] == "career_insights"
+    assert plan["steps"] == ["get_career_insights"]
 
 
 def test_generate_plan_falls_back_when_step_is_not_in_available_tools() -> None:

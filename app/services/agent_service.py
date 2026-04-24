@@ -291,6 +291,9 @@ class AgentService:
         if tool_name == "get_interview_feedback":
             return {"user_id": user_id, "limit": 10}
 
+        if tool_name == "get_career_insights":
+            return {"user_id": user_id, "limit": 10}
+
         return {}
 
     def _format_tool_answer(self, tool_name: str, tool_result: Any) -> str:
@@ -347,6 +350,31 @@ class AgentService:
                 summary.append(f"{company} - {title}（{round_name}/{result}）")
             return "你最近的面试反馈包括：" + "；".join(summary) + "。"
 
+        if tool_name == "get_career_insights":
+            data = tool_result if isinstance(tool_result, dict) else {}
+            profile = data.get("profile", {})
+            applications = data.get("application_summary", {})
+            interviews = data.get("interview_summary", {})
+            suggestions = data.get("suggestions", [])
+
+            role = str(profile.get("target_role_preference", "")).strip() or "暂未明确"
+            app_total = int(applications.get("total", 0) or 0)
+            interview_total = int(interviews.get("total", 0) or 0)
+            answer_parts = [
+                f"你的当前求职画像：目标方向是 {role}，",
+                f"最近有 {app_total} 条投递记录、{interview_total} 条面试反馈。"
+            ]
+            feedback_highlights = interviews.get("feedback_highlights", [])
+            if feedback_highlights:
+                answer_parts.append(
+                    "面试反馈里最需要关注的是：" + "；".join(feedback_highlights[:2]) + "。"
+                )
+            if suggestions:
+                answer_parts.append("下一步：" + "；".join(str(item) for item in suggestions[:2]) + "。")
+            elif not app_total and not interview_total:
+                answer_parts.append("下一步：先补充投递记录和面试反馈。")
+            return "".join(answer_parts)
+
         return "工具执行完成。"
 
     def _extract_sources(self, tool_name: str, tool_result: Any) -> List[ChatSource]:
@@ -399,6 +427,32 @@ class AgentService:
                 )
                 for item in (tool_result if isinstance(tool_result, list) else [])
             ]
+
+        if tool_name == "get_career_insights":
+            data = tool_result if isinstance(tool_result, dict) else {}
+            applications = data.get("application_summary", {}).get("recent", [])
+            interviews = data.get("interview_summary", {}).get("recent", [])
+            sources: List[ChatSource] = [
+                ChatSource(
+                    type="application",
+                    title=f"{item.get('company', '')} - {item.get('job_title', '')}".strip(" -"),
+                    snippet=f"状态：{item.get('status', '')}；备注：{item.get('note', '')}".strip(),
+                )
+                for item in applications
+            ]
+            sources.extend(
+                ChatSource(
+                    type="interview_feedback",
+                    title=f"{item.get('company', '')} - {item.get('job_title', '')}".strip(" -"),
+                    snippet=(
+                        f"轮次：{item.get('interview_round', '')}；"
+                        f"结果：{item.get('result', '')}；"
+                        f"反馈：{item.get('feedback', '')}"
+                    ).strip(),
+                )
+                for item in interviews
+            )
+            return sources
 
         return []
 

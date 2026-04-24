@@ -12,6 +12,7 @@ ALL_TOOLS = [
     "get_resume_by_id",
     "get_applications",
     "get_interview_feedback",
+    "get_career_insights",
     "search_jobs",
     "match_resume_to_jobs",
 ]
@@ -95,4 +96,15 @@ def test_interview_history_routes_to_get_interview_feedback() -> None:
     assert plan is not None
     assert plan["task_type"] == "interview_history"
     assert plan["steps"] == ["get_interview_feedback"]
+    assert plan["planner_source"] == "router"
+
+
+def test_career_insights_routes_to_get_career_insights() -> None:
+    router = IntentRouter()
+
+    plan = _route(router, "结合我的投递和面试反馈，我下一步该准备什么？")
+
+    assert plan is not None
+    assert plan["task_type"] == "career_insights"
+    assert plan["steps"] == ["get_career_insights"]
     assert plan["planner_source"] == "router"

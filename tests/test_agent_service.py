@@ -186,3 +186,45 @@ def test_chat_routes_to_interview_history_tool(isolated_runtime) -> None:
     assert result.sources
     assert result.sources[0].type == "interview_feedback"
     assert "Atlassian" in result.answer
+
+
+def test_chat_routes_to_career_insights_tool(isolated_runtime) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Career Insight User",
+        user_id="career-insight-user",
+    )
+    from app.services.application_service import ApplicationService
+
+    ApplicationService().create_application(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Backend Intern",
+        status="applied",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Backend Grad",
+        interview_round="tech1",
+        result="rejected",
+        feedback="need stronger system design examples",
+    )
+    fake_llm = FakeLLMClient()
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond(
+        "career-insight-user",
+        "结合我的投递和面试反馈，我下一步该准备什么？",
+    )
+
+    assert fake_llm.called is False
+    assert result.plan is not None
+    assert result.plan.task_type == "career_insights"
+    assert result.tool_trace == ["get_career_insights"]
+    assert result.tool_used == "get_career_insights"
+    assert {source.type for source in result.sources} >= {
+        "application",
+        "interview_feedback",
+    }
+    assert "下一步" in result.answer
+    assert "system design" in result.answer

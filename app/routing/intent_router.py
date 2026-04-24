@@ -134,6 +134,37 @@ class IntentRouter:
                 "planner_source": "router",
             }
 
+        has_career_diagnosis_signal = any(
+            marker in message or marker in lowered_message
+            for marker in (
+                "求职画像",
+                "求职状态",
+                "最近问题",
+                "暴露",
+                "career profile",
+                "career status",
+                "weakness",
+                "pattern",
+            )
+        )
+        has_career_next_step_signal = any(
+            marker in message or marker in lowered_message
+            for marker in ("下一步", "为什么", "next step")
+        ) and any(
+            marker in message or marker in lowered_message
+            for marker in ("投递", "申请", "面试", "反馈", "application", "interview")
+        )
+        if has_career_diagnosis_signal or has_career_next_step_signal:
+            return {
+                "task_type": "career_insights",
+                "reason": "这是求职画像和状态诊断问题，需要聚合画像、投递和面试反馈。",
+                "steps": keep_available(["get_career_insights"]),
+                "needs_more_context": "get_career_insights" not in tools,
+                "missing_context": [],
+                "follow_up_question": None,
+                "planner_source": "router",
+            }
+
         has_application_signal = any(
             marker in message or marker in lowered_message
             for marker in (

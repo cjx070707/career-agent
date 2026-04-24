@@ -13,6 +13,7 @@ def test_default_tool_registry_exposes_core_tool_names(isolated_runtime) -> None
         "get_resume_by_id",
         "get_applications",
         "get_interview_feedback",
+        "get_career_insights",
         "search_jobs",
         "match_resume_to_jobs",
     ]
@@ -177,3 +178,36 @@ def test_get_interview_feedback_tool_returns_user_history(isolated_runtime) -> N
     assert len(result["data"]) == 2
     assert result["data"][0]["company"] == "Atlassian"
     assert result["data"][0]["result"] == "passed"
+
+
+def test_get_career_insights_tool_returns_aggregated_user_state(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(name="Insight User", user_id="tool-insight-user")
+    from app.services.application_service import ApplicationService
+    from app.services.interview_service import InterviewService
+
+    ApplicationService().create_application(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Backend Intern",
+        status="applied",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Backend Intern",
+        interview_round="hr",
+        result="passed",
+        feedback="good communication",
+    )
+    registry = build_default_tool_registry()
+
+    result = registry.run("get_career_insights", {"user_id": "tool-insight-user", "limit": 10})
+
+    assert result["ok"] is True
+    assert result["data"]["application_summary"]["total"] == 1
+    assert result["data"]["interview_summary"]["total"] == 1
+    assert result["data"]["interview_summary"]["feedback_highlights"] == [
+        "good communication"
+    ]

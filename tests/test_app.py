@@ -579,3 +579,41 @@ def test_chat_routes_to_interview_history_tool(isolated_runtime) -> None:
     assert body["sources"]
     assert body["sources"][0]["type"] == "interview_feedback"
     assert "Canva" in body["answer"]
+
+
+def test_chat_routes_to_career_insights_tool(isolated_runtime) -> None:
+    candidate = CandidateService().create_candidate(name="Career User", user_id="career-user")
+    ApplicationService().create_application(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Backend Intern",
+        status="applied",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Backend Grad",
+        interview_round="tech1",
+        result="rejected",
+        feedback="need stronger system design examples",
+    )
+
+    response = client.post(
+        "/chat",
+        json={
+            "user_id": "career-user",
+            "message": "结合我的投递和面试反馈，我下一步该准备什么？",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tool_used"] == "get_career_insights"
+    assert body["plan"]["task_type"] == "career_insights"
+    assert body["tool_trace"] == ["get_career_insights"]
+    assert {source["type"] for source in body["sources"]} >= {
+        "application",
+        "interview_feedback",
+    }
+    assert "下一步" in body["answer"]
+    assert "system design" in body["answer"]

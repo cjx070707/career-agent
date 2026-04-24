@@ -18,6 +18,7 @@ class LLMClient:
         "job_match",
         "job_match_planning",
         "interview_history",
+        "career_insights",
         "fallback",
     }
     # Hard cap on planner-produced step chains. Anything longer is treated as a

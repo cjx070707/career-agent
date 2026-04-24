@@ -60,7 +60,8 @@ The Stage B `/chat` contract is frozen at these fields. The demo only reads thes
   - `url`: string | null
 - `plan`: routed plan summary
   - `task_type`: one of `job_search`, `job_match`, `job_match_planning`,
-    `candidate_profile`, `application_history`, `interview_history`, `fallback`
+    `candidate_profile`, `application_history`, `interview_history`,
+    `career_insights`, `fallback`
   - `reason`: string, why this plan was chosen
   - `steps`: string[], planned tool names
   - `needs_more_context`: boolean
@@ -119,6 +120,19 @@ application history (e.g. "我最近投了哪些岗位？"). Results appear in `
 The `get_interview_feedback` tool is automatically invoked when the user asks about
 recent interview feedback (e.g. "我最近面试反馈怎么样？"). Results appear in
 `sources[]` with `type="interview_feedback"`.
+
+### Career Insights Tool
+
+The `get_career_insights` tool is automatically invoked when the user asks for a
+career status diagnosis that combines profile, application, and interview signals
+(e.g. "结合我的投递和面试反馈，我下一步该准备什么？").
+
+The tool returns a read-only aggregation of:
+
+- `profile`: target role, skill keywords, and focus notes
+- `application_summary`: recent application records and status counts
+- `interview_summary`: recent interview records, result counts, and feedback highlights
+- `suggestions`: deterministic next-step suggestions derived from the available data
 
 ### search_jobs tool payload
 
