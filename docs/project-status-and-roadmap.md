@@ -97,6 +97,7 @@ API 层          app/api/             HTTP 入口、参数校验
 | 长期职业画像落库（career_profiles 表） | ✅ | `app/services/profile_service.py` | #1 |
 | 长期职业画像向量化 | ✅ | `app/services/retrieval_service.py` | #1, #4 |
 | 关键事件抽取与沉淀 | ✅ | `app/services/career_event_service.py` `app/services/retrieval_service.py` | #1, #4 |
+| 求职画像结构化诊断（strengths / risk_areas / next_actions） | ✅ | `app/services/career_insight_service.py` | #1, #4 |
 
 ### 4.4 工具与数据模型
 
@@ -164,10 +165,10 @@ API 层          app/api/             HTTP 入口、参数校验
 
 | 简历条 | 当前完成度 | 还需要做什么 |
 |---|---|---|
-| #1 双层记忆 | 90% — 短期记忆 ✅，profile augment ✅，投递记录 ✅，面试反馈 ✅，长期画像落库 ✅，画像向量化 ✅；关键事件结构化沉淀 ✅，LLM 抽取 ✅ | 继续打磨记忆质量与召回评测 |
+| #1 双层记忆 | 92% — 短期记忆 ✅，profile augment ✅，投递记录 ✅，面试反馈 ✅，长期画像落库 ✅，画像向量化 ✅；关键事件结构化沉淀 ✅，LLM 抽取 ✅；career insights 已输出 strengths / risk_areas / next_actions ✅ | 继续打磨记忆质量与召回评测 |
 | #2 MCP-ready 工具层 | 90% — 7 个工具 ✅（含 get_applications / get_interview_feedback / get_career_insights），ToolRegistry ✅，metadata/schema export ✅；真正 MCP 协议作为可选升级 | 可继续打磨工具分域与外部协议适配 |
 | #3 双层决策 + 可观测 | **90%** — Router ✅，Planner ✅，护栏 ✅，降级 ✅，trace ✅ | 基本完成，可打磨 |
-| #4 混合召回 RAG | 85% — 向量召回 ✅，BM25 ✅，RRF ✅，rerank ✅，metadata filter ✅，reason ✅ | 继续补检索质量 eval 与更细粒度排序调参 |
+| #4 混合召回 RAG | 87% — 向量召回 ✅，BM25 ✅，RRF ✅，rerank ✅，metadata filter ✅，reason ✅；career insights 可返回 source_summary 并被 Agent 回答消费 ✅ | 继续补检索质量 eval 与更细粒度排序调参 |
 | #5 图像输入 + 多端交互 | 35% — React 双页面 ✅；GPT-4V ❌，TTS ❌ | GPT-4V → TTS |
 | #6 工程基建与评测 | 85% — FastAPI ✅，React ✅，evals 16 条 ✅，ToolRegistry ✅，工具 metadata export ✅ | 可继续做前端自动化验收与 schema snapshot |
 

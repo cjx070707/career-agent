@@ -145,6 +145,8 @@ class IntentRouter:
                 "career status",
                 "weakness",
                 "pattern",
+                "职业方向",
+                "职业规划",
             )
         )
         has_career_next_step_signal = any(
@@ -152,7 +154,18 @@ class IntentRouter:
             for marker in ("下一步", "为什么", "next step")
         ) and any(
             marker in message or marker in lowered_message
-            for marker in ("投递", "申请", "面试", "反馈", "application", "interview")
+            for marker in (
+                "投递",
+                "申请",
+                "面试",
+                "反馈",
+                "职业方向",
+                "职业规划",
+                "准备",
+                "application",
+                "interview",
+                "career direction",
+            )
         )
         if has_career_diagnosis_signal or has_career_next_step_signal:
             return {

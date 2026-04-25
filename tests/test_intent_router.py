@@ -108,3 +108,14 @@ def test_career_insights_routes_to_get_career_insights() -> None:
     assert plan["task_type"] == "career_insights"
     assert plan["steps"] == ["get_career_insights"]
     assert plan["planner_source"] == "router"
+
+
+def test_career_direction_routes_to_get_career_insights() -> None:
+    router = IntentRouter()
+
+    plan = _route(router, "你觉得我下一步职业方向应该怎么考虑？")
+
+    assert plan is not None
+    assert plan["task_type"] == "career_insights"
+    assert plan["steps"] == ["get_career_insights"]
+    assert plan["planner_source"] == "router"

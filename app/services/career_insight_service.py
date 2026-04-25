@@ -49,6 +49,19 @@ class CareerInsightService:
             if str(item.get("feedback", "")).strip()
         ][:3]
 
+        strengths = self._build_strengths(profile=profile, applications=applications)
+        risk_areas = self._build_risk_areas(
+            applications=applications,
+            interviews=interviews,
+            feedback_highlights=feedback_highlights,
+        )
+        next_actions = self._build_suggestions(
+            profile=profile,
+            applications=applications,
+            interviews=interviews,
+            feedback_highlights=feedback_highlights,
+        )
+
         return {
             "profile": profile,
             "application_summary": {
@@ -66,12 +79,11 @@ class CareerInsightService:
                 "feedback_highlights": feedback_highlights,
                 "recent": interviews,
             },
-            "suggestions": self._build_suggestions(
-                profile=profile,
-                applications=applications,
-                interviews=interviews,
-                feedback_highlights=feedback_highlights,
-            ),
+            "strengths": strengths,
+            "risk_areas": risk_areas,
+            "next_actions": next_actions,
+            "source_summary": self._build_source_summary(applications, interviews),
+            "suggestions": next_actions,
         }
 
     def _sorted_counts(self, values) -> Dict[str, int]:
@@ -109,3 +121,81 @@ class CareerInsightService:
             suggestions.append("复盘未通过轮次，补充具体反馈后可以定位共性短板。")
 
         return suggestions[:3]
+
+    def _build_strengths(
+        self,
+        profile: Dict[str, object],
+        applications: List[Dict[str, Union[int, str]]],
+    ) -> List[str]:
+        strengths: List[str] = []
+        role = str(profile.get("target_role_preference") or "").strip()
+        skills = [
+            str(item).strip()
+            for item in profile.get("skill_keywords", [])
+            if str(item).strip()
+        ]
+        if role:
+            strengths.append(f"目标方向已聚焦在 {role}。")
+        if skills:
+            strengths.append(f"已沉淀技能关键词：{', '.join(skills[:4])}。")
+        progressed = [
+            item for item in applications
+            if str(item.get("status", "")).strip().lower()
+            in {"interview", "interviewing", "offered", "offer"}
+        ]
+        if progressed:
+            strengths.append("已有投递进入面试或后续阶段，可以复用相关申请素材。")
+        return strengths[:3]
+
+    def _build_risk_areas(
+        self,
+        applications: List[Dict[str, Union[int, str]]],
+        interviews: List[Dict[str, Union[int, str]]],
+        feedback_highlights: List[str],
+    ) -> List[str]:
+        risk_areas: List[str] = []
+        if feedback_highlights:
+            risk_areas.append(f"面试反馈暴露短板：{feedback_highlights[0]}。")
+
+        rejected_interviews = [
+            item for item in interviews
+            if str(item.get("result", "")).strip().lower() == "rejected"
+        ]
+        if rejected_interviews:
+            risk_areas.append("存在未通过面试记录，需要复盘共性原因。")
+
+        application_statuses = {
+            str(item.get("status", "")).strip().lower() for item in applications
+        }
+        if applications and application_statuses <= {"applied", "submitted"}:
+            risk_areas.append("投递主要停留在早期状态，需要提升简历命中和跟进策略。")
+
+        return risk_areas[:3]
+
+    def _build_source_summary(
+        self,
+        applications: List[Dict[str, Union[int, str]]],
+        interviews: List[Dict[str, Union[int, str]]],
+    ) -> List[Dict[str, str]]:
+        sources: List[Dict[str, str]] = []
+        for item in applications[:3]:
+            sources.append(
+                {
+                    "type": "application",
+                    "title": f"{item.get('company', '')} - {item.get('job_title', '')}".strip(" -"),
+                    "snippet": f"状态：{item.get('status', '')}；备注：{item.get('note', '')}".strip(),
+                }
+            )
+        for item in interviews[:3]:
+            sources.append(
+                {
+                    "type": "interview_feedback",
+                    "title": f"{item.get('company', '')} - {item.get('job_title', '')}".strip(" -"),
+                    "snippet": (
+                        f"轮次：{item.get('interview_round', '')}；"
+                        f"结果：{item.get('result', '')}；"
+                        f"反馈：{item.get('feedback', '')}"
+                    ).strip(),
+                }
+            )
+        return sources

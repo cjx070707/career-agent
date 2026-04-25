@@ -59,6 +59,13 @@ def test_career_insight_service_aggregates_profile_applications_and_interviews(
         "need stronger system design examples"
     ]
     assert any("system design" in item for item in insights["suggestions"])
+    assert any("backend" in item.lower() for item in insights["strengths"])
+    assert any("system design" in item.lower() for item in insights["risk_areas"])
+    assert any("system design" in item.lower() for item in insights["next_actions"])
+    assert {item["type"] for item in insights["source_summary"]} >= {
+        "application",
+        "interview_feedback",
+    }
 
 
 def test_career_insight_service_returns_sparse_data_suggestions(
@@ -73,6 +80,7 @@ def test_career_insight_service_returns_sparse_data_suggestions(
     assert insights["application_summary"]["total"] == 0
     assert insights["interview_summary"]["total"] == 0
     assert "先补充投递记录和面试反馈" in " ".join(insights["suggestions"])
+    assert "先补充投递记录和面试反馈" in " ".join(insights["next_actions"])
 
 
 def test_career_insight_service_refreshes_persisted_profile_signals(

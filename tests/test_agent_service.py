@@ -65,7 +65,7 @@ def test_agent_service_uses_llm_layer_for_gray_query(isolated_runtime) -> None:
     JobService().create_job(title="Python FastAPI Backend Engineer")
     service = AgentService(llm_client=fake_llm)
 
-    result = service.respond("planner-user", "你觉得我下一步职业方向应该怎么考虑")
+    result = service.respond("planner-user", "你觉得最近市场怎么样")
 
     assert fake_llm.called is True
     assert result.plan is not None
@@ -77,6 +77,20 @@ def test_agent_service_uses_llm_layer_for_gray_query(isolated_runtime) -> None:
         "job_search_summary_source": "model",
         "generate_source": "not_used",
     }
+
+
+def test_agent_routes_career_direction_to_career_insights(isolated_runtime) -> None:
+    fake_llm = FakeLLMClient()
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("career-direction-user", "你觉得我下一步职业方向应该怎么考虑？")
+
+    assert fake_llm.called is False
+    assert result.plan is not None
+    assert result.plan.task_type == "career_insights"
+    assert result.tool_trace == ["get_career_insights"]
+    assert result.tool_used == "get_career_insights"
+    assert "推荐行动" in result.answer
 
 
 class PlannerRequestingMissingCandidateLLM(FakeLLMClient):
@@ -259,6 +273,8 @@ def test_chat_routes_to_career_insights_tool(isolated_runtime) -> None:
     }
     assert "下一步" in result.answer
     assert "system design" in result.answer
+    assert "主要风险" in result.answer
+    assert "推荐行动" in result.answer
 
 
 def test_agent_retrieval_can_use_indexed_career_profile_source(
