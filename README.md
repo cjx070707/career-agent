@@ -13,6 +13,24 @@ After the server starts:
 - API docs: `http://127.0.0.1:8000/docs`
 - Stage B demo page: `http://127.0.0.1:8000/demo/`
 
+## React Web App
+
+The React app lives in `web/` and provides two product views over the existing
+`POST /chat` contract:
+
+- `Chat`: continuous conversation with answer, sources, plan, and trace panels
+- `Query`: single-task workspace for job search, career diagnosis, and history checks
+
+Run it in development with the FastAPI server running on port 8000:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Vite serves the app on `http://127.0.0.1:5173` and proxies `/chat` to FastAPI.
+
 ## Demo
 
 The demo is a single static page served by FastAPI itself. It only depends on the

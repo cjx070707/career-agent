@@ -4,7 +4,7 @@
 
 面向 University of Sydney Career Hub 场景的智能求职辅导 Agent 后端系统。
 
-当前形态：FastAPI 后端 + ChromaDB 检索 + SQLite 持久化 + LLM 编排 + 静态 demo 页。
+当前形态：FastAPI 后端 + ChromaDB 检索 + SQLite 持久化 + LLM 编排 + React 双页面前端 + 静态 demo 页。
 
 产品语境：默认围绕 Sydney / USYD 相关岗位机会，`search first, then refine`。
 
@@ -53,7 +53,7 @@ API 层          app/api/             HTTP 入口、参数校验
 模型层          app/llm/client.py          planner / summarizer / generate + 契约护栏
 存储层          SQLite + ChromaDB + data/
 评测层          evals/                     16 条回归用例 + 结构化断言
-演示层          demo/                      静态 HTML/JS 单页
+演示层          web/ + demo/               React 双页面 + 静态 HTML/JS 单页
 ```
 
 ## 4. 已完成能力清单
@@ -121,7 +121,7 @@ API 层          app/api/             HTTP 入口、参数校验
 | 静态 demo 单页（HTML/JS） | ✅ | `demo/` | #6 |
 | evals 评测框架（16 条回归用例） | ✅ | `evals/` | #6 |
 | source_field_all_contain 严格断言 | ✅ | `evals/run_eval.py` | #6 |
-| React 双页面前端 | ❌ | — | #5, #6 |
+| React 双页面前端 | ✅ | `web/` | #5, #6 |
 | GPT-4V 图像输入 | ❌ | — | #5 |
 | TTS 语音播报 | ❌ | — | #5 |
 
@@ -137,7 +137,7 @@ API 层          app/api/             HTTP 入口、参数校验
 | ~~投递记录数据模型 + 服务 + 工具~~ | ~~#1, #2~~ | ~~完成~~ | ✅ `POST /applications` + `GET` + `PATCH` + `get_applications` 工具 + router 命中 |
 | ~~面试反馈数据模型 + 服务 + 工具~~ | ~~#1, #2~~ | ~~完成~~ | ✅ `POST /interviews` + `GET` + `PATCH` + `get_interview_feedback` 工具 + router/planner 命中 |
 | ~~MCP-ready 工具模块化~~ | ~~#2~~ | ~~完成~~ | ✅ ToolRegistry 可导出 `name` / `description` / `category` / `input_schema`；新增工具不改 Agent 主流程；保留未来 MCP Server 薄适配边界 |
-| React 双页面（Query + Chat） | #5, #6 | ~2 周 | 前端能独立运行、调 /chat、展示 sources |
+| ~~React 双页面（Query + Chat）~~ | ~~#5, #6~~ | ~~完成~~ | ✅ 前端可独立运行、调 `/chat`、展示 answer / sources / plan / tool_trace / llm_trace |
 
 ### 5.2 有依赖
 
@@ -168,8 +168,8 @@ API 层          app/api/             HTTP 入口、参数校验
 | #2 MCP-ready 工具层 | 90% — 7 个工具 ✅（含 get_applications / get_interview_feedback / get_career_insights），ToolRegistry ✅，metadata/schema export ✅；真正 MCP 协议作为可选升级 | 可继续打磨工具分域与外部协议适配 |
 | #3 双层决策 + 可观测 | **90%** — Router ✅，Planner ✅，护栏 ✅，降级 ✅，trace ✅ | 基本完成，可打磨 |
 | #4 混合召回 RAG | 85% — 向量召回 ✅，BM25 ✅，RRF ✅，rerank ✅，metadata filter ✅，reason ✅ | 继续补检索质量 eval 与更细粒度排序调参 |
-| #5 图像输入 + 多端交互 | **0%** — React ❌，GPT-4V ❌，TTS ❌ | React 双页面 → GPT-4V → TTS |
-| #6 工程基建与评测 | 75% — FastAPI ✅，evals 16 条 ✅，ToolRegistry ✅，工具 metadata export ✅；React ❌ | React 前端 |
+| #5 图像输入 + 多端交互 | 35% — React 双页面 ✅；GPT-4V ❌，TTS ❌ | GPT-4V → TTS |
+| #6 工程基建与评测 | 85% — FastAPI ✅，React ✅，evals 16 条 ✅，ToolRegistry ✅，工具 metadata export ✅ | 可继续做前端自动化验收与 schema snapshot |
 
 ## 7. 架构升级路径
 
