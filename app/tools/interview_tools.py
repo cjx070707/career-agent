@@ -9,6 +9,7 @@ def build_interview_tools() -> list[ToolDefinition]:
         ToolDefinition(
             name="get_interview_feedback",
             description="List recent interview feedback for a user.",
+            category="interview_history",
             input_model=InterviewsByUserToolInput,
             handler=lambda payload: interview_service.list_interviews_by_user(
                 user_id=payload.user_id,

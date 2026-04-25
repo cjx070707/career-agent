@@ -84,6 +84,19 @@ When filters are present, the retrieval layer does a full-collection sweep and
 applies case-insensitive substring matching on job metadata **after** reranking,
 so results always satisfy the requested constraints.
 
+### MCP-ready tool metadata
+
+Tools are registered through `ToolRegistry` with Pydantic input schemas. The
+registry can export MCP-ready metadata for each tool:
+
+- `name`
+- `description`
+- `category`
+- `input_schema`
+
+This is an internal metadata/schema export for future thin MCP Server adaptation;
+the project does not currently claim external MCP client support.
+
 ### Application Records API
 
 `POST /applications` — create an application record:

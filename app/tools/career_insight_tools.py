@@ -9,6 +9,7 @@ def build_career_insight_tools() -> list[ToolDefinition]:
         ToolDefinition(
             name="get_career_insights",
             description="Summarize a user's career profile, applications, and interview feedback.",
+            category="career_insights",
             input_model=CareerInsightsToolInput,
             handler=lambda payload: career_insight_service.get_career_insights(
                 user_id=payload.user_id,

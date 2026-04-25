@@ -9,6 +9,7 @@ def build_match_tools() -> list[ToolDefinition]:
         ToolDefinition(
             name="match_resume_to_jobs",
             description="Match a resume against jobs and return structured matches.",
+            category="job_match",
             input_model=MatchResumeToJobsToolInput,
             handler=lambda payload: match_service.match_resume_to_jobs(
                 payload.resume_id

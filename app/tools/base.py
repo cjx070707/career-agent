@@ -29,3 +29,4 @@ class ToolDefinition:
     description: str
     input_model: Type[BaseModel]
     handler: ToolHandler
+    category: str = "general"

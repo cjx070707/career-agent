@@ -9,6 +9,7 @@ def build_resume_tools() -> list[ToolDefinition]:
         ToolDefinition(
             name="get_resume_by_id",
             description="Fetch a resume by resume id.",
+            category="resume",
             input_model=ResumeByIdToolInput,
             handler=lambda payload: resume_service.get_resume_by_id(payload.resume_id),
         )

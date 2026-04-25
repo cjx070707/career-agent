@@ -9,6 +9,7 @@ def build_application_tools() -> list[ToolDefinition]:
         ToolDefinition(
             name="get_applications",
             description="List recent job applications for a user.",
+            category="application_history",
             input_model=ApplicationsByUserToolInput,
             handler=lambda payload: application_service.list_applications_by_user(
                 user_id=payload.user_id,

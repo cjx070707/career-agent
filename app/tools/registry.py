@@ -23,6 +23,7 @@ class ToolRegistry:
             {
                 "name": self._tools[name].name,
                 "description": self._tools[name].description,
+                "category": self._tools[name].category,
                 "input_schema": self._tools[name].input_model.model_json_schema(),
             }
             for name in self._tool_order

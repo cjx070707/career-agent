@@ -9,6 +9,7 @@ def build_candidate_tools() -> list[ToolDefinition]:
         ToolDefinition(
             name="get_candidate_profile",
             description="Fetch a candidate profile by candidate id.",
+            category="candidate_profile",
             input_model=CandidateProfileToolInput,
             handler=lambda payload: candidate_service.get_candidate_by_id(
                 payload.candidate_id

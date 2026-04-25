@@ -35,6 +35,7 @@ def build_job_tools() -> list[ToolDefinition]:
         ToolDefinition(
             name="search_jobs",
             description="Search jobs using a natural language query.",
+            category="job_search",
             input_model=SearchJobsToolInput,
             # Tool layer transports the structured retrieval payload unchanged.
             handler=_search,

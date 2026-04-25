@@ -1,4 +1,4 @@
-from app.mcp_server import list_tools, call_tool
+from app.mcp_server import list_tools, get_tool_schemas, call_tool
 from app.services.candidate_service import CandidateService
 from app.services.job_service import JobService
 from app.services.resume_service import ResumeService
@@ -17,6 +17,31 @@ def test_default_tool_registry_exposes_core_tool_names(isolated_runtime) -> None
         "search_jobs",
         "match_resume_to_jobs",
     ]
+
+
+def test_default_tool_registry_exports_mcp_ready_metadata_and_schema(
+    isolated_runtime,
+) -> None:
+    registry = build_default_tool_registry()
+
+    tools = registry.describe_tools()
+
+    assert [tool["name"] for tool in tools] == registry.list_tool_names()
+    search_tool = [tool for tool in tools if tool["name"] == "search_jobs"][0]
+    assert search_tool["category"] == "job_search"
+    assert search_tool["description"]
+    assert search_tool["input_schema"]["type"] == "object"
+    assert "query" in search_tool["input_schema"]["properties"]
+    assert "filters" in search_tool["input_schema"]["properties"]
+    for tool in tools:
+        assert set(tool) == {
+            "name",
+            "description",
+            "category",
+            "input_schema",
+        }
+        assert isinstance(tool["category"], str)
+        assert tool["category"]
 
 
 def test_get_candidate_profile_tool_returns_candidate(isolated_runtime) -> None:
@@ -111,12 +136,15 @@ def test_mcp_server_lists_and_calls_tools(isolated_runtime) -> None:
     candidate = CandidateService().create_candidate(name="MCP User")
 
     tools = list_tools()
+    schemas = get_tool_schemas()
     result = call_tool(
         "get_candidate_profile",
         {"candidate_id": candidate["id"]},
     )
 
     assert "get_candidate_profile" in tools
+    assert [tool["name"] for tool in schemas] == tools
+    assert all("category" in tool for tool in schemas)
     assert result["ok"] is True
     assert result["tool_name"] == "get_candidate_profile"
     assert result["data"]["name"] == "MCP User"
