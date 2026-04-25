@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   Activity,
   BriefcaseBusiness,
+  ChevronDown,
   ChevronRight,
   Clock3,
   FileSearch,
@@ -297,6 +298,7 @@ function ChatView({
             <article key={message.id} className={`message ${message.role}`}>
               <span>{message.role === "user" ? "You" : "Agent"}</span>
               <p>{message.content}</p>
+              {message.response ? <MessageDiagnostics response={message.response} /> : null}
             </article>
           ))
         )}
@@ -319,6 +321,69 @@ function ChatView({
         </button>
       </form>
     </div>
+  );
+}
+
+function MessageDiagnostics({ response }: { response: ChatResponse }) {
+  const plan = response.plan;
+  const traceItems = [
+    `task ${plan?.task_type ?? "—"}`,
+    `planner ${plan?.planner_source ?? response.llm_trace.planner_source}`,
+    `tool ${response.tool_used ?? "—"}`,
+    `memory ${response.memory_used ? "used" : "not used"}`,
+  ];
+  const llmItems = [
+    `summary ${response.llm_trace.job_search_summary_source}`,
+    `generate ${response.llm_trace.generate_source}`,
+  ];
+  const sourceCount = response.sources.length;
+
+  return (
+    <details className="message-details">
+      <summary>
+        <Activity size={15} />
+        <span>{response.tool_used ?? plan?.planner_source ?? "trace"}</span>
+        <span>{sourceCount} sources</span>
+        <ChevronDown size={15} />
+      </summary>
+
+      <div className="message-detail-body">
+        <div className="message-chip-row">
+          {traceItems.map((item) => (
+            <strong key={item}>{item}</strong>
+          ))}
+        </div>
+        {response.tool_trace.length ? (
+          <div className="message-steps">
+            {response.tool_trace.map((step) => (
+              <code key={step}>{step}</code>
+            ))}
+          </div>
+        ) : null}
+        <div className="message-chip-row secondary">
+          {llmItems.map((item) => (
+            <strong key={item}>{item}</strong>
+          ))}
+        </div>
+        {plan?.reason ? <p className="message-reason">{plan.reason}</p> : null}
+        {response.sources.length ? (
+          <div className="message-source-list">
+            {response.sources.slice(0, 3).map((source, index) => (
+              <a
+                key={`${source.title}-${index}`}
+                href={source.url ?? undefined}
+                target={source.url ? "_blank" : undefined}
+                rel={source.url ? "noreferrer" : undefined}
+                aria-disabled={source.url ? undefined : true}
+              >
+                <span>{source.type}</span>
+                <strong>{source.title}</strong>
+              </a>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </details>
   );
 }
 
