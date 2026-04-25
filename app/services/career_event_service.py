@@ -1,4 +1,5 @@
 import hashlib
+import re
 from typing import Any, Dict, List, Optional, Union
 
 from app.db.session import get_connection
@@ -32,6 +33,9 @@ class CareerEventService:
         user_id: str,
         message: str,
     ) -> List[Dict[str, Union[int, str]]]:
+        if not self._should_extract_from_message(message):
+            return []
+
         try:
             extracted_events = self.llm_client.extract_career_events(
                 user_id=user_id,
@@ -49,6 +53,23 @@ class CareerEventService:
             self.retrieval_service.upsert_career_event(saved)
             synced.append(saved)
         return synced
+
+    def _should_extract_from_message(self, message: str) -> bool:
+        normalized = message.strip().lower()
+        if not normalized:
+            return False
+
+        event_patterns = [
+            r"(投了|已投|申请了|递交了|提交了).{0,30}(岗位|职位|实习|公司|application|job|intern)",
+            r"(application|job|intern).{0,40}(moved|submitted|applied|rejected|accepted|oa|assessment|interview)",
+            r"(面试|interview).{0,40}(反馈|结果|没过|挂了|被拒|拒了|通过|过了|fail|failed|reject|rejected|pass|passed)",
+            r"(反馈|结果).{0,40}(面试|interview)",
+            r"(offer|录用|入职).{0,40}(拿到|收到|接受|拒了|拒绝|accept|accepted|reject|rejected)",
+            r"(拿到|收到|接受|拒了|拒绝).{0,40}(offer|录用)",
+            r"(assessment|oa|笔试|测评).{0,40}(反馈|结果|没过|挂了|通过|过了|fail|failed|pass|passed)",
+            r"(hr|recruiter|招聘).{0,40}(约|通知|说).{0,40}(面试|interview|offer|结果)",
+        ]
+        return any(re.search(pattern, normalized) for pattern in event_patterns)
 
     def _application_events(self, user_id: str) -> List[Dict[str, Union[int, str]]]:
         with get_connection() as connection:

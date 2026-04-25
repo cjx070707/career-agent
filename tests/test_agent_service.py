@@ -110,7 +110,12 @@ class RetrievalOnlyLLM(FakeLLMClient):
 
 
 class CareerEventExtractingLLM(RetrievalOnlyLLM):
+    def __init__(self) -> None:
+        super().__init__()
+        self.extract_career_events_calls = []
+
     def extract_career_events(self, **kwargs):
+        self.extract_career_events_calls.append(kwargs)
         return [
             {
                 "event_type": "interview_feedback",
@@ -332,3 +337,29 @@ def test_agent_syncs_llm_extracted_message_events_for_later_retrieval(
     assert result.sources
     assert result.sources[0].type == "career_event"
     assert "system design fundamentals" in result.sources[0].snippet
+
+
+def test_agent_skips_message_event_extraction_for_regular_job_search(
+    isolated_runtime,
+) -> None:
+    fake_llm = CareerEventExtractingLLM()
+    JobService().create_job(title="Sydney Backend Intern")
+    service = AgentService(llm_client=fake_llm)
+
+    service.respond("message-skip-user", "帮我找悉尼后端实习")
+
+    assert fake_llm.extract_career_events_calls == []
+
+
+def test_agent_runs_message_event_extraction_for_obvious_interview_update(
+    isolated_runtime,
+) -> None:
+    fake_llm = CareerEventExtractingLLM()
+    service = AgentService(llm_client=fake_llm)
+
+    service.respond(
+        "message-extract-user",
+        "Canva backend 面试没过，反馈是 system design fundamentals 要补。",
+    )
+
+    assert len(fake_llm.extract_career_events_calls) == 1

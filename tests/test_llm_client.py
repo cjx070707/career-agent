@@ -673,8 +673,9 @@ def test_summarize_job_search_uses_chat_completions_when_configured() -> None:
     assert len(client.summarize_chat_calls) == 1
     url, payload, kwargs = client.summarize_chat_calls[0]
     assert url == f"{planner_base}/chat/completions"
-    assert kwargs["timeout"] == 45.0
+    assert kwargs["timeout"] == 12.0
     assert payload["model"] == settings.planner_model
+    assert payload["thinking"] == {"type": "disabled"}
     assert payload["messages"][0]["content"] == JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT
     user_blob = json.loads(payload["messages"][1]["content"])
     assert user_blob["message"] == "找后端实习"
@@ -686,7 +687,28 @@ def test_summarize_job_search_uses_chat_completions_when_configured() -> None:
     ]
 
 
-def test_planner_and_summarizer_requests_use_45_second_timeout() -> None:
+def test_summarize_job_search_disables_thinking_even_when_planner_keeps_it() -> None:
+    client = JobSearchSummarizeChatClient()
+    original_disable_thinking = settings.planner_disable_thinking
+    original_planner_api_key = settings.planner_api_key
+
+    settings.planner_disable_thinking = False
+    settings.planner_api_key = "planner-only-key"
+    try:
+        client.summarize_job_search(
+            message="找后端实习",
+            memory_context=[],
+            jobs=[{"title": "Backend Intern", "snippet": "Python team"}],
+        )
+    finally:
+        settings.planner_disable_thinking = original_disable_thinking
+        settings.planner_api_key = original_planner_api_key
+
+    payload = client.summarize_chat_calls[0][1]
+    assert payload["thinking"] == {"type": "disabled"}
+
+
+def test_planner_uses_full_timeout_and_summarizer_uses_short_timeout() -> None:
     client = TimeoutCaptureLLMClient()
 
     client.generate_plan(
@@ -702,7 +724,7 @@ def test_planner_and_summarizer_requests_use_45_second_timeout() -> None:
     )
 
     assert client.calls[0][1]["timeout"] == 45.0
-    assert client.calls[1][1]["timeout"] == 45.0
+    assert client.calls[1][1]["timeout"] == 12.0
 
 
 def test_extract_career_events_uses_structured_responses_payload() -> None:
@@ -722,7 +744,9 @@ def test_extract_career_events_uses_structured_responses_payload() -> None:
         }
     ]
     assert client.calls
-    payload = client.calls[0][1]
+    _, payload, kwargs = client.calls[0]
+    assert kwargs["timeout"] == 5.0
+    assert payload["thinking"] == {"type": "disabled"}
     user_blob = json.loads(payload["input"][1]["content"])
     assert user_blob["user_id"] == "event-user"
     assert "Canva backend" in user_blob["message"]

@@ -28,6 +28,9 @@ class LLMClient:
     # Hard cap on planner-produced step chains. Anything longer is treated as a
     # hallucinated tool loop and falls back to the deterministic plan.
     MAX_PLAN_STEPS = 6
+    PLANNER_TIMEOUT_SECONDS = 45.0
+    JOB_SEARCH_SUMMARY_TIMEOUT_SECONDS = 12.0
+    CAREER_EVENT_EXTRACTION_TIMEOUT_SECONDS = 5.0
 
     def __init__(self) -> None:
         self.model = settings.default_model
@@ -134,7 +137,7 @@ class LLMClient:
                 f"{self._planner_base_url().rstrip('/')}/chat/completions",
                 api_key=self._planner_api_key(),
                 payload=request,
-                timeout=45.0,
+                timeout=self.JOB_SEARCH_SUMMARY_TIMEOUT_SECONDS,
             )
             text = self._extract_chat_completion_text(chat_payload).strip()
             if not text:
@@ -162,7 +165,7 @@ class LLMClient:
                 f"{self._planner_base_url().rstrip('/')}/responses",
                 api_key=self._planner_api_key(),
                 payload=request,
-                timeout=45.0,
+                timeout=self.CAREER_EVENT_EXTRACTION_TIMEOUT_SECONDS,
             )
             text = self._extract_responses_text(response_payload)
             return self._normalize_extracted_career_events(json.loads(text))
@@ -192,7 +195,7 @@ class LLMClient:
                 f"{self._planner_base_url().rstrip('/')}/responses",
                 api_key=self._planner_api_key(),
                 payload=request,
-                timeout=45.0,
+                timeout=self.PLANNER_TIMEOUT_SECONDS,
             )
             return self._extract_plan_payload(response_payload)
         except httpx.HTTPStatusError as exc:
@@ -210,7 +213,7 @@ class LLMClient:
             f"{self._planner_base_url().rstrip('/')}/chat/completions",
             api_key=self._planner_api_key(),
             payload=chat_request,
-            timeout=45.0,
+            timeout=self.PLANNER_TIMEOUT_SECONDS,
         )
         return self._extract_chat_completions_plan_payload(chat_payload)
 
@@ -222,7 +225,7 @@ class LLMClient:
         available_tools: List[str],
         user_state: Dict[str, Any],
     ) -> Dict[str, Any]:
-        return {
+        request = {
             "model": self._planner_model(),
             "input": [
                 {
@@ -252,6 +255,9 @@ class LLMClient:
                 }
             },
         }
+        if settings.planner_disable_thinking:
+            self._disable_thinking(request)
+        return request
 
     def _build_chat_completions_plan_request(
         self,
@@ -292,7 +298,7 @@ class LLMClient:
             },
         }
         if settings.planner_disable_thinking:
-            request["thinking"] = {"type": "disabled"}
+            self._disable_thinking(request)
         return request
 
     def _extract_plan_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -411,7 +417,7 @@ class LLMClient:
         memory_context: List[str],
         jobs: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        return {
+        request = {
             "model": self._planner_model(),
             "messages": [
                 {
@@ -431,13 +437,18 @@ class LLMClient:
                 },
             ],
         }
+        self._disable_thinking(request)
+        return request
+
+    def _disable_thinking(self, request: Dict[str, Any]) -> None:
+        request["thinking"] = {"type": "disabled"}
 
     def _build_career_event_extract_request(
         self,
         user_id: str,
         message: str,
     ) -> Dict[str, Any]:
-        return {
+        request = {
             "model": self._planner_model(),
             "input": [
                 {
@@ -500,6 +511,8 @@ class LLMClient:
                 }
             },
         }
+        self._disable_thinking(request)
+        return request
 
     def _extract_chat_completion_text(self, payload: Dict[str, Any]) -> str:
         choices = payload.get("choices", [])
