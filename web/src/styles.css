@@ -208,8 +208,8 @@ h1 {
 }
 
 .status-pill.loading svg,
-.composer button svg,
-.query-form button svg {
+.composer button.is-loading svg,
+.query-form button.is-loading svg {
   animation: spin 0.9s linear infinite;
 }
 

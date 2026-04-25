@@ -309,7 +309,12 @@ function ChatView({
           placeholder="Ask about jobs, applications, interviews, or next steps"
           rows={3}
         />
-        <button type="submit" disabled={isLoading || !input.trim()} aria-label="Send message">
+        <button
+          type="submit"
+          disabled={isLoading || !input.trim()}
+          aria-label="Send message"
+          className={isLoading ? "is-loading" : ""}
+        >
           {isLoading ? <Loader2 size={19} /> : <Send size={19} />}
         </button>
       </form>
@@ -339,7 +344,11 @@ function QueryView({
           rows={5}
           placeholder="Run a single task through /chat"
         />
-        <button type="submit" disabled={isLoading || !input.trim()}>
+        <button
+          type="submit"
+          disabled={isLoading || !input.trim()}
+          className={isLoading ? "is-loading" : ""}
+        >
           {isLoading ? <Loader2 size={18} /> : <FileSearch size={18} />}
           Run
         </button>
