@@ -239,3 +239,10 @@ Eval harness against a running server (19 cases, includes filter, career insight
 ```bash
 python3 evals/run_eval.py --base-url http://127.0.0.1:8000
 ```
+
+Frontend smoke test (Playwright, mocked `/chat`, no backend required):
+
+```bash
+cd web
+npm run test:e2e
+```
