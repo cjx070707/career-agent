@@ -14,6 +14,7 @@ def isolated_runtime(tmp_path: Path):
     original_chroma_collection_name = settings.chroma_collection_name
     original_openai_api_key = settings.openai_api_key
     original_planner_api_key = settings.planner_api_key
+    original_vision_api_key = settings.vision_api_key
 
     db_path = tmp_path / "test.db"
     chroma_path = tmp_path / "chroma"
@@ -24,6 +25,7 @@ def isolated_runtime(tmp_path: Path):
     settings.chroma_collection_name = collection_name
     settings.openai_api_key = ""
     settings.planner_api_key = ""
+    settings.vision_api_key = ""
     init_db(str(db_path))
 
     try:
@@ -38,3 +40,4 @@ def isolated_runtime(tmp_path: Path):
         settings.chroma_collection_name = original_chroma_collection_name
         settings.openai_api_key = original_openai_api_key
         settings.planner_api_key = original_planner_api_key
+        settings.vision_api_key = original_vision_api_key

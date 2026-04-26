@@ -12,6 +12,7 @@ from app.api.interviews import router as interviews_router
 from app.api.jobs import router as jobs_router
 from app.api.matches import router as matches_router
 from app.api.resumes import router as resumes_router
+from app.api.vision import router as vision_router
 from app.env import settings
 
 
@@ -25,6 +26,7 @@ app.include_router(candidates_router)
 app.include_router(jobs_router)
 app.include_router(resumes_router)
 app.include_router(matches_router)
+app.include_router(vision_router)
 
 demo_directory = Path(__file__).resolve().parents[1] / "demo"
 if demo_directory.exists():

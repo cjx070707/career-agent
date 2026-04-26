@@ -54,6 +54,23 @@ type ChatResponse = {
   llm_trace: LLMTrace;
 };
 
+type ResumeImageParseResponse = {
+  type: "resume_image";
+  model: string;
+  parsed: {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    education: { school?: string | null; degree?: string | null; dates?: string | null }[];
+    skills: string[];
+    projects: { name?: string | null; summary?: string | null; technologies: string[] }[];
+    experience: { company?: string | null; role?: string | null; dates?: string | null; summary?: string | null }[];
+    summary?: string | null;
+  };
+  raw_text: string;
+  warnings: string[];
+};
+
 type Message = {
   id: number;
   role: "user" | "agent";
@@ -101,6 +118,20 @@ async function sendChat(userId: string, message: string): Promise<ChatResponse> 
   return response.json();
 }
 
+async function parseResumeImage(file: File): Promise<ResumeImageParseResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch("/vision/resume-image", {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Request failed with ${response.status}`);
+  }
+  return response.json();
+}
+
 function App() {
   const [view, setView] = useState<ViewMode>("chat");
   const [userId, setUserId] = useState("demo-user");
@@ -108,7 +139,9 @@ function App() {
   const [queryInput, setQueryInput] = useState("结合我的投递和面试反馈，我下一步该准备什么？");
   const [messages, setMessages] = useState<Message[]>([]);
   const [queryResult, setQueryResult] = useState<ChatResponse | null>(null);
+  const [resumeImageResult, setResumeImageResult] = useState<ResumeImageParseResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isVisionLoading, setIsVisionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nextId = useRef(1);
 
@@ -162,6 +195,20 @@ function App() {
       return;
     }
     setChatInput(prompt);
+  }
+
+  async function handleResumeImageParse(file: File) {
+    if (isVisionLoading) return;
+    setError(null);
+    setIsVisionLoading(true);
+    try {
+      const response = await parseResumeImage(file);
+      setResumeImageResult(response);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setIsVisionLoading(false);
+    }
   }
 
   return (
@@ -244,6 +291,9 @@ function App() {
               isLoading={isLoading}
               onSubmit={handleQuerySubmit}
               result={queryResult}
+              resumeImageResult={resumeImageResult}
+              isVisionLoading={isVisionLoading}
+              onParseResumeImage={handleResumeImageParse}
             />
           )}
 
@@ -394,13 +444,27 @@ function QueryView({
   isLoading,
   onSubmit,
   result,
+  resumeImageResult,
+  isVisionLoading,
+  onParseResumeImage,
 }: {
   input: string;
   setInput: (value: string) => void;
   isLoading: boolean;
   onSubmit: (event?: FormEvent) => void;
   result: ChatResponse | null;
+  resumeImageResult: ResumeImageParseResponse | null;
+  isVisionLoading: boolean;
+  onParseResumeImage: (file: File) => Promise<void>;
 }) {
+  async function onFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await onParseResumeImage(file);
+    event.currentTarget.value = "";
+  }
+
+  const parsed = resumeImageResult?.parsed;
   return (
     <div className="query-view">
       <form className="query-form" onSubmit={onSubmit}>
@@ -425,6 +489,52 @@ function QueryView({
           Answer
         </div>
         <p>{result?.answer ?? "Run a query to see the agent response."}</p>
+      </div>
+      <div className="answer-panel">
+        <div className="section-title">
+          <FileSearch size={18} />
+          Resume Image Parse (MVP)
+        </div>
+        <label className="field-label" htmlFor="resume-image-upload">Upload Resume Image</label>
+        <input
+          id="resume-image-upload"
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          onChange={onFileChange}
+          disabled={isVisionLoading}
+        />
+        {isVisionLoading ? <p>Parsing image...</p> : null}
+        {resumeImageResult ? (
+          <div className="source-list">
+            <p><strong>Name:</strong> {parsed?.name || "—"}</p>
+            <p><strong>Email:</strong> {parsed?.email || "—"}</p>
+            <p><strong>Summary:</strong> {parsed?.summary || "—"}</p>
+            <div className="steps-row">
+              {(parsed?.skills || []).length ? (
+                parsed?.skills.map((skill) => <span key={skill}>{skill}</span>)
+              ) : (
+                <span>No skills extracted</span>
+              )}
+            </div>
+            {parsed?.projects?.length ? (
+              <div className="source-list">
+                {parsed.projects.map((project, index) => (
+                  <article key={`${project.name || "project"}-${index}`} className="source-card">
+                    <h2>{project.name || "Unnamed project"}</h2>
+                    <p>{project.summary || "No summary"}</p>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+            {resumeImageResult.warnings.length ? (
+              <div className="muted-box">
+                {resumeImageResult.warnings.join(" ")}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <p>Upload one resume screenshot/image to parse structured fields.</p>
+        )}
       </div>
     </div>
   );

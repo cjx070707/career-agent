@@ -153,6 +153,21 @@ The `get_interview_feedback` tool is automatically invoked when the user asks ab
 recent interview feedback (e.g. "我最近面试反馈怎么样？"). Results appear in
 `sources[]` with `type="interview_feedback"`.
 
+### Vision Resume Image API (MVP)
+
+`POST /vision/resume-image` — parse one resume screenshot/image into structured JSON:
+
+- multipart file field: `file`
+- accepted types: `image/png`, `image/jpeg`, `image/webp`
+- max file size: 5MB
+
+Current MVP scope:
+
+- only supports resume image parsing
+- no DB persistence
+- no automatic candidate/resume creation
+- no `/chat` agent integration
+
 ### Career Insights Tool
 
 The `get_career_insights` tool is automatically invoked when the user asks for a
@@ -221,6 +236,14 @@ Planner and job-search summarizer can also use a dedicated compatible endpoint:
 export PLANNER_API_KEY="your_api_key"
 export PLANNER_BASE_URL="https://your-compatible-provider/v1"
 export PLANNER_MODEL="your_model_name"
+```
+
+Vision resume parsing can use a dedicated model/endpoint (falls back to planner settings if unset):
+
+```bash
+export VISION_MODEL="qwen3-vl-flash-2026-01-22"
+export VISION_API_KEY="your_api_key"
+export VISION_BASE_URL="https://your-compatible-provider/v1"
 ```
 
 If these variables are missing, the project falls back to deterministic local behavior

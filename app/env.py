@@ -43,6 +43,18 @@ class Settings(BaseModel):
     planner_base_url: str = get_setting("PLANNER_BASE_URL", get_setting("OPENAI_BASE_URL", "https://api.openai.com/v1"))
     planner_model: str = get_setting("PLANNER_MODEL", get_setting("DEFAULT_MODEL", "gpt-4.1-mini"))
     planner_disable_thinking: bool = get_bool_setting("PLANNER_DISABLE_THINKING", False)
+    vision_api_key: str = get_setting(
+        "VISION_API_KEY",
+        get_setting("PLANNER_API_KEY", get_setting("OPENAI_API_KEY", "")),
+    )
+    vision_base_url: str = get_setting(
+        "VISION_BASE_URL",
+        get_setting(
+            "PLANNER_BASE_URL",
+            get_setting("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        ),
+    )
+    vision_model: str = get_setting("VISION_MODEL", "qwen3-vl-flash-2026-01-22")
     db_path: str = get_setting("DB_PATH", "data/career_agent.db")
     job_postings_file: str = get_setting("JOB_POSTINGS_FILE", "data/job_postings.json")
     chroma_persist_directory: str = get_setting("CHROMA_PERSIST_DIRECTORY", "data/chroma")
