@@ -185,6 +185,14 @@ def _run_expectations(
     plan = body.get("plan") or {}
     llm_trace = body.get("llm_trace") or {}
 
+    _check(
+        checks,
+        "contract_version",
+        body.get("contract_version") == "chat.v1",
+        got=body.get("contract_version"),
+        want="chat.v1",
+    )
+
     if "plan_task_type" in expect:
         allowed = _as_list(expect["plan_task_type"])
         _check(

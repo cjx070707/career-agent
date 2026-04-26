@@ -63,6 +63,7 @@ The Stage B `/chat` contract is frozen at these fields. The demo only reads thes
 
 `POST /chat` response body (all fields always present):
 
+- `contract_version`: `"chat.v1"`, stable response contract identifier
 - `answer`: string, the final user-facing reply
 - `memory_used`: boolean, whether any prior turn influenced this reply
 - `tool_used`: string | null, the last tool that produced `answer`

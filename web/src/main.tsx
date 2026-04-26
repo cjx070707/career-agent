@@ -44,6 +44,7 @@ type LLMTrace = {
 };
 
 type ChatResponse = {
+  contract_version: "chat.v1";
   answer: string;
   memory_used: boolean;
   sources: ChatSource[];

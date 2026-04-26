@@ -1,12 +1,25 @@
+import json
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.schemas.chat import ChatResponse
 from app.services.candidate_service import CandidateService
 from app.services.job_service import JobService
 from app.services.resume_service import ResumeService
 
 
 client = TestClient(app)
+
+
+def test_chat_response_schema_matches_v1_snapshot() -> None:
+    snapshot_path = (
+        Path(__file__).parent / "snapshots" / "chat_response_schema_v1.json"
+    )
+    expected = json.loads(snapshot_path.read_text(encoding="utf-8"))
+
+    assert ChatResponse.model_json_schema() == expected
 
 
 def test_chat_search_contract_is_stable(isolated_runtime) -> None:
@@ -20,6 +33,7 @@ def test_chat_search_contract_is_stable(isolated_runtime) -> None:
     assert response.status_code == 200
     body = response.json()
     assert set(body.keys()) == {
+        "contract_version",
         "answer",
         "memory_used",
         "sources",
@@ -28,6 +42,7 @@ def test_chat_search_contract_is_stable(isolated_runtime) -> None:
         "tool_trace",
         "llm_trace",
     }
+    assert body["contract_version"] == "chat.v1"
     assert body["tool_used"] == "search_jobs"
     assert body["plan"]["task_type"] == "job_search"
     assert body["plan"]["planner_source"] == "router"

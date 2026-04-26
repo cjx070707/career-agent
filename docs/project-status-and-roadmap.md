@@ -118,10 +118,11 @@ API 层          app/api/             HTTP 入口、参数校验
 | 能力 | 状态 | 代码入口 | 简历条 |
 |---|---|---|---|
 | FastAPI 后端骨架 | ✅ | `app/main.py` | #6 |
-| /chat 稳定 response contract | ✅ | `app/schemas/chat.py` | #6 |
+| /chat 稳定 response contract + contract_version | ✅ | `app/schemas/chat.py` | #6 |
 | 静态 demo 单页（HTML/JS） | ✅ | `demo/` | #6 |
 | evals 评测框架（19 条回归用例） | ✅ | `evals/` | #6 |
 | source_field_all_contain 严格断言 | ✅ | `evals/run_eval.py` | #6 |
+| /chat schema snapshot | ✅ | `tests/snapshots/chat_response_schema_v1.json` | #6 |
 | React 双页面前端 | ✅ | `web/` | #5, #6 |
 | GPT-4V 图像输入 | ❌ | — | #5 |
 | TTS 语音播报 | ❌ | — | #5 |
@@ -157,7 +158,7 @@ API 层          app/api/             HTTP 入口、参数校验
 | ReAct observe 环节 | 5.1 基本完成 | ~3 天 | `_should_continue_after_step` 改为 LLM 判断 |
 | Multi-Agent 拆分 + Orchestrator | ReAct | ~5 天 | AgentService 拆 N 个 sub-agent |
 | CoT 显式推理链 | 无 | ~2 天 | Planner prompt 加 chain-of-thought |
-| /chat contract 版本化 + schema 快照 | 无 | ~2 天 | `contract_version` 字段 + pytest schema snapshot |
+| ~~/chat contract 版本化 + schema 快照~~ | ~~无~~ | ~~完成~~ | ✅ `contract_version="chat.v1"` 字段 + pytest schema snapshot |
 
 ## 6. 简历对照表
 
@@ -170,7 +171,7 @@ API 层          app/api/             HTTP 入口、参数校验
 | #3 双层决策 + 可观测 | **90%** — Router ✅，Planner ✅，护栏 ✅，降级 ✅，trace ✅ | 基本完成，可打磨 |
 | #4 混合召回 RAG | 88% — 向量召回 ✅，BM25 ✅，RRF ✅，rerank ✅，metadata filter ✅，reason ✅；career insights 可返回 source_summary 并被 Agent 回答消费 ✅；eval 已覆盖 career insights 与岗位搜索记忆隔离 ✅ | 继续补更细粒度排序调参 |
 | #5 图像输入 + 多端交互 | 35% — React 双页面 ✅；GPT-4V ❌，TTS ❌ | GPT-4V → TTS |
-| #6 工程基建与评测 | 87% — FastAPI ✅，React ✅，evals 19 条 ✅，ToolRegistry ✅，工具 metadata export ✅ | 可继续做前端自动化验收与 schema snapshot |
+| #6 工程基建与评测 | 90% — FastAPI ✅，React ✅，evals 19 条 ✅，ToolRegistry ✅，工具 metadata export ✅，/chat contract_version + schema snapshot ✅ | 可继续做前端自动化验收 |
 
 ## 7. 架构升级路径
 

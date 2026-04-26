@@ -1,6 +1,8 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+
+CHAT_CONTRACT_VERSION = "chat.v1"
 
 
 class ChatRequest(BaseModel):
@@ -39,6 +41,10 @@ class LLMTrace(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    contract_version: Literal["chat.v1"] = Field(
+        default=CHAT_CONTRACT_VERSION,
+        description="Stable /chat response contract version",
+    )
     answer: str
     memory_used: bool = False
     sources: list[ChatSource] = Field(default_factory=list)
