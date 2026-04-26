@@ -52,7 +52,7 @@ API 层          app/api/             HTTP 入口、参数校验
 工具层          app/tools/ + ToolRegistry  声明式注册，Pydantic schema 验证
 模型层          app/llm/client.py          planner / summarizer / generate + 契约护栏
 存储层          SQLite + ChromaDB + data/
-评测层          evals/                     16 条回归用例 + 结构化断言
+评测层          evals/                     19 条回归用例 + 结构化断言
 演示层          web/ + demo/               React 双页面 + 静态 HTML/JS 单页
 ```
 
@@ -120,7 +120,7 @@ API 层          app/api/             HTTP 入口、参数校验
 | FastAPI 后端骨架 | ✅ | `app/main.py` | #6 |
 | /chat 稳定 response contract | ✅ | `app/schemas/chat.py` | #6 |
 | 静态 demo 单页（HTML/JS） | ✅ | `demo/` | #6 |
-| evals 评测框架（16 条回归用例） | ✅ | `evals/` | #6 |
+| evals 评测框架（19 条回归用例） | ✅ | `evals/` | #6 |
 | source_field_all_contain 严格断言 | ✅ | `evals/run_eval.py` | #6 |
 | React 双页面前端 | ✅ | `web/` | #5, #6 |
 | GPT-4V 图像输入 | ❌ | — | #5 |
@@ -168,9 +168,9 @@ API 层          app/api/             HTTP 入口、参数校验
 | #1 双层记忆 | 92% — 短期记忆 ✅，profile augment ✅，投递记录 ✅，面试反馈 ✅，长期画像落库 ✅，画像向量化 ✅；关键事件结构化沉淀 ✅，LLM 抽取 ✅；career insights 已输出 strengths / risk_areas / next_actions ✅ | 继续打磨记忆质量与召回评测 |
 | #2 MCP-ready 工具层 | 90% — 7 个工具 ✅（含 get_applications / get_interview_feedback / get_career_insights），ToolRegistry ✅，metadata/schema export ✅；真正 MCP 协议作为可选升级 | 可继续打磨工具分域与外部协议适配 |
 | #3 双层决策 + 可观测 | **90%** — Router ✅，Planner ✅，护栏 ✅，降级 ✅，trace ✅ | 基本完成，可打磨 |
-| #4 混合召回 RAG | 87% — 向量召回 ✅，BM25 ✅，RRF ✅，rerank ✅，metadata filter ✅，reason ✅；career insights 可返回 source_summary 并被 Agent 回答消费 ✅ | 继续补检索质量 eval 与更细粒度排序调参 |
+| #4 混合召回 RAG | 88% — 向量召回 ✅，BM25 ✅，RRF ✅，rerank ✅，metadata filter ✅，reason ✅；career insights 可返回 source_summary 并被 Agent 回答消费 ✅；eval 已覆盖 career insights 与岗位搜索记忆隔离 ✅ | 继续补更细粒度排序调参 |
 | #5 图像输入 + 多端交互 | 35% — React 双页面 ✅；GPT-4V ❌，TTS ❌ | GPT-4V → TTS |
-| #6 工程基建与评测 | 85% — FastAPI ✅，React ✅，evals 16 条 ✅，ToolRegistry ✅，工具 metadata export ✅ | 可继续做前端自动化验收与 schema snapshot |
+| #6 工程基建与评测 | 87% — FastAPI ✅，React ✅，evals 19 条 ✅，ToolRegistry ✅，工具 metadata export ✅ | 可继续做前端自动化验收与 schema snapshot |
 
 ## 7. 架构升级路径
 

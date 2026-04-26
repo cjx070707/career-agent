@@ -50,6 +50,12 @@ One JSON object per line. Top-level fields:
   - `resumes`: `[{"user_id": str, "title": str, "content": str, "version": str}]`
     — resolved to `candidate_id` by matching `user_id` from `seed.candidates`
   - `jobs`: `[{"title": str}]`
+  - `applications`: `[{"user_id": str, "company": str, "job_title": str,
+    "status": str, "note": str}]` — resolved to `candidate_id` by matching
+    `user_id` from `seed.candidates`
+  - `interviews`: `[{"user_id": str, "company": str, "job_title": str,
+    "interview_round": str, "result": str, "feedback": str}]` — resolved to
+    `candidate_id` by matching `user_id` from `seed.candidates`
   - `warmup_messages`: `[str]` — each posted to `/chat` before the main message
 - `expect`: checks applied to the `/chat` response. Supported keys:
   - `plan_task_type`: string or list of allowed strings
@@ -61,11 +67,13 @@ One JSON object per line. Top-level fields:
   - `tool_trace_equals`: list, exact match
   - `sources_nonempty` / `sources_empty`: bool
   - `source_type`: every source must be this type
+  - `source_types_include`: required source types across all sources
   - `source_snippet_contains_any`: at least one snippet contains one of these
   - `source_field_contains`: object like
     `{"field": "location", "any": ["Sydney", "USYD"]}`
   - `llm_trace_allowed`: mapping of `llm_trace.<field>` -> allowed values
   - `answer_contains_any`: answer must include at least one of these
+  - `answer_contains_all`: answer must include every listed string
   - `answer_not_contains`: answer must include none of these
 
 ## Philosophy

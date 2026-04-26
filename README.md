@@ -233,7 +233,7 @@ Full suite without live model dependencies:
 env -u OPENAI_API_KEY -u OPENAI_BASE_URL -u DEFAULT_MODEL -u PLANNER_API_KEY -u PLANNER_BASE_URL -u PLANNER_MODEL python3 -m pytest -q
 ```
 
-Eval harness against a running server (16 cases, includes filter constraint assertions):
+Eval harness against a running server (19 cases, includes filter, career insights, and memory-isolation assertions):
 
 ```bash
 python3 evals/run_eval.py --base-url http://127.0.0.1:8000

@@ -107,6 +107,43 @@ def _seed_case(base_url: str, case: Dict[str, Any]) -> Dict[str, Any]:
             },
         )
 
+    for application in seed.get("applications", []) or []:
+        owner = application.get("user_id") or ""
+        candidate_id = candidate_by_user.get(owner)
+        if candidate_id is None:
+            raise SystemExit(
+                f"[eval] application for user_id={owner!r} needs a candidate seed before it"
+            )
+        _post_json(
+            f"{base_url}/applications",
+            {
+                "candidate_id": candidate_id,
+                "company": application["company"],
+                "job_title": application["job_title"],
+                "status": application["status"],
+                "note": application.get("note"),
+            },
+        )
+
+    for interview in seed.get("interviews", []) or []:
+        owner = interview.get("user_id") or ""
+        candidate_id = candidate_by_user.get(owner)
+        if candidate_id is None:
+            raise SystemExit(
+                f"[eval] interview for user_id={owner!r} needs a candidate seed before it"
+            )
+        _post_json(
+            f"{base_url}/interviews",
+            {
+                "candidate_id": candidate_id,
+                "company": interview["company"],
+                "job_title": interview["job_title"],
+                "interview_round": interview["interview_round"],
+                "result": interview["result"],
+                "feedback": interview.get("feedback"),
+            },
+        )
+
     for warmup in seed.get("warmup_messages", []) or []:
         _post_json(
             f"{base_url}/chat",
@@ -212,6 +249,12 @@ def _run_expectations(
         ok = bool(sources) and all(s.get("type") == want for s in sources)
         _check(checks, "source_type", ok, got=[s.get("type") for s in sources], want=want)
 
+    if "source_types_include" in expect:
+        want = list(expect["source_types_include"])
+        got = [s.get("type") for s in sources]
+        ok = all(item in got for item in want)
+        _check(checks, "source_types_include", ok, got=got, want=want)
+
     if "source_snippet_contains_any" in expect:
         want = list(expect["source_snippet_contains_any"])
         snippets = [str(s.get("snippet") or "") for s in sources]
@@ -282,6 +325,11 @@ def _run_expectations(
         want = list(expect["answer_contains_any"])
         ok = any(needle in answer for needle in want)
         _check(checks, "answer_contains_any", ok, got=answer[:200], want=want)
+
+    if "answer_contains_all" in expect:
+        want = list(expect["answer_contains_all"])
+        ok = all(needle in answer for needle in want)
+        _check(checks, "answer_contains_all", ok, got=answer[:200], want=want)
 
     if "answer_not_contains" in expect:
         banned = list(expect["answer_not_contains"])
