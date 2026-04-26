@@ -125,7 +125,6 @@ API 层          app/api/             HTTP 入口、参数校验
 | /chat schema snapshot | ✅ | `tests/snapshots/chat_response_schema_v1.json` | #6 |
 | React 双页面前端 | ✅ | `web/` | #5, #6 |
 | GPT-4V 图像输入 | ❌ | — | #5 |
-| TTS 语音播报 | ❌ | — | #5 |
 
 ## 5. 从现状到简历北极星的任务清单
 
@@ -149,7 +148,6 @@ API 层          app/api/             HTTP 入口、参数校验
 | ~~长期职业画像向量化~~ | ~~长期画像存储~~ | ~~#1, #4~~ | ~~完成~~ | ✅ 画像摘要进入向量检索，并能以 `career_profile` source 作为回答证据 |
 | ~~关键事件抽取（LLM 提取 + 向量入库）~~ | ~~长期画像向量化~~ | ~~#1, #4~~ | ~~完成~~ | ✅ 投递/面试结构化事件 + LLM 自由文本消息事件均沉淀为 `career_event` 并可被向量检索命中 |
 | GPT-4V 图像输入（简历/JD 截图解析） | React 前端 | #5 | ~5 天 | 截图上传 → 结构化字段输出完整链路 |
-| TTS 语音播报 | React 前端 | #5 | ~3 天 | 回答可语音播放 |
 
 ### 5.3 可选升级（不影响简历声明，但增强技术深度）
 
@@ -170,7 +168,7 @@ API 层          app/api/             HTTP 入口、参数校验
 | #2 MCP-ready 工具层 | 90% — 7 个工具 ✅（含 get_applications / get_interview_feedback / get_career_insights），ToolRegistry ✅，metadata/schema export ✅；真正 MCP 协议作为可选升级 | 可继续打磨工具分域与外部协议适配 |
 | #3 双层决策 + 可观测 | **90%** — Router ✅，Planner ✅，护栏 ✅，降级 ✅，trace ✅ | 基本完成，可打磨 |
 | #4 混合召回 RAG | 88% — 向量召回 ✅，BM25 ✅，RRF ✅，rerank ✅，metadata filter ✅，reason ✅；career insights 可返回 source_summary 并被 Agent 回答消费 ✅；eval 已覆盖 career insights 与岗位搜索记忆隔离 ✅ | 继续补更细粒度排序调参 |
-| #5 图像输入 + 多端交互 | 35% — React 双页面 ✅；GPT-4V ❌，TTS ❌ | GPT-4V → TTS |
+| #5 图片多模态 + 多端交互 | 35% — React 双页面 ✅；GPT-4V 简历/JD 截图解析 ❌ | GPT-4V 图像输入 |
 | #6 工程基建与评测 | 90% — FastAPI ✅，React ✅，evals 19 条 ✅，ToolRegistry ✅，工具 metadata export ✅，/chat contract_version + schema snapshot ✅ | 可继续做前端自动化验收 |
 
 ## 7. 架构升级路径
