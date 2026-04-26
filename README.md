@@ -164,9 +164,19 @@ recent interview feedback (e.g. "我最近面试反馈怎么样？"). Results ap
 Current MVP scope:
 
 - only supports resume image parsing
-- no DB persistence
+- parsed result can be saved into existing `resumes` table via `POST /vision/resume-image/save`
+- save requires an existing candidate resolved by `user_id`
+- save endpoint does not re-run vision parsing
+- no image persistence
 - no automatic candidate/resume creation
 - no `/chat` agent integration
+
+`POST /vision/resume-image/save` request body:
+
+- `user_id`: string, required
+- `parsed`: parsed resume JSON from `/vision/resume-image`
+- `title`: string, optional (defaults to `"Resume parsed from image"`)
+- `version`: string, optional (defaults to `"vision-v1"`)
 
 ### Career Insights Tool
 

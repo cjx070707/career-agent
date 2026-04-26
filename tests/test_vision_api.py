@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.env import settings
 from app.main import app
+from app.services.candidate_service import CandidateService
 
 client = TestClient(app)
 
@@ -106,3 +107,103 @@ def test_vision_api_returns_structured_fields_from_mocked_client(
     assert body["model"] == settings.vision_model
     assert body["parsed"]["skills"] == ["Python", "FastAPI", "SQL"]
     assert body["parsed"]["projects"][0]["name"] == "Career Agent"
+
+
+def test_vision_save_parsed_resume_for_existing_candidate(isolated_runtime) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Vision Save User",
+        user_id="vision-save-user",
+    )
+    response = client.post(
+        "/vision/resume-image/save",
+        json={
+            "user_id": "vision-save-user",
+            "title": "Resume parsed from image",
+            "version": "vision-v1",
+            "parsed": {
+                "name": "Jesse Chen",
+                "email": "jesse@example.com",
+                "education": [
+                    {
+                        "school": "University of Sydney",
+                        "degree": "Bachelor of Computer Science",
+                        "dates": "2023-2026",
+                    }
+                ],
+                "skills": ["Python", "FastAPI"],
+                "projects": [
+                    {
+                        "name": "Career Agent",
+                        "summary": "Built a FastAPI and RAG based job coaching agent.",
+                        "technologies": ["FastAPI", "SQLite", "ChromaDB"],
+                    }
+                ],
+                "experience": [],
+                "summary": "Backend-focused CS student.",
+            },
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["candidate_id"] == candidate["id"]
+    assert body["title"] == "Resume parsed from image"
+    assert body["version"] == "vision-v1"
+    assert "Jesse Chen" in body["content"]
+    assert "Python" in body["content"]
+    assert "Career Agent" in body["content"]
+    assert "University of Sydney" in body["content"]
+
+
+def test_vision_save_returns_404_when_candidate_missing(isolated_runtime) -> None:
+    response = client.post(
+        "/vision/resume-image/save",
+        json={
+            "user_id": "missing-user",
+            "parsed": {"skills": ["Python"]},
+        },
+    )
+    assert response.status_code == 404
+    assert "Candidate not found" in response.json()["detail"]
+
+
+def test_vision_formatting_handles_sparse_data(isolated_runtime) -> None:
+    CandidateService().create_candidate(
+        name="Sparse User",
+        user_id="sparse-user",
+    )
+    response = client.post(
+        "/vision/resume-image/save",
+        json={
+            "user_id": "sparse-user",
+            "parsed": {"skills": ["Python"]},
+        },
+    )
+    assert response.status_code == 200
+    content = response.json()["content"]
+    assert "# Parsed Resume" in content
+    assert "Python" in content
+
+
+def test_vision_save_does_not_call_vision_model(
+    isolated_runtime,
+    monkeypatch,
+) -> None:
+    from app.api import vision as vision_api
+
+    CandidateService().create_candidate(
+        name="No Vision Call User",
+        user_id="no-vision-call-user",
+    )
+
+    def forbidden_call(*args, **kwargs):
+        raise AssertionError("vision parse should not be called by save endpoint")
+
+    monkeypatch.setattr(vision_api.vision_client, "parse_resume_image", forbidden_call)
+    response = client.post(
+        "/vision/resume-image/save",
+        json={
+            "user_id": "no-vision-call-user",
+            "parsed": {"skills": ["Python"]},
+        },
+    )
+    assert response.status_code == 200

@@ -39,3 +39,18 @@ class ResumeImageParseResponse(BaseModel):
     parsed: ParsedResumeImage
     raw_text: str = ""
     warnings: List[str] = Field(default_factory=list)
+
+
+class SaveParsedResumeRequest(BaseModel):
+    user_id: str = Field(..., min_length=1)
+    parsed: ParsedResumeImage
+    title: Optional[str] = None
+    version: Optional[str] = "vision-v1"
+
+
+class SavedParsedResumeResponse(BaseModel):
+    resume_id: int
+    candidate_id: int
+    title: str
+    version: str
+    content: str

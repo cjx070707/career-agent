@@ -71,6 +71,14 @@ type ResumeImageParseResponse = {
   warnings: string[];
 };
 
+type SavedParsedResumeResponse = {
+  resume_id: number;
+  candidate_id: number;
+  title: string;
+  version: string;
+  content: string;
+};
+
 type Message = {
   id: number;
   role: "user" | "agent";
@@ -132,6 +140,28 @@ async function parseResumeImage(file: File): Promise<ResumeImageParseResponse> {
   return response.json();
 }
 
+async function saveParsedResume(
+  userId: string,
+  parsed: ResumeImageParseResponse["parsed"]
+): Promise<SavedParsedResumeResponse> {
+  const response = await fetch("/vision/resume-image/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_id: userId,
+      title: "Resume parsed from image",
+      version: "vision-v1",
+      parsed,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Request failed with ${response.status}`);
+  }
+  return response.json();
+}
+
 function App() {
   const [view, setView] = useState<ViewMode>("chat");
   const [userId, setUserId] = useState("demo-user");
@@ -140,8 +170,10 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [queryResult, setQueryResult] = useState<ChatResponse | null>(null);
   const [resumeImageResult, setResumeImageResult] = useState<ResumeImageParseResponse | null>(null);
+  const [savedResume, setSavedResume] = useState<SavedParsedResumeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isVisionLoading, setIsVisionLoading] = useState(false);
+  const [isSavingResume, setIsSavingResume] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nextId = useRef(1);
 
@@ -204,10 +236,29 @@ function App() {
     try {
       const response = await parseResumeImage(file);
       setResumeImageResult(response);
+      setSavedResume(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {
       setIsVisionLoading(false);
+    }
+  }
+
+  async function handleSaveParsedResume() {
+    if (!resumeImageResult || isSavingResume) return;
+
+    setError(null);
+    setIsSavingResume(true);
+    try {
+      const response = await saveParsedResume(
+        userId.trim() || "demo-user",
+        resumeImageResult.parsed
+      );
+      setSavedResume(response);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setIsSavingResume(false);
     }
   }
 
@@ -294,6 +345,9 @@ function App() {
               resumeImageResult={resumeImageResult}
               isVisionLoading={isVisionLoading}
               onParseResumeImage={handleResumeImageParse}
+              savedResume={savedResume}
+              isSavingResume={isSavingResume}
+              onSaveParsedResume={handleSaveParsedResume}
             />
           )}
 
@@ -447,6 +501,9 @@ function QueryView({
   resumeImageResult,
   isVisionLoading,
   onParseResumeImage,
+  savedResume,
+  isSavingResume,
+  onSaveParsedResume,
 }: {
   input: string;
   setInput: (value: string) => void;
@@ -456,6 +513,9 @@ function QueryView({
   resumeImageResult: ResumeImageParseResponse | null;
   isVisionLoading: boolean;
   onParseResumeImage: (file: File) => Promise<void>;
+  savedResume: SavedParsedResumeResponse | null;
+  isSavingResume: boolean;
+  onSaveParsedResume: () => Promise<void>;
 }) {
   async function onFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -530,6 +590,16 @@ function QueryView({
               <div className="muted-box">
                 {resumeImageResult.warnings.join(" ")}
               </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void onSaveParsedResume()}
+              disabled={isSavingResume}
+            >
+              {isSavingResume ? "Saving..." : "Save as Resume"}
+            </button>
+            {savedResume ? (
+              <p>Saved resume #{savedResume.resume_id} as {savedResume.version}</p>
             ) : null}
           </div>
         ) : (
