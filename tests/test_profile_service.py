@@ -49,6 +49,18 @@ def test_update_from_message_detects_full_stack_and_data_roles(isolated_runtime)
     assert "kubernetes" in devops["skill_keywords"]
 
 
+def test_update_from_message_skips_third_party_profile_pollution(isolated_runtime) -> None:
+    service = ProfileService()
+    service.update_from_message("user-third-party", "我想走 Python FastAPI 后端方向")
+
+    profile = service.update_from_message("user-third-party", "我朋友想找 Java 后端岗位")
+
+    assert profile["target_role_preference"] == "backend"
+    assert "python" in profile["skill_keywords"]
+    assert "fastapi" in profile["skill_keywords"]
+    assert "java" not in profile["skill_keywords"]
+
+
 def test_extract_skill_keywords_recognizes_broader_stack(isolated_runtime) -> None:
     service = ProfileService()
 

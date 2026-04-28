@@ -40,6 +40,8 @@ class ProfileService:
 
     def update_from_message(self, user_id: str, message: str) -> Dict[str, object]:
         current = self.get_profile(user_id)
+        if self._should_skip_profile_write(message):
+            return current
         lowered = message.lower()
         tokens = set(re.findall(r"[a-zA-Z0-9]+", lowered))
 
@@ -91,6 +93,23 @@ class ProfileService:
             )
 
         return self.get_profile(user_id)
+
+    def _should_skip_profile_write(self, message: str) -> bool:
+        lowered = message.lower()
+        third_party_markers = (
+            "我朋友",
+            "朋友想",
+            "帮我朋友",
+            "我同学",
+            "同学想",
+            "我室友",
+            "my friend",
+            "for my friend",
+        )
+        self_override_markers = ("我自己", "我本人", "for me", "myself")
+        has_third_party_signal = any(marker in message or marker in lowered for marker in third_party_markers)
+        has_self_override = any(marker in message or marker in lowered for marker in self_override_markers)
+        return has_third_party_signal and not has_self_override
 
     def refresh_from_career_records(self, user_id: str) -> Dict[str, object]:
         applications = self._list_application_statuses(user_id)

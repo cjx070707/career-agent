@@ -480,6 +480,27 @@ class LLMClient:
             if not plan.follow_up_question:
                 raise ValueError("follow_up_question is required when more context is needed")
 
+        if plan.confidence is not None and not (0.0 <= plan.confidence <= 1.0):
+            raise ValueError("confidence must be between 0 and 1")
+
+        if str(plan.plan_type or "").strip().lower() == "diagnostic":
+            if not str(plan.goal or "").strip():
+                raise ValueError("diagnostic plan_type requires goal")
+            if not list(plan.subgoals or []):
+                raise ValueError("diagnostic plan_type requires subgoals")
+            if not list(plan.resources or []):
+                raise ValueError("diagnostic plan_type requires resources")
+            if not list(plan.stop_criteria or []):
+                raise ValueError("diagnostic plan_type requires stop_criteria")
+
+        action = str(plan.action or "").strip().lower()
+        if action in {"match", "compare", "rank", "explain_gap", "recommend"}:
+            resources = {item.strip().lower() for item in (plan.resources or []) if str(item).strip()}
+            if "resume" not in resources and "latest_resume" not in resources:
+                raise ValueError("matching actions require resume resource")
+            if not ({"job_detail", "job_query", "target_jobs"} & resources):
+                raise ValueError("matching actions require job_detail/job_query/target_jobs resource")
+
         steps = list(plan.steps or [])
 
         if len(steps) > self.MAX_PLAN_STEPS:

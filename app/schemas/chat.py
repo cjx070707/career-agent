@@ -25,6 +25,18 @@ class ChatPlan(BaseModel):
     task_type: str = Field(..., description="Machine-readable task label")
     reason: str = Field(..., description="Human-readable routing rationale")
     steps: list[str] = Field(default_factory=list)
+    # Phase 1 extension: keep all new planner fields optional for
+    # backward compatibility with existing router/planner outputs.
+    domain: Optional[str] = None
+    action: Optional[str] = None
+    goal: Optional[str] = None
+    subgoals: list[str] = Field(default_factory=list)
+    resources: list[str] = Field(default_factory=list)
+    required_context: list[str] = Field(default_factory=list)
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    plan_type: Optional[str] = None
+    evidence_policy: Optional[str] = None
+    stop_criteria: list[str] = Field(default_factory=list)
     needs_more_context: bool = False
     missing_context: list[str] = Field(default_factory=list)
     follow_up_question: Optional[str] = None

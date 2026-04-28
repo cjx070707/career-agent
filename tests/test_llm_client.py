@@ -824,3 +824,68 @@ def test_decide_react_action_sanitizes_unknown_tool_to_finish() -> None:
     )
     assert result["action"] == "finish"
     assert result["tool_name"] is None
+
+
+def test_generate_plan_accepts_optional_extended_schema_fields() -> None:
+    client = ModelFirstLLMClient(
+        model_result={
+            "task_type": "career_insights",
+            "reason": "diagnose with structured plan metadata",
+            "steps": ["get_career_insights"],
+            "domain": "career",
+            "action": "diagnose_bottleneck",
+            "goal": "Find main bottleneck",
+            "subgoals": ["check interview feedback"],
+            "resources": ["candidate_profile", "latest_resume", "target_jobs"],
+            "required_context": ["target_role"],
+            "confidence": 0.86,
+            "plan_type": "diagnostic",
+            "evidence_policy": "use_existing",
+            "stop_criteria": ["main bottleneck identified"],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": None,
+        }
+    )
+
+    plan = client.generate_plan(
+        message="我为什么一直投递没回音？",
+        memory_context=[],
+        profile={},
+        available_tools=["get_career_insights"],
+        user_state={"has_candidate": True, "has_resume": True},
+    )
+
+    assert plan["planner_source"] == "model"
+    assert plan["domain"] == "career"
+    assert plan["action"] == "diagnose_bottleneck"
+    assert plan["confidence"] == 0.86
+    assert plan["plan_type"] == "diagnostic"
+
+
+def test_generate_plan_falls_back_when_diagnostic_plan_missing_goal() -> None:
+    client = ModelFirstLLMClient(
+        model_result={
+            "task_type": "career_insights",
+            "reason": "diagnostic metadata missing required fields",
+            "steps": ["get_career_insights"],
+            "plan_type": "diagnostic",
+            "subgoals": ["check interview feedback"],
+            "resources": ["candidate_profile"],
+            "stop_criteria": ["done"],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": None,
+        }
+    )
+
+    plan = client.generate_plan(
+        message="我为什么一直投递没回音？",
+        memory_context=[],
+        profile={},
+        available_tools=["get_career_insights"],
+        user_state={"has_candidate": True, "has_resume": True},
+    )
+
+    assert client.fallback_calls == 1
+    assert plan["planner_source"] == "fallback"
