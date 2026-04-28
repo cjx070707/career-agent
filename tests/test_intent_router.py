@@ -254,7 +254,7 @@ def test_router_resume_summary_phrase_conceptual() -> None:
     router = IntentRouter()
     plan = _route(router, "帮我概括一下我的简历")
     assert plan is not None
-    assert plan["task_type"] == "candidate_profile"
+    assert plan["task_type"] == "resume_analysis"
     assert plan["domain"] == "resume_analysis"
     assert plan["action"] == "summarize"
     assert plan["resources"] == ["resume"]
@@ -266,7 +266,7 @@ def test_router_resume_summary_cv_focus() -> None:
     router = IntentRouter()
     plan = _route(router, "看一下我的 CV，总结重点")
     assert plan is not None
-    assert plan["task_type"] == "candidate_profile"
+    assert plan["task_type"] == "resume_analysis"
     assert plan["domain"] == "resume_analysis"
     assert plan["action"] == "summarize"
     assert plan["resources"] == ["resume"]

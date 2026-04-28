@@ -5,11 +5,13 @@ import httpx
 from pydantic import ValidationError
 
 from app.env import settings
+from app.llm.career_event_extractor_client import CareerEventExtractorClient
+from app.llm.plan_validator import PlanValidator
 from app.llm.prompts import (
-    CAREER_EVENT_EXTRACTOR_SYSTEM_PROMPT,
     JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT,
     PLANNER_SYSTEM_PROMPT,
 )
+from app.llm.react_decider_client import ReactDeciderClient
 from app.schemas.chat import ChatPlan
 
 
@@ -18,6 +20,7 @@ class LLMClient:
 
     ALLOWED_TASK_TYPES = {
         "candidate_profile",
+        "resume_analysis",
         "job_search",
         "job_match",
         "job_match_planning",
@@ -38,6 +41,12 @@ class LLMClient:
         self.last_plan_source = "not_used"
         self.last_job_search_summary_source = "not_used"
         self.last_generate_source = "not_used"
+        self.plan_validator = PlanValidator(
+            allowed_task_types=self.ALLOWED_TASK_TYPES,
+            max_plan_steps=self.MAX_PLAN_STEPS,
+        )
+        self.react_decider = ReactDeciderClient(timeout_seconds=self.OBSERVE_DECISION_TIMEOUT_SECONDS)
+        self.career_event_extractor = CareerEventExtractorClient()
 
     def is_configured(self) -> bool:
         return bool(settings.openai_api_key)
@@ -169,7 +178,7 @@ class LLMClient:
                 timeout=self.CAREER_EVENT_EXTRACTION_TIMEOUT_SECONDS,
             )
             text = self._extract_responses_text(response_payload)
-            return self._normalize_extracted_career_events(json.loads(text))
+            return self.career_event_extractor.normalize(json.loads(text))
         except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
             return []
 
@@ -183,20 +192,13 @@ class LLMClient:
         remaining_steps: List[str],
         available_tools: List[str],
     ) -> Dict[str, Any]:
-        """Bounded observe step for executor loops.
-
-        Returns a structured decision:
-          - {"decision": "continue"|"stop"|"replan", "reason": str, "steps": list[str]}
-        """
-        if not self.is_configured():
-            return self._fallback_observe_decision(
-                task_type=task_type,
-                current_step=current_step,
-                tool_result=tool_result,
-                remaining_steps=remaining_steps,
-            )
-
-        request = self._build_observe_decision_request(
+        return self.react_decider.decide_next_action(
+            is_configured=self.is_configured(),
+            request_builder=self._build_observe_decision_request,
+            post_responses=self._post_responses,
+            extract_chat_completion_text=self._extract_chat_completion_text,
+            planner_base_url=self._planner_base_url(),
+            planner_api_key=self._planner_api_key(),
             task_type=task_type,
             message=message,
             current_step=current_step,
@@ -204,36 +206,6 @@ class LLMClient:
             remaining_steps=remaining_steps,
             available_tools=available_tools,
         )
-        try:
-            payload = self._post_responses(
-                f"{self._planner_base_url().rstrip('/')}/chat/completions",
-                api_key=self._planner_api_key(),
-                payload=request,
-                timeout=self.OBSERVE_DECISION_TIMEOUT_SECONDS,
-            )
-            raw = self._extract_chat_completion_text(payload).strip()
-            parsed = json.loads(raw) if raw else {}
-            decision = str(parsed.get("decision") or "continue").strip().lower()
-            if decision not in {"continue", "stop", "replan"}:
-                decision = "continue"
-            steps = parsed.get("steps") if isinstance(parsed.get("steps"), list) else []
-            sanitized_steps = [
-                str(step).strip()
-                for step in steps
-                if isinstance(step, str) and str(step).strip() in set(available_tools)
-            ]
-            return {
-                "decision": decision,
-                "reason": str(parsed.get("reason") or "").strip(),
-                "steps": sanitized_steps,
-            }
-        except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
-            return self._fallback_observe_decision(
-                task_type=task_type,
-                current_step=current_step,
-                tool_result=tool_result,
-                remaining_steps=remaining_steps,
-            )
 
     def decide_react_action(
         self,
@@ -250,7 +222,7 @@ class LLMClient:
           {"action": "tool"|"finish", "tool_name": str|None, "reason": str, "observation_summary": str}
         """
         if not self.is_configured():
-            return self._fallback_react_action(
+            return self.react_decider.fallback_react_action(
                 state=state,
                 available_tools=available_tools,
                 reason="llm_not_configured",
@@ -272,13 +244,12 @@ class LLMClient:
             )
             raw = self._extract_chat_completion_text(payload).strip()
             parsed = json.loads(raw) if raw else {}
-            return self._sanitize_react_action(
+            return self.react_decider.sanitize_react_action(
                 parsed=parsed,
-                state=state,
                 available_tools=available_tools,
             )
         except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
-            return self._fallback_react_action(
+            return self.react_decider.fallback_react_action(
                 state=state,
                 available_tools=available_tools,
                 reason="react_fallback_after_error",
@@ -446,84 +417,21 @@ class LLMClient:
         planner_source: str,
         available_tools: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        normalized_payload = self._normalize_plan(plan_payload)
-        plan = ChatPlan.model_validate(
-            {
-                **normalized_payload,
-                "planner_source": planner_source,
-            }
+        return self.plan_validator.validate_and_dump(
+            plan_payload=plan_payload,
+            planner_source=planner_source,
+            available_tools=available_tools,
         )
-        self._validate_plan_contract(plan, available_tools=available_tools)
-        return plan.model_dump()
 
     def _normalize_plan(self, plan_payload: Dict[str, Any]) -> Dict[str, Any]:
-        normalized = dict(plan_payload)
-        if normalized.get("task_type") != "job_search":
-            return normalized
-        steps = normalized.get("steps", [])
-        if "search_jobs" not in steps:
-            return normalized
-        normalized["steps"] = ["search_jobs"]
-        return normalized
+        return self.plan_validator.normalize_plan(plan_payload)
 
     def _validate_plan_contract(
         self,
         plan: ChatPlan,
         available_tools: Optional[List[str]] = None,
     ) -> None:
-        if plan.task_type not in self.ALLOWED_TASK_TYPES:
-            raise ValueError(f"Invalid task_type: {plan.task_type}")
-
-        if plan.needs_more_context:
-            if not plan.missing_context:
-                raise ValueError("missing_context is required when more context is needed")
-            if not plan.follow_up_question:
-                raise ValueError("follow_up_question is required when more context is needed")
-
-        if plan.confidence is not None and not (0.0 <= plan.confidence <= 1.0):
-            raise ValueError("confidence must be between 0 and 1")
-
-        if str(plan.plan_type or "").strip().lower() == "diagnostic":
-            if not str(plan.goal or "").strip():
-                raise ValueError("diagnostic plan_type requires goal")
-            if not list(plan.subgoals or []):
-                raise ValueError("diagnostic plan_type requires subgoals")
-            if not list(plan.resources or []):
-                raise ValueError("diagnostic plan_type requires resources")
-            if not list(plan.stop_criteria or []):
-                raise ValueError("diagnostic plan_type requires stop_criteria")
-
-        action = str(plan.action or "").strip().lower()
-        if action in {"match", "compare", "rank", "explain_gap", "recommend"}:
-            resources = {item.strip().lower() for item in (plan.resources or []) if str(item).strip()}
-            if "resume" not in resources and "latest_resume" not in resources:
-                raise ValueError("matching actions require resume resource")
-            if not ({"job_detail", "job_query", "target_jobs"} & resources):
-                raise ValueError("matching actions require job_detail/job_query/target_jobs resource")
-
-        steps = list(plan.steps or [])
-
-        if len(steps) > self.MAX_PLAN_STEPS:
-            raise ValueError(
-                f"plan steps exceed MAX_PLAN_STEPS={self.MAX_PLAN_STEPS}"
-            )
-
-        if available_tools is not None:
-            allowed_tools = set(available_tools)
-            unknown = [step for step in steps if step not in allowed_tools]
-            if unknown:
-                raise ValueError(
-                    f"plan contains steps not in available_tools: {unknown}"
-                )
-
-        if plan.task_type == "job_match_planning" and steps:
-            # For recommendation plans, we must search before matching so the
-            # match step has candidate jobs to score against.
-            if "search_jobs" in steps and "match_resume_to_jobs" in steps:
-                if steps.index("search_jobs") > steps.index("match_resume_to_jobs"):
-                    raise ValueError(
-                        "job_match_planning requires search_jobs before match_resume_to_jobs"
-                    )
+        self.plan_validator.validate_plan_contract(plan, available_tools=available_tools)
 
     def _post_responses(
         self,
@@ -581,69 +489,11 @@ class LLMClient:
         user_id: str,
         message: str,
     ) -> Dict[str, Any]:
-        request = {
-            "model": self._planner_model(),
-            "input": [
-                {
-                    "role": "system",
-                    "content": CAREER_EVENT_EXTRACTOR_SYSTEM_PROMPT,
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "user_id": user_id,
-                            "message": message,
-                        },
-                        ensure_ascii=False,
-                    ),
-                },
-            ],
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "career_events",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "properties": {
-                            "events": {
-                                "type": "array",
-                                "maxItems": 3,
-                                "items": {
-                                    "type": "object",
-                                    "additionalProperties": False,
-                                    "properties": {
-                                        "event_type": {
-                                            "type": "string",
-                                            "enum": [
-                                                "application_status",
-                                                "interview_feedback",
-                                                "assessment_result",
-                                                "career_milestone",
-                                            ],
-                                        },
-                                        "title": {"type": "string"},
-                                        "summary": {"type": "string"},
-                                        "occurred_at": {
-                                            "type": ["string", "null"],
-                                        },
-                                    },
-                                    "required": [
-                                        "event_type",
-                                        "title",
-                                        "summary",
-                                        "occurred_at",
-                                    ],
-                                },
-                            }
-                        },
-                        "required": ["events"],
-                    },
-                }
-            },
-        }
+        request = self.career_event_extractor.build_request(
+            planner_model=self._planner_model(),
+            user_id=user_id,
+            message=message,
+        )
         self._disable_thinking(request)
         return request
 
@@ -778,23 +628,11 @@ class LLMClient:
         state: Dict[str, Any],
         available_tools: List[str],
     ) -> Dict[str, Any]:
-        action = str(parsed.get("action") or "finish").strip().lower()
-        if action not in {"tool", "finish"}:
-            action = "finish"
-        tool_name_raw = parsed.get("tool_name")
-        tool_name = str(tool_name_raw).strip() if isinstance(tool_name_raw, str) else ""
-        if action == "tool" and tool_name not in set(available_tools):
-            action = "finish"
-            tool_name = ""
-        return {
-            "action": action,
-            "tool_name": tool_name or None,
-            "reason": str(parsed.get("reason") or "").strip(),
-            "observation_summary": str(parsed.get("observation_summary") or "").strip(),
-            "tool_input_hint": parsed.get("tool_input_hint")
-            if isinstance(parsed.get("tool_input_hint"), dict)
-            else {},
-        }
+        _ = state
+        return self.react_decider.sanitize_react_action(
+            parsed=parsed,
+            available_tools=available_tools,
+        )
 
     def _fallback_react_action(
         self,
@@ -803,32 +641,11 @@ class LLMClient:
         available_tools: List[str],
         reason: str,
     ) -> Dict[str, Any]:
-        if available_tools:
-            return {
-                "action": "tool",
-                "tool_name": available_tools[0],
-                "reason": reason,
-                "observation_summary": "",
-                "tool_input_hint": {},
-            }
-        last_step = str(state.get("_last_step") or "")
-        if last_step:
-            idx = available_tools.index(last_step) if last_step in available_tools else -1
-            if idx >= 0 and idx + 1 < len(available_tools):
-                return {
-                    "action": "tool",
-                    "tool_name": available_tools[idx + 1],
-                    "reason": reason,
-                    "observation_summary": "",
-                    "tool_input_hint": {},
-                }
-        return {
-            "action": "finish",
-            "tool_name": None,
-            "reason": reason,
-            "observation_summary": "",
-            "tool_input_hint": {},
-        }
+        return self.react_decider.fallback_react_action(
+            state=state,
+            available_tools=available_tools,
+            reason=reason,
+        )
 
     def _fallback_observe_decision(
         self,
@@ -838,17 +655,12 @@ class LLMClient:
         tool_result: Any,
         remaining_steps: List[str],
     ) -> Dict[str, Any]:
-        if task_type == "job_match_planning" and current_step == "search_jobs":
-            hits = tool_result if isinstance(tool_result, list) else []
-            if not hits:
-                return {"decision": "stop", "reason": "search returned no jobs", "steps": []}
-            if "match_resume_to_jobs" not in remaining_steps:
-                return {
-                    "decision": "replan",
-                    "reason": "search returned jobs; append matching step",
-                    "steps": ["match_resume_to_jobs"],
-                }
-        return {"decision": "continue", "reason": "default continue", "steps": []}
+        return self.react_decider.fallback_observe_decision(
+            task_type=task_type,
+            current_step=current_step,
+            tool_result=tool_result,
+            remaining_steps=remaining_steps,
+        )
 
     def _extract_chat_completion_text(self, payload: Dict[str, Any]) -> str:
         choices = payload.get("choices", [])
@@ -878,40 +690,7 @@ class LLMClient:
         self,
         payload: Any,
     ) -> List[Dict[str, str]]:
-        if isinstance(payload, list):
-            raw_events = payload
-        elif isinstance(payload, dict):
-            raw_events = payload.get("events", [])
-        else:
-            return []
-
-        allowed_event_types = {
-            "application_status",
-            "interview_feedback",
-            "assessment_result",
-            "career_milestone",
-        }
-        events: List[Dict[str, str]] = []
-        for raw_event in raw_events[:3]:
-            if not isinstance(raw_event, dict):
-                continue
-            event_type = str(raw_event.get("event_type") or "").strip()
-            title = str(raw_event.get("title") or "").strip()
-            summary = str(raw_event.get("summary") or "").strip()
-            occurred_at = str(raw_event.get("occurred_at") or "").strip()
-            if event_type not in allowed_event_types:
-                continue
-            if not title or not summary:
-                continue
-            events.append(
-                {
-                    "event_type": event_type,
-                    "title": title,
-                    "summary": summary,
-                    "occurred_at": occurred_at,
-                }
-            )
-        return events
+        return self.career_event_extractor.normalize(payload)
 
     def _top_job_search_hits(self, jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return jobs[:3]

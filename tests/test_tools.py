@@ -1,8 +1,7 @@
-from app.mcp_server import list_tools, get_tool_schemas, call_tool
 from app.services.candidate_service import CandidateService
 from app.services.job_service import JobService
 from app.services.resume_service import ResumeService
-from app.services.tool_registry import build_default_tool_registry
+from app.tools.registry import build_default_tool_registry
 
 
 def test_default_tool_registry_exposes_core_tool_names(isolated_runtime) -> None:
@@ -134,10 +133,11 @@ def test_search_jobs_tool_without_filters_is_backward_compatible(isolated_runtim
 
 def test_mcp_server_lists_and_calls_tools(isolated_runtime) -> None:
     candidate = CandidateService().create_candidate(name="MCP User")
+    registry = build_default_tool_registry()
 
-    tools = list_tools()
-    schemas = get_tool_schemas()
-    result = call_tool(
+    tools = registry.list_tool_names()
+    schemas = registry.describe_tools()
+    result = registry.run(
         "get_candidate_profile",
         {"candidate_id": candidate["id"]},
     )

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { mockJsonPost } from "./test-helpers";
 
 const chatResponse = {
   contract_version: "chat.v1" as const,
@@ -35,18 +36,7 @@ const chatResponse = {
 };
 
 test("chat flow renders agent answer and expandable trace details", async ({ page }) => {
-  await page.route("**/chat", async (route) => {
-    if (route.request().method() !== "POST") {
-      await route.fallback();
-      return;
-    }
-
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(chatResponse),
-    });
-  });
+  await mockJsonPost(page, "**/chat", chatResponse);
 
   await page.goto("/");
 

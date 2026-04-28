@@ -339,6 +339,13 @@ Baseline vs loop comparison (writes both runs + delta report):
 python3 evals/compare_loop.py --base-url http://127.0.0.1:8000
 ```
 
+Use `evals/dataset.quick.jsonl` for smoke-sized checks when you need fast feedback.
+Example:
+
+```bash
+python3 evals/compare_loop.py --base-url http://127.0.0.1:8000 --dataset evals/dataset.quick.jsonl --output-dir evals/reports/quick
+```
+
 Frontend smoke test (Playwright, mocked `/chat`, no backend required):
 
 ```bash

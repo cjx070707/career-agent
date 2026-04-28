@@ -1,19 +1,20 @@
 from dataclasses import dataclass, field
-import re
 from typing import Any, Dict, List, Optional
 
 from app.llm.client import LLMClient
 from app.env import settings
-from app.routing.filter_extractor import extract_filters
 from app.routing.intent_router import IntentRouter
 from app.schemas.chat import ChatPlan, ChatSource, LLMTrace
 from app.services.candidate_service import CandidateService
 from app.services.career_event_service import CareerEventService
 from app.services.memory_service import MemoryService
+from app.services.plan_executor import PlanExecutor
 from app.services.profile_service import ProfileService
 from app.services.retrieval_service import RetrievalResult, RetrievalService
+from app.services.response_formatter import ToolResponseFormatter
 from app.services.resume_service import ResumeService
-from app.services.tool_registry import ToolRegistry, build_default_tool_registry
+from app.services.tool_payload_builder import ToolPayloadBuilder
+from app.tools.registry import ToolRegistry, build_default_tool_registry
 
 
 @dataclass
@@ -52,6 +53,18 @@ class AgentService:
         self.candidate_service = CandidateService()
         self.resume_service = ResumeService()
         self.profile_service = ProfileService()
+        self.tool_payload_builder = ToolPayloadBuilder(
+            candidate_service=self.candidate_service,
+            resume_service=self.resume_service,
+            profile_service=self.profile_service,
+        )
+        self.response_formatter = ToolResponseFormatter()
+        self.plan_executor = PlanExecutor(
+            tool_registry=self.tool_registry,
+            llm_client=self.llm_client,
+            max_loop_steps=self.MAX_LOOP_STEPS,
+            max_step_repeat=self.MAX_STEP_REPEAT,
+        )
         self.career_event_service = CareerEventService(
             retrieval_service=self.retrieval_service,
             llm_client=self.llm_client,
@@ -93,17 +106,21 @@ class AgentService:
             )
         if plan.steps:
             if self._should_use_react_loop(plan.task_type):
-                tool_trace, execution_state, loop_trace = self._execute_react_loop(
+                tool_trace, execution_state, loop_trace = self.plan_executor.execute_react_loop(
                     user_id=user_id,
                     message=message,
                     initial_steps=plan.steps,
                     task_type=plan.task_type,
+                    build_payload=self._build_tool_payload,
+                    should_continue_after_step=self._should_continue_after_step,
                 )
             else:
-                tool_trace, execution_state, loop_trace = self._execute_plan(
-                    user_id,
-                    message,
-                    plan.steps,
+                tool_trace, execution_state, loop_trace = self.plan_executor.execute_plan(
+                    user_id=user_id,
+                    message=message,
+                    steps=plan.steps,
+                    build_payload=self._build_tool_payload,
+                    should_continue_after_step=self._should_continue_after_step,
                 )
             # If `_execute_plan` could not run any step (e.g., the planner asked
             # for `get_candidate_profile` but the user has no candidate yet), we
@@ -123,8 +140,8 @@ class AgentService:
                     jobs=jobs,
                 )
             else:
-                answer = self._format_tool_answer(final_tool_name, final_result)
-            sources = self._extract_sources(final_tool_name, final_result)
+                answer = self.response_formatter.format_tool_answer(final_tool_name, final_result)
+            sources = self.response_formatter.extract_sources(final_tool_name, final_result)
             self.memory_service.save_turn(user_id, message, answer)
             return AgentResult(
                 answer=answer,
@@ -237,27 +254,13 @@ class AgentService:
         message: str,
         steps: List[str],
     ) -> tuple[List[str], Dict[str, Any], List[Dict[str, Any]]]:
-        trace: List[str] = []
-        state: Dict[str, Any] = {}
-        queue: List[str] = [step for step in steps if step in self.tool_registry.list_tool_names()]
-        while queue:
-            step = queue.pop(0)
-            try:
-                payload = self._build_tool_payload(user_id, message, step, state)
-                tool_result = self.tool_registry.run(step, payload)
-            except ValueError:
-                # Planner asked for a step whose prerequisite is missing
-                # (e.g., no candidate / resume for this user). Stop executing
-                # and let the caller fall back to the generic answer path.
-                break
-            if not bool(tool_result.get("ok", False)):
-                break
-            trace.append(step)
-            state[step] = tool_result["data"]
-            state["last_result"] = tool_result["data"]
-            if not self._should_continue_after_step(step, tool_result["data"], state):
-                break
-        return trace, state, []
+        return self.plan_executor.execute_plan(
+            user_id=user_id,
+            message=message,
+            steps=steps,
+            build_payload=self._build_tool_payload,
+            should_continue_after_step=self._should_continue_after_step,
+        )
 
     def _execute_react_loop(
         self,
@@ -267,293 +270,17 @@ class AgentService:
         initial_steps: List[str],
         task_type: str,
     ) -> tuple[List[str], Dict[str, Any], List[Dict[str, Any]]]:
-        trace: List[str] = []
-        state: Dict[str, Any] = {}
-        loop_trace: List[Dict[str, Any]] = []
-        queue: List[str] = [
-            step for step in initial_steps if step in self.tool_registry.list_tool_names()
-        ]
-
-        while queue and len(trace) < self.MAX_LOOP_STEPS:
-            step = queue.pop(0)
-            try:
-                payload = self._build_tool_payload(user_id, message, step, state)
-                tool_result = self.tool_registry.run(step, payload)
-            except ValueError:
-                break
-
-            observation_summary = self._summarize_observation(step, tool_result.get("data"))
-            if not bool(tool_result.get("ok", False)):
-                loop_trace.append(
-                    {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "stop",
-                        "reason": "tool_error",
-                        "observation_summary": observation_summary,
-                    }
-                )
-                break
-
-            trace.append(step)
-            state[step] = tool_result["data"]
-            state["last_result"] = tool_result["data"]
-            state["_last_step"] = step
-
-            if not self._should_continue_after_step(step, tool_result["data"], state):
-                loop_trace.append(
-                    {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "stop",
-                        "reason": "rule_stop_after_step",
-                        "observation_summary": observation_summary,
-                    }
-                )
-                break
-            if self._is_no_progress(step, tool_result["data"], state):
-                loop_trace.append(
-                    {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "stop",
-                        "reason": "no_progress",
-                        "observation_summary": observation_summary,
-                    }
-                )
-                break
-
-            if not queue:
-                loop_trace.append(
-                    {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "finish",
-                        "reason": "plan_exhausted",
-                        "observation_summary": observation_summary,
-                    }
-                )
-                break
-
-            react_action = self._decide_react_action(
-                task_type=task_type,
-                message=message,
-                state=state,
-                last_observation={
-                    "step": step,
-                    "result": tool_result["data"],
-                    "summary": observation_summary,
-                },
-                remaining_steps=list(queue),
-            )
-            action = str(react_action.get("action") or "finish").strip().lower()
-            if action != "tool":
-                loop_trace.append(
-                    {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "finish",
-                        "reason": str(react_action.get("reason") or "observer_finish"),
-                        "observation_summary": observation_summary,
-                    }
-                )
-                break
-
-            next_tool = str(react_action.get("tool_name") or "").strip()
-            if not next_tool:
-                loop_trace.append(
-                    {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "finish",
-                        "reason": "missing_tool_name",
-                        "observation_summary": observation_summary,
-                    }
-                )
-                break
-
-            executed_counts: Dict[str, int] = {}
-            for executed_step in trace:
-                executed_counts[executed_step] = executed_counts.get(executed_step, 0) + 1
-            if executed_counts.get(next_tool, 0) >= self.MAX_STEP_REPEAT:
-                loop_trace.append(
-                    {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "stop",
-                        "reason": "max_step_repeat_reached",
-                        "observation_summary": observation_summary,
-                    }
-                )
-                break
-
-            if not queue or queue[0] != next_tool:
-                queue.insert(0, next_tool)
-            queue = self._dedupe_over_repeated_steps(queue, trace)
-            loop_trace.append(
-                {
-                    "step": step,
-                    "action": "tool",
-                    "decision": str(react_action.get("decision") or "continue"),
-                    "reason": str(react_action.get("reason") or ""),
-                    "next_tool": next_tool,
-                    "observation_summary": str(
-                        react_action.get("observation_summary") or observation_summary
-                    ),
-                }
-            )
-
-        return trace, state, loop_trace
-
-    def _decide_react_action(
-        self,
-        *,
-        task_type: str,
-        message: str,
-        state: Dict[str, Any],
-        last_observation: Optional[Dict[str, Any]],
-        remaining_steps: List[str],
-    ) -> Dict[str, Any]:
-        decider = getattr(self.llm_client, "decide_react_action", None)
-        if callable(decider):
-            result = decider(
-                task_type=task_type,
-                message=message,
-                state=state,
-                last_observation=last_observation,
-                available_tools=remaining_steps or self.tool_registry.list_tool_names(),
-            )
-            if "decision" not in result:
-                result["decision"] = "continue" if result.get("action") == "tool" else "stop"
-            return result
-        fallback_decider = getattr(self.llm_client, "decide_next_action", None)
-        if callable(fallback_decider):
-            fallback = fallback_decider(
-                task_type=task_type,
-                message=message,
-                current_step=str((last_observation or {}).get("step") or ""),
-                tool_result=(last_observation or {}).get("result"),
-                remaining_steps=remaining_steps,
-                available_tools=self.tool_registry.list_tool_names(),
-            )
-            decision = str(fallback.get("decision") or "continue").strip().lower()
-            if decision == "stop":
-                return {
-                    "action": "finish",
-                    "tool_name": None,
-                    "reason": "legacy_stop",
-                    "decision": "stop",
-                }
-            if decision == "replan":
-                steps = fallback.get("steps") if isinstance(fallback.get("steps"), list) else []
-                next_tool = str(steps[0]).strip() if steps else None
-                return {
-                    "action": "tool" if next_tool else "finish",
-                    "tool_name": next_tool,
-                    "reason": str(fallback.get("reason") or "legacy_replan"),
-                    "decision": "replan" if next_tool else "stop",
-                }
-            next_tool = remaining_steps[0] if remaining_steps else None
-            return {
-                "action": "tool" if next_tool else "finish",
-                "tool_name": next_tool,
-                "reason": str(fallback.get("reason") or "legacy_continue"),
-                "decision": "continue" if next_tool else "stop",
-            }
-        return {"action": "finish", "tool_name": None, "reason": "no_decider", "decision": "stop"}
+        return self.plan_executor.execute_react_loop(
+            user_id=user_id,
+            message=message,
+            initial_steps=initial_steps,
+            task_type=task_type,
+            build_payload=self._build_tool_payload,
+            should_continue_after_step=self._should_continue_after_step,
+        )
 
     def _should_use_react_loop(self, task_type: Optional[str]) -> bool:
         return bool(settings.agent_enable_observe_loop and (task_type or "") in self.LOOP_ENABLED_TASK_TYPES)
-
-    def _normalize_replanned_steps(
-        self,
-        replacement_steps: List[Any],
-        current_queue: List[str],
-        trace: List[str],
-    ) -> List[str]:
-        allowed = set(self.tool_registry.list_tool_names())
-        executed = set(trace)
-        normalized = [
-            str(step).strip()
-            for step in replacement_steps
-            if isinstance(step, str) and str(step).strip() in allowed and str(step).strip() not in executed
-        ]
-        if normalized:
-            return normalized
-        return current_queue
-
-    def _dedupe_over_repeated_steps(self, queue: List[str], trace: List[str]) -> List[str]:
-        if not queue:
-            return queue
-        executed_counts: Dict[str, int] = {}
-        for step in trace:
-            executed_counts[step] = executed_counts.get(step, 0) + 1
-        filtered: List[str] = []
-        for step in queue:
-            if executed_counts.get(step, 0) >= self.MAX_STEP_REPEAT:
-                continue
-            filtered.append(step)
-        return filtered
-
-    def _should_observe_decision(
-        self,
-        *,
-        task_type: str,
-        current_step: str,
-        remaining_steps: List[str],
-    ) -> bool:
-        if task_type == "job_match_planning":
-            return current_step in {"search_jobs", "match_resume_to_jobs"} and bool(
-                remaining_steps
-            )
-        if task_type == "career_insights":
-            return current_step == "get_career_insights" and bool(remaining_steps)
-        return False
-
-    def _summarize_observation(self, step: str, tool_result: Any) -> str:
-        if step == "search_jobs" and isinstance(tool_result, list):
-            return f"found {len(tool_result)} job candidates"
-        if step == "match_resume_to_jobs" and isinstance(tool_result, dict):
-            matches = tool_result.get("matches", [])
-            if isinstance(matches, list):
-                return f"matched resume against {len(matches)} jobs"
-        if step == "get_career_insights" and isinstance(tool_result, dict):
-            return "generated career insight summary"
-        return "tool executed"
-
-    def _is_no_progress(self, step: str, tool_result: Any, state: Dict[str, Any]) -> bool:
-        signature = self._progress_signature(step, tool_result)
-        previous = state.get("_last_progress_signature")
-        state["_last_progress_signature"] = signature
-        if previous is None:
-            return False
-        return previous == signature
-
-    def _progress_signature(self, step: str, tool_result: Any) -> Any:
-        if step == "search_jobs" and isinstance(tool_result, list):
-            return (
-                step,
-                tuple(
-                    str(item.get("title", "")).strip().lower()
-                    for item in tool_result[:3]
-                    if isinstance(item, dict)
-                ),
-            )
-        if step == "match_resume_to_jobs" and isinstance(tool_result, dict):
-            matches = tool_result.get("matches", [])
-            if isinstance(matches, list):
-                return (
-                    step,
-                    tuple(
-                        (
-                            str(match.get("job_title", "")).strip().lower(),
-                            str(match.get("match_score", "")),
-                        )
-                        for match in matches[:3]
-                        if isinstance(match, dict)
-                    ),
-                )
-        return (step, str(tool_result)[:400])
 
     def _should_continue_after_step(
         self,
@@ -561,37 +288,11 @@ class AgentService:
         tool_result: Any,
         state: Dict[str, Any],
     ) -> bool:
-        if step != "search_jobs":
-            return True
-
-        if not tool_result:
-            state["last_result"] = []
-            return False
-
-        resume_data = state.get("get_resume_by_id")
-        if not resume_data:
-            return True
-
-        resume_tokens = self._tokenize(str(resume_data.get("content", "")))
-        if not resume_tokens:
-            return True
-
-        search_tokens: set[str] = set()
-        for item in tool_result:
-            search_tokens |= self._tokenize(
-                f"{item.get('title', '')} {item.get('snippet', '')}"
-            )
-
-        meaningful_overlap = (
-            resume_tokens - self._low_signal_tokens()
-        ) & (
-            search_tokens - self._low_signal_tokens()
+        return self.plan_executor.should_continue_after_search(
+            step=step,
+            tool_result=tool_result,
+            state=state,
         )
-        if meaningful_overlap:
-            return True
-
-        state["last_result"] = []
-        return False
 
     def _build_tool_payload(
         self,
@@ -600,230 +301,15 @@ class AgentService:
         tool_name: str,
         state: Dict[str, Any],
     ) -> Dict[str, Any]:
-        if tool_name == "get_candidate_profile":
-            candidate = self.candidate_service.get_latest_candidate(user_id)
-            return {"candidate_id": candidate["id"]}
-
-        if tool_name == "get_resume_by_id":
-            resume = self.resume_service.get_latest_resume(user_id)
-            state["latest_resume_id"] = resume["id"]
-            return {"resume_id": resume["id"]}
-
-        if tool_name == "match_resume_to_jobs":
-            resume_id = state.get("latest_resume_id")
-            if resume_id is None:
-                resume = self.resume_service.get_latest_resume(user_id)
-                resume_id = resume["id"]
-                state["latest_resume_id"] = resume_id
-            return {"resume_id": resume_id}
-
-        if tool_name == "search_jobs":
-            resume_data = state.get("get_resume_by_id")
-            query_parts = [message]
-            if resume_data is not None:
-                query_parts.append(str(resume_data.get("content", "")))
-            query = self.profile_service.augment_job_query(user_id, " ".join(query_parts))
-            # Structured slots come from the user's own message only; resume
-            # text is free-form and would produce noisy location/work_type
-            # signals (e.g., a Melbourne alumnus asking about Sydney jobs).
-            payload: Dict[str, Any] = {"query": query}
-            slot_filters = extract_filters(message)
-            if slot_filters:
-                payload["filters"] = slot_filters
-            return payload
-
-        if tool_name == "get_applications":
-            return {"user_id": user_id, "limit": 10}
-
-        if tool_name == "get_interview_feedback":
-            return {"user_id": user_id, "limit": 10}
-
-        if tool_name == "get_career_insights":
-            return {"user_id": user_id, "limit": 10}
-
-        return {}
+        return self.tool_payload_builder.build(
+            user_id=user_id,
+            message=message,
+            tool_name=tool_name,
+            state=state,
+        )
 
     def _format_tool_answer(self, tool_name: str, tool_result: Any) -> str:
-        if tool_name == "get_candidate_profile":
-            return f"我查到了你的候选人资料，当前姓名是 {tool_result['name']}。"
-
-        if tool_name == "search_jobs":
-            if not tool_result:
-                return "我暂时没有找到相关岗位。"
-            titles = ", ".join(result["title"] for result in tool_result[:3])
-            return f"我找到了这些相关岗位：{titles}。"
-
-        if tool_name == "match_resume_to_jobs":
-            matches = tool_result.get("matches", [])
-            if not matches:
-                return "我暂时没有找到和这份简历高度匹配的岗位。"
-            top_match = matches[0]
-            answer_parts = [
-                f"基于你的简历，优先推荐 {top_match['job_title']}，"
-                f"匹配分数约为 {top_match['match_score']}。"
-            ]
-            rationale = str(top_match.get("rationale", "")).strip()
-            if rationale:
-                answer_parts.append(f"匹配理由：{rationale}。")
-            if len(matches) > 1:
-                follow_ups = "、".join(
-                    match["job_title"] for match in matches[1:3]
-                )
-                answer_parts.append(f"也可以继续关注 {follow_ups}。")
-            return "".join(answer_parts)
-
-        if tool_name == "get_applications":
-            rows = tool_result if isinstance(tool_result, list) else []
-            if not rows:
-                return "你最近还没有投递记录。"
-            summary = []
-            for row in rows[:3]:
-                company = str(row.get("company", "")).strip()
-                title = str(row.get("job_title", "")).strip()
-                status = str(row.get("status", "")).strip()
-                summary.append(f"{company} - {title}（{status}）")
-            return "你最近的投递包括：" + "；".join(summary) + "。"
-
-        if tool_name == "get_interview_feedback":
-            rows = tool_result if isinstance(tool_result, list) else []
-            if not rows:
-                return "你最近还没有面试反馈记录。"
-            summary = []
-            for row in rows[:3]:
-                company = str(row.get("company", "")).strip()
-                title = str(row.get("job_title", "")).strip()
-                round_name = str(row.get("interview_round", "")).strip()
-                result = str(row.get("result", "")).strip()
-                summary.append(f"{company} - {title}（{round_name}/{result}）")
-            return "你最近的面试反馈包括：" + "；".join(summary) + "。"
-
-        if tool_name == "get_career_insights":
-            data = tool_result if isinstance(tool_result, dict) else {}
-            profile = data.get("profile", {})
-            applications = data.get("application_summary", {})
-            interviews = data.get("interview_summary", {})
-            strengths = data.get("strengths", [])
-            risk_areas = data.get("risk_areas", [])
-            next_actions = data.get("next_actions", data.get("suggestions", []))
-
-            role = str(profile.get("target_role_preference", "")).strip() or "暂未明确"
-            app_total = int(applications.get("total", 0) or 0)
-            interview_total = int(interviews.get("total", 0) or 0)
-            answer_parts = [
-                f"当前状态：目标方向是 {role}，",
-                f"最近有 {app_total} 条投递记录、{interview_total} 条面试反馈。"
-            ]
-            if strengths:
-                answer_parts.append(
-                    "已有优势：" + "；".join(str(item) for item in strengths[:2]) + "。"
-                )
-            if risk_areas:
-                answer_parts.append(
-                    "主要风险：" + "；".join(str(item) for item in risk_areas[:2]) + "。"
-                )
-            feedback_highlights = interviews.get("feedback_highlights", [])
-            if feedback_highlights:
-                answer_parts.append(
-                    "面试反馈里最需要关注的是：" + "；".join(feedback_highlights[:2]) + "。"
-                )
-            if next_actions:
-                answer_parts.append("推荐行动（下一步）：" + "；".join(str(item) for item in next_actions[:2]) + "。")
-            elif not app_total and not interview_total:
-                answer_parts.append("推荐行动（下一步）：先补充投递记录和面试反馈。")
-            return "".join(answer_parts)
-
-        return "工具执行完成。"
+        return self.response_formatter.format_tool_answer(tool_name, tool_result)
 
     def _extract_sources(self, tool_name: str, tool_result: Any) -> List[ChatSource]:
-        if tool_name == "search_jobs":
-            # /chat sources expose short evidence text, not the raw tool payload.
-            return [
-                ChatSource(
-                    type=result["type"],
-                    title=result["title"],
-                    snippet=str(result.get("reason") or result.get("snippet") or "").strip(),
-                    company=result.get("company"),
-                    location=result.get("location"),
-                    work_type=result.get("work_type"),
-                    posted_at=result.get("posted_at"),
-                    url=result.get("url"),
-                )
-                for result in tool_result
-            ]
-
-        if tool_name == "match_resume_to_jobs":
-            return [
-                ChatSource(
-                    type="job_posting",
-                    title=match["job_title"],
-                    snippet=match["rationale"],
-                )
-                for match in tool_result.get("matches", [])
-            ]
-
-        if tool_name == "get_applications":
-            return [
-                ChatSource(
-                    type="application",
-                    title=f"{item.get('company', '')} - {item.get('job_title', '')}".strip(" -"),
-                    snippet=f"状态：{item.get('status', '')}；备注：{item.get('note', '')}".strip(),
-                )
-                for item in (tool_result if isinstance(tool_result, list) else [])
-            ]
-
-        if tool_name == "get_interview_feedback":
-            return [
-                ChatSource(
-                    type="interview_feedback",
-                    title=f"{item.get('company', '')} - {item.get('job_title', '')}".strip(" -"),
-                    snippet=(
-                        f"轮次：{item.get('interview_round', '')}；"
-                        f"结果：{item.get('result', '')}；"
-                        f"反馈：{item.get('feedback', '')}"
-                    ).strip(),
-                )
-                for item in (tool_result if isinstance(tool_result, list) else [])
-            ]
-
-        if tool_name == "get_career_insights":
-            data = tool_result if isinstance(tool_result, dict) else {}
-            applications = data.get("application_summary", {}).get("recent", [])
-            interviews = data.get("interview_summary", {}).get("recent", [])
-            sources: List[ChatSource] = [
-                ChatSource(
-                    type="application",
-                    title=f"{item.get('company', '')} - {item.get('job_title', '')}".strip(" -"),
-                    snippet=f"状态：{item.get('status', '')}；备注：{item.get('note', '')}".strip(),
-                )
-                for item in applications
-            ]
-            sources.extend(
-                ChatSource(
-                    type="interview_feedback",
-                    title=f"{item.get('company', '')} - {item.get('job_title', '')}".strip(" -"),
-                    snippet=(
-                        f"轮次：{item.get('interview_round', '')}；"
-                        f"结果：{item.get('result', '')}；"
-                        f"反馈：{item.get('feedback', '')}"
-                    ).strip(),
-                )
-                for item in interviews
-            )
-            return sources
-
-        return []
-
-    def _tokenize(self, text: str) -> set[str]:
-        return set(re.findall(r"[a-zA-Z0-9]+", text.lower()))
-
-    def _low_signal_tokens(self) -> set[str]:
-        return {
-            "engineer",
-            "intern",
-            "platform",
-            "systems",
-            "system",
-            "role",
-            "job",
-            "jobs",
-        }
+        return self.response_formatter.extract_sources(tool_name, tool_result)

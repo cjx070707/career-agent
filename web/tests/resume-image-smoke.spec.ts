@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import { expect, test } from "@playwright/test";
+import { mockJsonPost, openQueryTab } from "./test-helpers";
 
 const parseResponse = {
   type: "resume_image" as const,
@@ -40,32 +41,9 @@ const saveResponse = {
 };
 
 test("query page can parse and save resume image", async ({ page }) => {
-  await page.route("**/vision/resume-image", async (route) => {
-    if (route.request().method() !== "POST") {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(parseResponse),
-    });
-  });
-
-  await page.route("**/vision/resume-image/save", async (route) => {
-    if (route.request().method() !== "POST") {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(saveResponse),
-    });
-  });
-
-  await page.goto("/");
-  await page.getByRole("button", { name: "Query" }).click();
+  await mockJsonPost(page, "**/vision/resume-image", parseResponse);
+  await mockJsonPost(page, "**/vision/resume-image/save", saveResponse);
+  await openQueryTab(page);
 
   await page.setInputFiles("#resume-image-upload", {
     name: "resume.png",
@@ -81,33 +59,21 @@ test("query page can parse and save resume image", async ({ page }) => {
 });
 
 test("query page disables saving when resume image parse is empty", async ({ page }) => {
-  await page.route("**/vision/resume-image", async (route) => {
-    if (route.request().method() !== "POST") {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ...parseResponse,
-        parsed: {
-          name: null,
-          email: null,
-          phone: null,
-          education: [],
-          skills: [],
-          projects: [],
-          experience: [],
-          summary: null,
-        },
-        warnings: ["Vision parsing failed. Returned empty parsed payload."],
-      }),
-    });
+  await mockJsonPost(page, "**/vision/resume-image", {
+    ...parseResponse,
+    parsed: {
+      name: null,
+      email: null,
+      phone: null,
+      education: [],
+      skills: [],
+      projects: [],
+      experience: [],
+      summary: null,
+    },
+    warnings: ["Vision parsing failed. Returned empty parsed payload."],
   });
-
-  await page.goto("/");
-  await page.getByRole("button", { name: "Query" }).click();
+  await openQueryTab(page);
 
   await page.setInputFiles("#resume-image-upload", {
     name: "resume.png",

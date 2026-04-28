@@ -4,7 +4,7 @@ from app.services.interview_service import InterviewService
 from app.services.candidate_service import CandidateService
 from app.services.job_service import JobService
 from app.services.memory_service import MemoryService
-from app.services.tool_registry import ToolRegistry
+from app.tools.registry import ToolRegistry
 from app.tools.base import ToolDefinition
 from app.schemas.tool import SearchJobsToolInput
 

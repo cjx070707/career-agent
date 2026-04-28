@@ -1,25 +1,7 @@
 from typing import Any, Dict, List, Optional
 
-
-# High-confidence keywords used to decide whether the router should handle a
-# job search. `job_search` must be obvious enough that a planner would produce
-# the same single-step plan; anything less clear is delegated to the LLM.
-_JOB_SEARCH_ACTION_KEYWORDS_ZH = ("找", "搜", "推荐", "看看有没有")
-_JOB_SEARCH_OBJECT_KEYWORDS_ZH = ("岗位", "职位", "招聘", "实习", "岗")
-_JOB_SEARCH_ACTION_KEYWORDS_EN = ("find", "search", "recommend", "look for")
-_JOB_SEARCH_OBJECT_KEYWORDS_EN = ("job", "jobs", "role", "position", "internship")
-
-# Compound-intent markers: user asks us to search AND leverage their resume in
-# the same message. This needs the full 4-step plan, not a bare search.
-_COMPOUND_MATCH_MARKERS = ("简历", "匹配度", "match my resume", "resume match")
-_GREETING_MESSAGES = {
-    "hi",
-    "hello",
-    "hey",
-    "你好",
-    "您好",
-    "嗨",
-}
+from app.routing.intent_signals import collect_intent_signals
+from app.routing.router_plan_factory import build_router_plan
 
 
 class IntentRouter:
@@ -41,59 +23,10 @@ class IntentRouter:
         def keep_available(steps: List[str]) -> List[str]:
             return [step for step in steps if step in tools]
 
-        def build_plan(
-            *,
-            task_type: str,
-            reason: str,
-            steps: List[str],
-            needs_more_context: bool,
-            missing_context: List[str],
-            follow_up_question: Optional[str],
-            domain: Optional[str] = None,
-            action: Optional[str] = None,
-            goal: Optional[str] = None,
-            subgoals: Optional[List[str]] = None,
-            resources: Optional[List[str]] = None,
-            required_context: Optional[List[str]] = None,
-            confidence: Optional[float] = None,
-            plan_type: Optional[str] = None,
-            evidence_policy: Optional[str] = None,
-            stop_criteria: Optional[List[str]] = None,
-        ) -> Dict[str, Any]:
-            return {
-                "task_type": task_type,
-                "reason": reason,
-                "steps": steps,
-                "needs_more_context": needs_more_context,
-                "missing_context": missing_context,
-                "follow_up_question": follow_up_question,
-                "planner_source": "router",
-                "domain": domain,
-                "action": action,
-                "goal": goal,
-                "subgoals": subgoals or [],
-                "resources": resources or [],
-                "required_context": required_context or [],
-                "confidence": confidence,
-                "plan_type": plan_type,
-                "evidence_policy": evidence_policy,
-                "stop_criteria": stop_criteria or [],
-            }
+        signals = collect_intent_signals(message, lowered_message, stripped_message)
 
-        has_job_search_zh_signal = any(kw in message for kw in _JOB_SEARCH_ACTION_KEYWORDS_ZH) and any(
-            kw in message for kw in _JOB_SEARCH_OBJECT_KEYWORDS_ZH
-        )
-        has_job_search_en_signal = any(kw in lowered_message for kw in _JOB_SEARCH_ACTION_KEYWORDS_EN) and any(
-            kw in lowered_message for kw in _JOB_SEARCH_OBJECT_KEYWORDS_EN
-        )
-        has_job_search_signal = has_job_search_zh_signal or has_job_search_en_signal
-        has_compound_match_signal = any(
-            marker in message or marker in lowered_message
-            for marker in _COMPOUND_MATCH_MARKERS
-        )
-
-        if stripped_message.lower() in _GREETING_MESSAGES:
-            return build_plan(
+        if signals.is_greeting:
+            return build_router_plan(
                 task_type="fallback",
                 reason="这是简单寒暄，不需要调用 Planner 或工具。",
                 steps=[],
@@ -109,12 +42,8 @@ class IntentRouter:
                 stop_criteria=["greeting completed"],
             )
 
-        has_third_party_signal = any(
-            marker in message or marker in lowered_message
-            for marker in ("我朋友", "my friend", "室友", "同学")
-        )
-        if has_third_party_signal:
-            return build_plan(
+        if signals.is_third_party:
+            return build_router_plan(
                 task_type="fallback",
                 reason="这是第三方求职建议，不应读取或更新当前用户画像。",
                 steps=[],
@@ -136,19 +65,10 @@ class IntentRouter:
                 stop_criteria=["actionable checklist provided"],
             )
 
-        has_resume_signal = any(
-            marker in message or marker in lowered_message
-            for marker in ("简历", "resume", "cv")
-        )
-        has_summary_signal = any(
-            marker in message or marker in lowered_message
-            for marker in ("总结", "概括", "亮点", "summary", "summarize", "highlight")
-        )
-        has_resume_summary_signal = has_resume_signal and has_summary_signal
-        if has_resume_summary_signal:
+        if signals.has_resume_summary:
             has_resume = bool(user_state.get("has_resume", False))
-            return build_plan(
-                task_type="candidate_profile",
+            return build_router_plan(
+                task_type="resume_analysis",
                 reason="这是简历总结请求，需要先读取简历。",
                 steps=keep_available(["get_resume_by_id"]) if has_resume else [],
                 needs_more_context=not has_resume,
@@ -170,25 +90,7 @@ class IntentRouter:
                 stop_criteria=["resume summary completed", "missing resume confirmed"],
             )
 
-        has_job_fit_signal = any(
-            marker in message or marker in lowered_message
-            for marker in (
-                "适不适合我",
-                "适合我吗",
-                "fit for me",
-                "am i a fit",
-                "匹配吗",
-                "匹配度",
-                "能投吗",
-                "值得投吗",
-                "这个 jd",
-                "这个职位",
-                "这个岗位",
-                "compare this job with my resume",
-                "match my resume",
-            )
-        )
-        if has_job_fit_signal and not (has_job_search_signal and has_compound_match_signal):
+        if signals.has_job_fit and not (signals.has_job_search and signals.has_compound_match):
             has_resume = bool(user_state.get("has_resume", False))
             has_job_detail = bool(user_state.get("has_job_detail", False))
             missing_context = []
@@ -196,7 +98,7 @@ class IntentRouter:
                 missing_context.append("resume")
             if not has_job_detail:
                 missing_context.append("job_detail")
-            return build_plan(
+            return build_router_plan(
                 task_type="job_match",
                 reason="这是岗位适配判断请求，需要简历与岗位详情进行对比。",
                 steps=keep_available(["match_resume_to_jobs"]) if not missing_context else [],
@@ -225,7 +127,7 @@ class IntentRouter:
 
         # Compound intent: search + match-with-resume in one message. Fire the
         # full match planning chain before the narrower job_search branch runs.
-        if has_job_search_signal and has_compound_match_signal:
+        if signals.has_job_search and signals.has_compound_match:
             desired_steps = [
                 "get_candidate_profile",
                 "get_resume_by_id",
@@ -242,7 +144,7 @@ class IntentRouter:
                 reason = (
                     "这是复合意图，但当前缺少部分工具能力，先按可用工具继续执行。"
                 )
-            return build_plan(
+            return build_router_plan(
                 task_type="job_match_planning",
                 reason=reason,
                 steps=filtered_steps,
@@ -265,7 +167,7 @@ class IntentRouter:
                 stop_criteria=["recommended jobs returned", "tooling missing"],
             )
 
-        if any(keyword in message for keyword in ("结合我的情况", "推荐适合投", "推荐适合")):
+        if signals.has_recommend_match:
             desired_steps = [
                 "get_candidate_profile",
                 "get_resume_by_id",
@@ -277,7 +179,7 @@ class IntentRouter:
             reason = "这是推荐型问题，需要先读画像和简历，再搜索并匹配岗位。"
             if missing_tools:
                 reason = "这是推荐型问题，但当前缺少部分工具能力，先按可用工具继续执行。"
-            return build_plan(
+            return build_router_plan(
                 task_type="job_match_planning",
                 reason=reason,
                 steps=filtered_steps,
@@ -300,8 +202,8 @@ class IntentRouter:
                 stop_criteria=["recommendations generated", "tooling missing"],
             )
 
-        if any(keyword in message for keyword in ("资料", "画像", "我是谁")):
-            return build_plan(
+        if signals.has_profile_query:
+            return build_router_plan(
                 task_type="candidate_profile",
                 reason="这是资料查询问题，直接读取候选人资料即可。",
                 steps=keep_available(["get_candidate_profile"]),
@@ -321,9 +223,9 @@ class IntentRouter:
                 stop_criteria=["profile retrieved"],
             )
 
-        if any(keyword in lowered_message for keyword in ("适合投", "适合哪些岗位")):
+        if signals.has_simple_job_match:
             if not user_state.get("has_resume", False):
-                return build_plan(
+                return build_router_plan(
                     task_type="job_match",
                     reason="这是岗位匹配问题，但当前缺少简历信息，应该先向用户追问。",
                     steps=[],
@@ -340,7 +242,7 @@ class IntentRouter:
                     evidence_policy="use_existing",
                     stop_criteria=["resume missing confirmed"],
                 )
-            return build_plan(
+            return build_router_plan(
                 task_type="job_match",
                 reason="这是岗位匹配问题，直接用简历匹配岗位。",
                 steps=keep_available(["match_resume_to_jobs"]),
@@ -358,23 +260,8 @@ class IntentRouter:
                 stop_criteria=["match completed", "tool missing"],
             )
 
-        has_interview_signal = any(
-            marker in message or marker in lowered_message
-            for marker in ("面试", "interview")
-        )
-        has_interview_prepare_signal = any(
-            marker in message or marker in lowered_message
-            for marker in ("准备", "prepare", "prep", "plan")
-        )
-        has_interview_history_signal = any(
-            marker in message or marker in lowered_message
-            for marker in ("最近", "记录", "反馈", "进展", "history", "哪些", "结果")
-        )
-        has_interview_prep_signal = (
-            has_interview_signal and has_interview_prepare_signal and not has_interview_history_signal
-        )
-        if has_interview_prep_signal:
-            return build_plan(
+        if signals.has_interview_prep:
+            return build_router_plan(
                 task_type="interview_prep",
                 reason="这是面试准备请求，需要给出目标岗位导向的准备计划。",
                 steps=keep_available(["get_candidate_profile"]),
@@ -393,63 +280,12 @@ class IntentRouter:
                 stop_criteria=["interview prep plan produced"],
             )
 
-        has_career_diagnosis_signal = any(
-            marker in message or marker in lowered_message
-            for marker in (
-                "求职画像",
-                "求职状态",
-                "最近问题",
-                "暴露",
-                "career profile",
-                "career status",
-                "weakness",
-                "pattern",
-                "职业方向",
-                "职业规划",
-            )
-        )
-        has_career_next_step_signal = any(
-            marker in message or marker in lowered_message
-            for marker in (
-                "下一步",
-                "接下来",
-                "怎么办",
-                "该做什么",
-                "该干嘛",
-                "怎么准备",
-                "next step",
-                "what should i do",
-            )
-        ) and any(
-            marker in message or marker in lowered_message
-            for marker in (
-                "投递",
-                "申请",
-                "面试",
-                "反馈",
-                "职业方向",
-                "职业规划",
-                "准备",
-                "application",
-                "interview",
-                "career direction",
-            )
-        )
-        has_general_next_step_signal = any(
-            marker in message or marker in lowered_message
-            for marker in (
-                "下一步",
-                "接下来",
-                "怎么办",
-                "该做什么",
-                "该干嘛",
-                "怎么准备",
-                "next step",
-                "what should i do",
-            )
-        )
-        if has_career_diagnosis_signal or has_career_next_step_signal or has_general_next_step_signal:
-            return build_plan(
+        if (
+            signals.has_career_diagnosis
+            or signals.has_career_next_step
+            or signals.has_general_next_step
+        ):
+            return build_router_plan(
                 task_type="career_insights",
                 reason="这是求职画像和状态诊断问题，需要聚合画像、投递和面试反馈。",
                 steps=keep_available(["get_career_insights"]),
@@ -472,24 +308,8 @@ class IntentRouter:
                 stop_criteria=["bottleneck identified", "next actions produced"],
             )
 
-        has_application_signal = any(
-            marker in message or marker in lowered_message
-            for marker in (
-                "投递",
-                "申请",
-                "投了",
-                "申请了",
-                "application",
-                "applications",
-                "applied",
-            )
-        )
-        has_application_history_signal = any(
-            marker in message or marker in lowered_message
-            for marker in ("最近", "记录", "状态", "进展", "history", "哪些")
-        )
-        if has_application_signal and has_application_history_signal:
-            return build_plan(
+        if signals.has_application_history:
+            return build_router_plan(
                 task_type="application_history",
                 reason="这是投递记录查询问题，直接读取最近投递历史即可。",
                 steps=keep_available(["get_applications"]),
@@ -507,30 +327,8 @@ class IntentRouter:
                 stop_criteria=["history listed"],
             )
 
-        has_interview_feedback_signal = any(
-            marker in message or marker in lowered_message
-            for marker in ("feedback", "复盘", "笔试", "hr 面", "hr面")
-        )
-        if has_interview_signal and has_interview_history_signal:
-            return build_plan(
-                task_type="interview_history",
-                reason="这是面试反馈查询问题，直接读取最近面试反馈即可。",
-                steps=keep_available(["get_interview_feedback"]),
-                needs_more_context="get_interview_feedback" not in tools,
-                missing_context=[],
-                follow_up_question=None,
-                domain="records",
-                action="list_interviews",
-                goal="Fetch recent interview feedback history.",
-                resources=["interviews"],
-                required_context=[],
-                confidence=0.96,
-                plan_type="lookup",
-                evidence_policy="use_existing",
-                stop_criteria=["feedback listed"],
-            )
-        if has_interview_feedback_signal and has_interview_history_signal:
-            return build_plan(
+        if signals.has_interview_history or signals.has_interview_feedback_history:
+            return build_router_plan(
                 task_type="interview_history",
                 reason="这是面试反馈查询问题，直接读取最近面试反馈即可。",
                 steps=keep_available(["get_interview_feedback"]),
@@ -548,14 +346,14 @@ class IntentRouter:
                 stop_criteria=["feedback listed"],
             )
 
-        if has_job_search_signal:
+        if signals.has_job_search:
             reason_parts = ["这是岗位搜索问题"]
             if profile_role:
                 reason_parts.append(f"并结合长期偏好 {profile_role}")
             if memory_context:
                 reason_parts.append("并参考最近对话")
             reason_parts.append("来搜索岗位。")
-            return build_plan(
+            return build_router_plan(
                 task_type="job_search",
                 reason="".join(reason_parts),
                 steps=keep_available(["search_jobs"]),

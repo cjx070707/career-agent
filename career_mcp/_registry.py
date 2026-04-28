@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.services.tool_registry import ToolRegistry
+    from app.tools.registry import ToolRegistry
 
 _registry: "ToolRegistry | None" = None
 

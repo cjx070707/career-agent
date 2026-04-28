@@ -1,3 +1,5 @@
+> Archived: historical design spec (superseded by controlled-vertical PRD and plan-map).
+
 # Career Agent Backend Design
 
 ## Goal
