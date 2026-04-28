@@ -66,6 +66,11 @@ def test_career_insight_service_aggregates_profile_applications_and_interviews(
         "application",
         "interview_feedback",
     }
+    assert "diagnosis" in insights
+    diagnosis = insights["diagnosis"]
+    assert diagnosis["bottleneck_type"] == "skill_gap"
+    assert diagnosis["evidence"]
+    assert any(item["source"] == "feedback" for item in diagnosis["evidence"])
 
 
 def test_career_insight_service_returns_sparse_data_suggestions(
@@ -81,6 +86,7 @@ def test_career_insight_service_returns_sparse_data_suggestions(
     assert insights["interview_summary"]["total"] == 0
     assert "先补充投递记录和面试反馈" in " ".join(insights["suggestions"])
     assert "先补充投递记录和面试反馈" in " ".join(insights["next_actions"])
+    assert insights["diagnosis"]["bottleneck_type"] == "insufficient_evidence"
 
 
 def test_career_insight_service_refreshes_persisted_profile_signals(

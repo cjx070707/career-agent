@@ -548,6 +548,7 @@ def test_chat_routes_to_career_insights_tool(isolated_runtime) -> None:
         "application",
         "interview_feedback",
     }
+    assert "初步诊断：" in result.answer
     assert "下一步" in result.answer
     assert "system design" in result.answer
     assert "主要风险" in result.answer

@@ -239,3 +239,12 @@ def test_get_career_insights_tool_returns_aggregated_user_state(
     assert result["data"]["interview_summary"]["feedback_highlights"] == [
         "good communication"
     ]
+    diagnosis = result["data"]["diagnosis"]
+    assert set(diagnosis.keys()) == {
+        "bottleneck_type",
+        "diagnosis_summary",
+        "confidence",
+        "priority",
+        "evidence",
+        "recommended_actions",
+    }

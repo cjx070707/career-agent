@@ -4,6 +4,15 @@ from app.schemas.chat import ChatSource
 
 
 class ToolResponseFormatter:
+    DIAGNOSIS_LABELS = {
+        "insufficient_evidence": "证据不足",
+        "application_volume": "投递样本不足",
+        "resume_positioning": "简历定位与表达",
+        "interview_performance": "面试表现",
+        "skill_gap": "技能缺口",
+        "job_targeting": "岗位定位偏差",
+    }
+
     def format_tool_answer(self, tool_name: str, tool_result: Any) -> str:
         if tool_name == "get_candidate_profile":
             return f"我查到了你的候选人资料，当前姓名是 {tool_result['name']}。"
@@ -64,6 +73,7 @@ class ToolResponseFormatter:
             strengths = data.get("strengths", [])
             risk_areas = data.get("risk_areas", [])
             next_actions = data.get("next_actions", data.get("suggestions", []))
+            diagnosis = data.get("diagnosis", {}) if isinstance(data.get("diagnosis", {}), dict) else {}
 
             role = str(profile.get("target_role_preference", "")).strip() or "暂未明确"
             app_total = int(applications.get("total", 0) or 0)
@@ -79,6 +89,13 @@ class ToolResponseFormatter:
             feedback_highlights = interviews.get("feedback_highlights", [])
             if feedback_highlights:
                 answer_parts.append("面试反馈里最需要关注的是：" + "；".join(feedback_highlights[:2]) + "。")
+            diagnosis_type = str(diagnosis.get("bottleneck_type", "")).strip()
+            diagnosis_summary = str(diagnosis.get("diagnosis_summary", "")).strip()
+            if diagnosis_type and diagnosis_summary:
+                diagnosis_label = self.DIAGNOSIS_LABELS.get(diagnosis_type, diagnosis_type)
+                answer_parts.append(
+                    f"初步诊断：当前主要瓶颈可能是 {diagnosis_label}，原因是 {diagnosis_summary}。"
+                )
             if next_actions:
                 answer_parts.append("推荐行动（下一步）：" + "；".join(str(item) for item in next_actions[:2]) + "。")
             elif not app_total and not interview_total:

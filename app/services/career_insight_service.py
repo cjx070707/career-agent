@@ -2,6 +2,7 @@ from collections import Counter
 from typing import Dict, List, Optional, Union
 
 from app.services.application_service import ApplicationService
+from app.services.career_diagnosis_engine import CareerDiagnosisEngine
 from app.services.career_event_service import CareerEventService
 from app.services.interview_service import InterviewService
 from app.services.profile_service import ProfileService
@@ -24,6 +25,7 @@ class CareerInsightService:
         self.career_event_service = career_event_service or CareerEventService(
             retrieval_service=self.retrieval_service,
         )
+        self.career_diagnosis_engine = CareerDiagnosisEngine()
 
     def get_career_insights(
         self,
@@ -61,6 +63,12 @@ class CareerInsightService:
             interviews=interviews,
             feedback_highlights=feedback_highlights,
         )
+        diagnosis = self.career_diagnosis_engine.diagnose(
+            profile=profile,
+            applications=applications,
+            interviews=interviews,
+            feedback_highlights=feedback_highlights,
+        )
 
         return {
             "profile": profile,
@@ -84,6 +92,7 @@ class CareerInsightService:
             "next_actions": next_actions,
             "source_summary": self._build_source_summary(applications, interviews),
             "suggestions": next_actions,
+            "diagnosis": diagnosis,
         }
 
     def _sorted_counts(self, values) -> Dict[str, int]:
