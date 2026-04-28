@@ -5,13 +5,58 @@ Backend-first scaffold for a job coaching Agent application.
 ## Run
 
 ```bash
+./scripts/dev.sh
+```
+
+After the dev script starts:
+
+- React app: `http://127.0.0.1:5173`
+- API docs: `http://127.0.0.1:8000/docs`
+
+The script starts FastAPI and Vite together, installs frontend dependencies if
+`web/node_modules` is missing, and stops both servers when you press `Ctrl+C`.
+
+Backend only:
+
+```bash
 python3 -m uvicorn app.main:app --reload
 ```
 
-After the server starts:
+After the backend starts:
 
 - API docs: `http://127.0.0.1:8000/docs`
 - Stage B demo page: `http://127.0.0.1:8000/demo/`
+
+## MCP Server (stdio)
+
+A **Model Context Protocol** server exposes the same internal tools as the agent
+(`search_jobs`, `match_resume_to_jobs`, `get_applications`, `get_interview_feedback`,
+`get_candidate_profile`, `get_resume_by_id`, `get_career_insights`), grouped by domain
+under `career_mcp/domains/` (`jobs`, `records`, `profile`).
+
+The official `mcp` package targets **Python ≥ 3.10**. On macOS with Homebrew:
+
+```bash
+/opt/homebrew/bin/python3.11 -m pip install -r requirements-mcp.txt
+cd /path/to/AGENT
+/opt/homebrew/bin/python3.11 -m career_mcp
+```
+
+**Cursor** (example `mcp.json` fragment — use your repo path):
+
+```json
+{
+  "mcpServers": {
+    "career-agent": {
+      "command": "/opt/homebrew/bin/python3.11",
+      "args": ["-m", "career_mcp"],
+      "cwd": "/path/to/AGENT"
+    }
+  }
+}
+```
+
+Set `DB_PATH`, `CHROMA_PERSIST_DIRECTORY`, etc. in the environment if they differ from defaults.
 
 ## React Web App
 
@@ -40,6 +85,7 @@ current `POST /chat` contract and renders:
 - `plan`
 - `sources`
 - `tool_trace`
+- `loop_trace`
 - `llm_trace`
 
 Default demo flow:
@@ -68,6 +114,7 @@ The Stage B `/chat` contract is frozen at these fields. The demo only reads thes
 - `memory_used`: boolean, whether any prior turn influenced this reply
 - `tool_used`: string | null, the last tool that produced `answer`
 - `tool_trace`: string[], ordered names of tools that actually ran
+- `loop_trace`: list[object], bounded execution decisions (`decision`, `reason`, `observation_summary`, optional `next_tool`)
 - `sources[]`: list of grounded evidence items
   - `type`: string, e.g. `"job_posting"`, `"application"`, or `"interview_feedback"`
   - `title`: string
@@ -115,6 +162,19 @@ registry can export MCP-ready metadata for each tool:
 
 This is an internal metadata/schema export for future thin MCP Server adaptation;
 the project does not currently claim external MCP client support.
+
+### Bounded ReAct Execution
+
+For complex tasks (`job_match_planning`, `career_insights`), the executor uses a
+bounded ReAct-style loop behind `AGENT_ENABLE_OBSERVE_LOOP`:
+
+- bounded tool selection inside ToolRegistry whitelist
+- max loop steps and step-repeat guards
+- graceful fallback when observer decisions are invalid
+- structured `loop_trace` for observability
+
+The implementation intentionally does not expose chain-of-thought; only concise
+decision traces are returned.
 
 ### Application Records API
 
@@ -267,10 +327,16 @@ Full suite without live model dependencies:
 env -u OPENAI_API_KEY -u OPENAI_BASE_URL -u DEFAULT_MODEL -u PLANNER_API_KEY -u PLANNER_BASE_URL -u PLANNER_MODEL python3 -m pytest -q
 ```
 
-Eval harness against a running server (19 cases, includes filter, career insights, and memory-isolation assertions):
+Eval harness against a running server (20 cases, includes filter, career insights, memory-isolation, and loop-trace assertions):
 
 ```bash
 python3 evals/run_eval.py --base-url http://127.0.0.1:8000
+```
+
+Baseline vs loop comparison (writes both runs + delta report):
+
+```bash
+python3 evals/compare_loop.py --base-url http://127.0.0.1:8000
 ```
 
 Frontend smoke test (Playwright, mocked `/chat`, no backend required):

@@ -176,7 +176,8 @@ class RetrievalService:
         filters: Optional[dict] = None,
     ) -> list[ReasonedJobHit]:
         ranked = self._search_ranked(query, filters=filters)
-        return [self._to_reasoned_hit(query, hit) for hit in ranked]
+        job_ranked = [hit for hit in ranked if hit.type == "job_posting"]
+        return [self._to_reasoned_hit(query, hit) for hit in job_ranked]
 
     def _search_ranked(
         self,
@@ -344,10 +345,7 @@ class RetrievalService:
         )
 
     def _seed_collection(self) -> None:
-        if self._collection.count() > 0:
-            return
-
-        self._collection.add(
+        self._collection.upsert(
             ids=[f"job-{index}" for index, _ in enumerate(self._job_postings)],
             documents=[
                 f"{posting.title}. {posting.snippet}" for posting in self._job_postings
@@ -502,6 +500,10 @@ class RetrievalService:
             overlap = len(query_tokens & body_tokens)
             title_overlap = len(query_tokens & self._tokenize(candidate.title))
             score = overlap + (title_overlap * 2)
+            if candidate.type in {"career_event", "career_profile"} and overlap > 0:
+                # Keep memory evidence competitive after the static job corpus
+                # is always present in the same collection.
+                score += 3
             if score > 0:
                 scored_results.append((score, candidate))
             else:

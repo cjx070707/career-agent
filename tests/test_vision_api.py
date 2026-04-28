@@ -1,6 +1,7 @@
 from io import BytesIO
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.env import settings
 from app.main import app
@@ -107,6 +108,27 @@ def test_vision_api_returns_structured_fields_from_mocked_client(
     assert body["model"] == settings.vision_model
     assert body["parsed"]["skills"] == ["Python", "FastAPI", "SQL"]
     assert body["parsed"]["projects"][0]["name"] == "Career Agent"
+
+
+def test_vision_client_compresses_large_images_before_model_call(
+    isolated_runtime,
+) -> None:
+    from app.llm.vision_client import VisionClient
+
+    image = Image.new("RGB", (1400, 2000), "white")
+    raw = BytesIO()
+    image.save(raw, format="PNG")
+    client = VisionClient()
+
+    prepared_bytes, prepared_mime = client._prepare_image_for_model(
+        image_bytes=raw.getvalue(),
+        mime_type="image/png",
+    )
+
+    assert prepared_mime == "image/jpeg"
+    assert len(prepared_bytes) < len(raw.getvalue())
+    prepared = Image.open(BytesIO(prepared_bytes))
+    assert max(prepared.size) <= client.MAX_IMAGE_SIDE
 
 
 def test_vision_save_parsed_resume_for_existing_candidate(isolated_runtime) -> None:

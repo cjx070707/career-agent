@@ -3,6 +3,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from app.llm.client import LLMClient
+from app.env import settings
 from app.routing.filter_extractor import extract_filters
 from app.routing.intent_router import IntentRouter
 from app.schemas.chat import ChatPlan, ChatSource, LLMTrace
@@ -20,14 +21,20 @@ class AgentResult:
     answer: str
     memory_used: bool
     sources: list[ChatSource]
+    stage: str
     tool_used: Optional[str] = None
     plan: Optional[ChatPlan] = None
     tool_trace: List[str] = field(default_factory=list)
+    loop_trace: List[Dict[str, Any]] = field(default_factory=list)
     llm_trace: LLMTrace = field(default_factory=LLMTrace)
 
 
 class AgentService:
     """Minimal Agent orchestration for message -> memory -> retrieval -> answer."""
+    LOOP_ENABLED_TASK_TYPES = {"job_match_planning", "career_insights"}
+    MAX_LOOP_STEPS = 8
+    MAX_REPLANS = 2
+    MAX_STEP_REPEAT = 2
 
     def __init__(
         self,
@@ -61,15 +68,43 @@ class AgentService:
             self.memory_service.save_turn(user_id, message, answer)
             return AgentResult(
                 answer=answer,
+                stage="fallback",
                 memory_used=bool(recent_turns),
                 sources=[],
                 tool_used=None,
                 plan=plan,
                 tool_trace=[],
+                loop_trace=[],
+                llm_trace=self._build_llm_trace(plan),
+            )
+        if plan.task_type == "fallback" and plan.planner_source == "router" and not plan.steps:
+            answer = self._format_router_fallback_answer(message)
+            self.memory_service.save_turn(user_id, message, answer)
+            return AgentResult(
+                answer=answer,
+                stage="fallback",
+                memory_used=bool(recent_turns),
+                sources=[],
+                tool_used=None,
+                plan=plan,
+                tool_trace=[],
+                loop_trace=[],
                 llm_trace=self._build_llm_trace(plan),
             )
         if plan.steps:
-            tool_trace, execution_state = self._execute_plan(user_id, message, plan.steps)
+            if self._should_use_react_loop(plan.task_type):
+                tool_trace, execution_state, loop_trace = self._execute_react_loop(
+                    user_id=user_id,
+                    message=message,
+                    initial_steps=plan.steps,
+                    task_type=plan.task_type,
+                )
+            else:
+                tool_trace, execution_state, loop_trace = self._execute_plan(
+                    user_id,
+                    message,
+                    plan.steps,
+                )
             # If `_execute_plan` could not run any step (e.g., the planner asked
             # for `get_candidate_profile` but the user has no candidate yet), we
             # fall through to the generic retrieval+LLM answer path so the
@@ -77,7 +112,7 @@ class AgentService:
             final_tool_name = tool_trace[-1] if tool_trace else None
             final_result = execution_state.get("last_result")
         else:
-            tool_trace, final_tool_name, final_result = [], None, None
+            tool_trace, final_tool_name, final_result, loop_trace = [], None, None, []
 
         if tool_trace:
             if final_tool_name == "search_jobs":
@@ -93,11 +128,13 @@ class AgentService:
             self.memory_service.save_turn(user_id, message, answer)
             return AgentResult(
                 answer=answer,
+                stage="tool",
                 memory_used=bool(recent_turns),
                 sources=sources,
                 tool_used=final_tool_name,
                 plan=plan,
                 tool_trace=tool_trace,
+                loop_trace=loop_trace,
                 llm_trace=self._build_llm_trace(plan),
             )
 
@@ -113,6 +150,7 @@ class AgentService:
         self.memory_service.save_turn(user_id, message, answer)
         return AgentResult(
             answer=answer,
+            stage="done",
             memory_used=bool(recent_turns),
             sources=[self._to_chat_source(result) for result in retrieval_results],
             tool_used=None,
@@ -121,6 +159,7 @@ class AgentService:
             # plan.planner_source without null-checking.
             plan=plan,
             tool_trace=[],
+            loop_trace=[],
             llm_trace=self._build_llm_trace(plan),
         )
 
@@ -128,6 +167,10 @@ class AgentService:
         self.llm_client.last_plan_source = "not_used"
         self.llm_client.last_job_search_summary_source = "not_used"
         self.llm_client.last_generate_source = "not_used"
+
+    def _format_router_fallback_answer(self, message: str) -> str:
+        _ = message
+        return "你好！我可以帮你找岗位、分析简历匹配度、查看投递记录，或者结合面试反馈给你下一步准备建议。"
 
     def _build_llm_trace(self, plan: Optional[ChatPlan]) -> LLMTrace:
         planner_source = "not_used"
@@ -193,11 +236,12 @@ class AgentService:
         user_id: str,
         message: str,
         steps: List[str],
-    ) -> tuple[List[str], Dict[str, Any]]:
+    ) -> tuple[List[str], Dict[str, Any], List[Dict[str, Any]]]:
         trace: List[str] = []
         state: Dict[str, Any] = {}
-
-        for step in steps:
+        queue: List[str] = [step for step in steps if step in self.tool_registry.list_tool_names()]
+        while queue:
+            step = queue.pop(0)
             try:
                 payload = self._build_tool_payload(user_id, message, step, state)
                 tool_result = self.tool_registry.run(step, payload)
@@ -206,13 +250,310 @@ class AgentService:
                 # (e.g., no candidate / resume for this user). Stop executing
                 # and let the caller fall back to the generic answer path.
                 break
+            if not bool(tool_result.get("ok", False)):
+                break
             trace.append(step)
             state[step] = tool_result["data"]
             state["last_result"] = tool_result["data"]
             if not self._should_continue_after_step(step, tool_result["data"], state):
                 break
+        return trace, state, []
 
-        return trace, state
+    def _execute_react_loop(
+        self,
+        *,
+        user_id: str,
+        message: str,
+        initial_steps: List[str],
+        task_type: str,
+    ) -> tuple[List[str], Dict[str, Any], List[Dict[str, Any]]]:
+        trace: List[str] = []
+        state: Dict[str, Any] = {}
+        loop_trace: List[Dict[str, Any]] = []
+        queue: List[str] = [
+            step for step in initial_steps if step in self.tool_registry.list_tool_names()
+        ]
+
+        while queue and len(trace) < self.MAX_LOOP_STEPS:
+            step = queue.pop(0)
+            try:
+                payload = self._build_tool_payload(user_id, message, step, state)
+                tool_result = self.tool_registry.run(step, payload)
+            except ValueError:
+                break
+
+            observation_summary = self._summarize_observation(step, tool_result.get("data"))
+            if not bool(tool_result.get("ok", False)):
+                loop_trace.append(
+                    {
+                        "step": step,
+                        "action": "finish",
+                        "decision": "stop",
+                        "reason": "tool_error",
+                        "observation_summary": observation_summary,
+                    }
+                )
+                break
+
+            trace.append(step)
+            state[step] = tool_result["data"]
+            state["last_result"] = tool_result["data"]
+            state["_last_step"] = step
+
+            if not self._should_continue_after_step(step, tool_result["data"], state):
+                loop_trace.append(
+                    {
+                        "step": step,
+                        "action": "finish",
+                        "decision": "stop",
+                        "reason": "rule_stop_after_step",
+                        "observation_summary": observation_summary,
+                    }
+                )
+                break
+            if self._is_no_progress(step, tool_result["data"], state):
+                loop_trace.append(
+                    {
+                        "step": step,
+                        "action": "finish",
+                        "decision": "stop",
+                        "reason": "no_progress",
+                        "observation_summary": observation_summary,
+                    }
+                )
+                break
+
+            if not queue:
+                loop_trace.append(
+                    {
+                        "step": step,
+                        "action": "finish",
+                        "decision": "finish",
+                        "reason": "plan_exhausted",
+                        "observation_summary": observation_summary,
+                    }
+                )
+                break
+
+            react_action = self._decide_react_action(
+                task_type=task_type,
+                message=message,
+                state=state,
+                last_observation={
+                    "step": step,
+                    "result": tool_result["data"],
+                    "summary": observation_summary,
+                },
+                remaining_steps=list(queue),
+            )
+            action = str(react_action.get("action") or "finish").strip().lower()
+            if action != "tool":
+                loop_trace.append(
+                    {
+                        "step": step,
+                        "action": "finish",
+                        "decision": "finish",
+                        "reason": str(react_action.get("reason") or "observer_finish"),
+                        "observation_summary": observation_summary,
+                    }
+                )
+                break
+
+            next_tool = str(react_action.get("tool_name") or "").strip()
+            if not next_tool:
+                loop_trace.append(
+                    {
+                        "step": step,
+                        "action": "finish",
+                        "decision": "finish",
+                        "reason": "missing_tool_name",
+                        "observation_summary": observation_summary,
+                    }
+                )
+                break
+
+            executed_counts: Dict[str, int] = {}
+            for executed_step in trace:
+                executed_counts[executed_step] = executed_counts.get(executed_step, 0) + 1
+            if executed_counts.get(next_tool, 0) >= self.MAX_STEP_REPEAT:
+                loop_trace.append(
+                    {
+                        "step": step,
+                        "action": "finish",
+                        "decision": "stop",
+                        "reason": "max_step_repeat_reached",
+                        "observation_summary": observation_summary,
+                    }
+                )
+                break
+
+            if not queue or queue[0] != next_tool:
+                queue.insert(0, next_tool)
+            queue = self._dedupe_over_repeated_steps(queue, trace)
+            loop_trace.append(
+                {
+                    "step": step,
+                    "action": "tool",
+                    "decision": str(react_action.get("decision") or "continue"),
+                    "reason": str(react_action.get("reason") or ""),
+                    "next_tool": next_tool,
+                    "observation_summary": str(
+                        react_action.get("observation_summary") or observation_summary
+                    ),
+                }
+            )
+
+        return trace, state, loop_trace
+
+    def _decide_react_action(
+        self,
+        *,
+        task_type: str,
+        message: str,
+        state: Dict[str, Any],
+        last_observation: Optional[Dict[str, Any]],
+        remaining_steps: List[str],
+    ) -> Dict[str, Any]:
+        decider = getattr(self.llm_client, "decide_react_action", None)
+        if callable(decider):
+            result = decider(
+                task_type=task_type,
+                message=message,
+                state=state,
+                last_observation=last_observation,
+                available_tools=remaining_steps or self.tool_registry.list_tool_names(),
+            )
+            if "decision" not in result:
+                result["decision"] = "continue" if result.get("action") == "tool" else "stop"
+            return result
+        fallback_decider = getattr(self.llm_client, "decide_next_action", None)
+        if callable(fallback_decider):
+            fallback = fallback_decider(
+                task_type=task_type,
+                message=message,
+                current_step=str((last_observation or {}).get("step") or ""),
+                tool_result=(last_observation or {}).get("result"),
+                remaining_steps=remaining_steps,
+                available_tools=self.tool_registry.list_tool_names(),
+            )
+            decision = str(fallback.get("decision") or "continue").strip().lower()
+            if decision == "stop":
+                return {
+                    "action": "finish",
+                    "tool_name": None,
+                    "reason": "legacy_stop",
+                    "decision": "stop",
+                }
+            if decision == "replan":
+                steps = fallback.get("steps") if isinstance(fallback.get("steps"), list) else []
+                next_tool = str(steps[0]).strip() if steps else None
+                return {
+                    "action": "tool" if next_tool else "finish",
+                    "tool_name": next_tool,
+                    "reason": str(fallback.get("reason") or "legacy_replan"),
+                    "decision": "replan" if next_tool else "stop",
+                }
+            next_tool = remaining_steps[0] if remaining_steps else None
+            return {
+                "action": "tool" if next_tool else "finish",
+                "tool_name": next_tool,
+                "reason": str(fallback.get("reason") or "legacy_continue"),
+                "decision": "continue" if next_tool else "stop",
+            }
+        return {"action": "finish", "tool_name": None, "reason": "no_decider", "decision": "stop"}
+
+    def _should_use_react_loop(self, task_type: Optional[str]) -> bool:
+        return bool(settings.agent_enable_observe_loop and (task_type or "") in self.LOOP_ENABLED_TASK_TYPES)
+
+    def _normalize_replanned_steps(
+        self,
+        replacement_steps: List[Any],
+        current_queue: List[str],
+        trace: List[str],
+    ) -> List[str]:
+        allowed = set(self.tool_registry.list_tool_names())
+        executed = set(trace)
+        normalized = [
+            str(step).strip()
+            for step in replacement_steps
+            if isinstance(step, str) and str(step).strip() in allowed and str(step).strip() not in executed
+        ]
+        if normalized:
+            return normalized
+        return current_queue
+
+    def _dedupe_over_repeated_steps(self, queue: List[str], trace: List[str]) -> List[str]:
+        if not queue:
+            return queue
+        executed_counts: Dict[str, int] = {}
+        for step in trace:
+            executed_counts[step] = executed_counts.get(step, 0) + 1
+        filtered: List[str] = []
+        for step in queue:
+            if executed_counts.get(step, 0) >= self.MAX_STEP_REPEAT:
+                continue
+            filtered.append(step)
+        return filtered
+
+    def _should_observe_decision(
+        self,
+        *,
+        task_type: str,
+        current_step: str,
+        remaining_steps: List[str],
+    ) -> bool:
+        if task_type == "job_match_planning":
+            return current_step in {"search_jobs", "match_resume_to_jobs"} and bool(
+                remaining_steps
+            )
+        if task_type == "career_insights":
+            return current_step == "get_career_insights" and bool(remaining_steps)
+        return False
+
+    def _summarize_observation(self, step: str, tool_result: Any) -> str:
+        if step == "search_jobs" and isinstance(tool_result, list):
+            return f"found {len(tool_result)} job candidates"
+        if step == "match_resume_to_jobs" and isinstance(tool_result, dict):
+            matches = tool_result.get("matches", [])
+            if isinstance(matches, list):
+                return f"matched resume against {len(matches)} jobs"
+        if step == "get_career_insights" and isinstance(tool_result, dict):
+            return "generated career insight summary"
+        return "tool executed"
+
+    def _is_no_progress(self, step: str, tool_result: Any, state: Dict[str, Any]) -> bool:
+        signature = self._progress_signature(step, tool_result)
+        previous = state.get("_last_progress_signature")
+        state["_last_progress_signature"] = signature
+        if previous is None:
+            return False
+        return previous == signature
+
+    def _progress_signature(self, step: str, tool_result: Any) -> Any:
+        if step == "search_jobs" and isinstance(tool_result, list):
+            return (
+                step,
+                tuple(
+                    str(item.get("title", "")).strip().lower()
+                    for item in tool_result[:3]
+                    if isinstance(item, dict)
+                ),
+            )
+        if step == "match_resume_to_jobs" and isinstance(tool_result, dict):
+            matches = tool_result.get("matches", [])
+            if isinstance(matches, list):
+                return (
+                    step,
+                    tuple(
+                        (
+                            str(match.get("job_title", "")).strip().lower(),
+                            str(match.get("match_score", "")),
+                        )
+                        for match in matches[:3]
+                        if isinstance(match, dict)
+                    ),
+                )
+        return (step, str(tool_result)[:400])
 
     def _should_continue_after_step(
         self,

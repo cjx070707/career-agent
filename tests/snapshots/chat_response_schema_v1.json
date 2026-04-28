@@ -2,42 +2,10 @@
   "$defs": {
     "ChatPlan": {
       "properties": {
-        "follow_up_question": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Follow Up Question"
-        },
-        "missing_context": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Missing Context",
-          "type": "array"
-        },
-        "needs_more_context": {
-          "default": false,
-          "title": "Needs More Context",
-          "type": "boolean"
-        },
-        "planner_source": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Where the plan came from: router, model, or fallback",
-          "title": "Planner Source"
+        "task_type": {
+          "description": "Machine-readable task label",
+          "title": "Task Type",
+          "type": "string"
         },
         "reason": {
           "description": "Human-readable routing rationale",
@@ -51,10 +19,42 @@
           "title": "Steps",
           "type": "array"
         },
-        "task_type": {
-          "description": "Machine-readable task label",
-          "title": "Task Type",
-          "type": "string"
+        "needs_more_context": {
+          "default": false,
+          "title": "Needs More Context",
+          "type": "boolean"
+        },
+        "missing_context": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing Context",
+          "type": "array"
+        },
+        "follow_up_question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Follow Up Question"
+        },
+        "planner_source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where the plan came from: router, model, or fallback",
+          "title": "Planner Source"
         }
       },
       "required": [
@@ -66,6 +66,21 @@
     },
     "ChatSource": {
       "properties": {
+        "type": {
+          "description": "Evidence source category",
+          "title": "Type",
+          "type": "string"
+        },
+        "title": {
+          "description": "Short source title for display",
+          "title": "Title",
+          "type": "string"
+        },
+        "snippet": {
+          "description": "Short grounded evidence text",
+          "title": "Snippet",
+          "type": "string"
+        },
         "company": {
           "anyOf": [
             {
@@ -92,6 +107,19 @@
           "description": "Job location",
           "title": "Location"
         },
+        "work_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Job type such as intern or graduate",
+          "title": "Work Type"
+        },
         "posted_at": {
           "anyOf": [
             {
@@ -105,21 +133,6 @@
           "description": "Posting date",
           "title": "Posted At"
         },
-        "snippet": {
-          "description": "Short grounded evidence text",
-          "title": "Snippet",
-          "type": "string"
-        },
-        "title": {
-          "description": "Short source title for display",
-          "title": "Title",
-          "type": "string"
-        },
-        "type": {
-          "description": "Evidence source category",
-          "title": "Type",
-          "type": "string"
-        },
         "url": {
           "anyOf": [
             {
@@ -132,19 +145,6 @@
           "default": null,
           "description": "Source link",
           "title": "Url"
-        },
-        "work_type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Job type such as intern or graduate",
-          "title": "Work Type"
         }
       },
       "required": [
@@ -157,9 +157,9 @@
     },
     "LLMTrace": {
       "properties": {
-        "generate_source": {
+        "planner_source": {
           "default": "not_used",
-          "title": "Generate Source",
+          "title": "Planner Source",
           "type": "string"
         },
         "job_search_summary_source": {
@@ -167,9 +167,9 @@
           "title": "Job Search Summary Source",
           "type": "string"
         },
-        "planner_source": {
+        "generate_source": {
           "default": "not_used",
-          "title": "Planner Source",
+          "title": "Generate Source",
           "type": "string"
         }
       },
@@ -178,10 +178,6 @@
     }
   },
   "properties": {
-    "answer": {
-      "title": "Answer",
-      "type": "string"
-    },
     "contract_version": {
       "const": "chat.v1",
       "default": "chat.v1",
@@ -189,37 +185,26 @@
       "title": "Contract Version",
       "type": "string"
     },
-    "llm_trace": {
-      "$ref": "#/$defs/LLMTrace"
+    "answer": {
+      "title": "Answer",
+      "type": "string"
+    },
+    "stage": {
+      "default": "done",
+      "description": "High-level response stage",
+      "title": "Stage",
+      "type": "string"
     },
     "memory_used": {
       "default": false,
       "title": "Memory Used",
       "type": "boolean"
     },
-    "plan": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/ChatPlan"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
     "sources": {
       "items": {
         "$ref": "#/$defs/ChatSource"
       },
       "title": "Sources",
-      "type": "array"
-    },
-    "tool_trace": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Tool Trace",
       "type": "array"
     },
     "tool_used": {
@@ -233,6 +218,35 @@
       ],
       "default": null,
       "title": "Tool Used"
+    },
+    "plan": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ChatPlan"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "tool_trace": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tool Trace",
+      "type": "array"
+    },
+    "loop_trace": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Loop Trace",
+      "type": "array"
+    },
+    "llm_trace": {
+      "$ref": "#/$defs/LLMTrace"
     }
   },
   "required": [

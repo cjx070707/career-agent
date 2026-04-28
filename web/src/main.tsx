@@ -46,11 +46,13 @@ type LLMTrace = {
 type ChatResponse = {
   contract_version: "chat.v1";
   answer: string;
+  stage: string;
   memory_used: boolean;
   sources: ChatSource[];
   tool_used?: string | null;
   plan?: ChatPlan | null;
   tool_trace: string[];
+  loop_trace: Record<string, unknown>[];
   llm_trace: LLMTrace;
 };
 
@@ -111,11 +113,16 @@ const queryStarters = [
   },
 ];
 
-async function sendChat(userId: string, message: string): Promise<ChatResponse> {
+async function sendChat(
+  userId: string,
+  message: string,
+  signal: AbortSignal
+): Promise<ChatResponse> {
   const response = await fetch("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_id: userId, message }),
+    signal,
   });
 
   if (!response.ok) {
@@ -175,7 +182,9 @@ function App() {
   const [isVisionLoading, setIsVisionLoading] = useState(false);
   const [isSavingResume, setIsSavingResume] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusLabel, setStatusLabel] = useState("Ready");
   const nextId = useRef(1);
+  const chatAbortRef = useRef<AbortController | null>(null);
 
   const latestResponse = useMemo(() => {
     if (view === "query") return queryResult;
@@ -187,20 +196,40 @@ function App() {
     const trimmed = chatInput.trim();
     if (!trimmed || isLoading) return;
     setError(null);
+    setStatusLabel("Thinking");
     setIsLoading(true);
     const userMessage: Message = { id: nextId.current++, role: "user", content: trimmed };
     setMessages((current) => [...current, userMessage]);
     setChatInput("");
 
     try {
-      const response = await sendChat(userId.trim() || "demo-user", trimmed);
+      const controller = new AbortController();
+      chatAbortRef.current = controller;
+      const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+      const response = await sendChat(userId.trim() || "demo-user", trimmed, controller.signal);
+      window.clearTimeout(timeoutId);
       setMessages((current) => [
         ...current,
         { id: nextId.current++, role: "agent", content: response.answer, response },
       ]);
+      if (response.stage === "fallback") {
+        setStatusLabel("Ready");
+      } else if (response.stage === "tool") {
+        setStatusLabel("Ran tools");
+      } else {
+        setStatusLabel("Ready");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      const isAbort = err instanceof DOMException && err.name === "AbortError";
+      if (isAbort) {
+        setError("Request timed out or canceled. Please try again.");
+        setStatusLabel("Timed out");
+      } else {
+        setError(err instanceof Error ? err.message : "Request failed");
+        setStatusLabel("Needs retry");
+      }
     } finally {
+      chatAbortRef.current = null;
       setIsLoading(false);
     }
   }
@@ -210,15 +239,42 @@ function App() {
     const trimmed = queryInput.trim();
     if (!trimmed || isLoading) return;
     setError(null);
+    setStatusLabel("Planning");
     setIsLoading(true);
     try {
-      const response = await sendChat(userId.trim() || "demo-user", trimmed);
+      const controller = new AbortController();
+      chatAbortRef.current = controller;
+      const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+      const response = await sendChat(userId.trim() || "demo-user", trimmed, controller.signal);
+      window.clearTimeout(timeoutId);
       setQueryResult(response);
+      if (response.stage === "tool") {
+        setStatusLabel("Ran tools");
+      } else {
+        setStatusLabel("Ready");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      const isAbort = err instanceof DOMException && err.name === "AbortError";
+      if (isAbort) {
+        setError("Request timed out or canceled. Please try again.");
+        setStatusLabel("Timed out");
+      } else {
+        setError(err instanceof Error ? err.message : "Request failed");
+        setStatusLabel("Needs retry");
+      }
     } finally {
+      chatAbortRef.current = null;
       setIsLoading(false);
     }
+  }
+
+  function cancelChatRequest() {
+    if (chatAbortRef.current) {
+      chatAbortRef.current.abort();
+      chatAbortRef.current = null;
+    }
+    setIsLoading(false);
+    setStatusLabel("Canceled");
   }
 
   function useStarter(prompt: string) {
@@ -232,11 +288,12 @@ function App() {
   async function handleResumeImageParse(file: File) {
     if (isVisionLoading) return;
     setError(null);
+    setResumeImageResult(null);
+    setSavedResume(null);
     setIsVisionLoading(true);
     try {
       const response = await parseResumeImage(file);
       setResumeImageResult(response);
-      setSavedResume(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {
@@ -245,7 +302,7 @@ function App() {
   }
 
   async function handleSaveParsedResume() {
-    if (!resumeImageResult || isSavingResume) return;
+    if (!resumeImageResult || !hasParsedResumeContent(resumeImageResult.parsed) || isSavingResume) return;
 
     setError(null);
     setIsSavingResume(true);
@@ -324,7 +381,7 @@ function App() {
               <span className="eyebrow">{view === "chat" ? "continuous context" : "single task"}</span>
               <h1>{view === "chat" ? "Chat" : "Query"}</h1>
             </div>
-            <StatusPill isLoading={isLoading} response={latestResponse} />
+            <StatusPill isLoading={isLoading} response={latestResponse} statusLabel={statusLabel} />
           </header>
 
           {view === "chat" ? (
@@ -333,6 +390,7 @@ function App() {
               input={chatInput}
               setInput={setChatInput}
               isLoading={isLoading}
+              onCancel={cancelChatRequest}
               onSubmit={handleChatSubmit}
             />
           ) : (
@@ -340,6 +398,7 @@ function App() {
               input={queryInput}
               setInput={setQueryInput}
               isLoading={isLoading}
+              onCancel={cancelChatRequest}
               onSubmit={handleQuerySubmit}
               result={queryResult}
               resumeImageResult={resumeImageResult}
@@ -360,21 +419,29 @@ function App() {
   );
 }
 
-function StatusPill({ isLoading, response }: { isLoading: boolean; response: ChatResponse | null }) {
+function StatusPill({
+  isLoading,
+  response,
+  statusLabel,
+}: {
+  isLoading: boolean;
+  response: ChatResponse | null;
+  statusLabel: string;
+}) {
   if (isLoading) {
     return (
       <span className="status-pill loading">
         <Loader2 size={15} />
-        Running
+        {statusLabel}
       </span>
     );
   }
   return (
-    <span className="status-pill">
-      <Activity size={15} />
-      {response?.plan?.planner_source ?? "Ready"}
-    </span>
-  );
+      <span className="status-pill">
+        <Activity size={15} />
+        {response?.stage ?? statusLabel}
+      </span>
+    );
 }
 
 function ChatView({
@@ -382,12 +449,14 @@ function ChatView({
   input,
   setInput,
   isLoading,
+  onCancel,
   onSubmit,
 }: {
   messages: Message[];
   input: string;
   setInput: (value: string) => void;
   isLoading: boolean;
+  onCancel: () => void;
   onSubmit: (event: FormEvent) => void;
 }) {
   return (
@@ -416,14 +485,15 @@ function ChatView({
           placeholder="Ask about jobs, applications, interviews, or next steps"
           rows={3}
         />
-        <button
-          type="submit"
-          disabled={isLoading || !input.trim()}
-          aria-label="Send message"
-          className={isLoading ? "is-loading" : ""}
-        >
-          {isLoading ? <Loader2 size={19} /> : <Send size={19} />}
-        </button>
+        {isLoading ? (
+          <button type="button" aria-label="Stop request" className="is-loading" onClick={onCancel}>
+            <Loader2 size={19} />
+          </button>
+        ) : (
+          <button type="submit" disabled={!input.trim()} aria-label="Send message">
+            <Send size={19} />
+          </button>
+        )}
       </form>
     </div>
   );
@@ -496,6 +566,7 @@ function QueryView({
   input,
   setInput,
   isLoading,
+  onCancel,
   onSubmit,
   result,
   resumeImageResult,
@@ -508,6 +579,7 @@ function QueryView({
   input: string;
   setInput: (value: string) => void;
   isLoading: boolean;
+  onCancel: () => void;
   onSubmit: (event?: FormEvent) => void;
   result: ChatResponse | null;
   resumeImageResult: ResumeImageParseResponse | null;
@@ -524,9 +596,25 @@ function QueryView({
     event.currentTarget.value = "";
   }
 
+  async function onPaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    if (isVisionLoading) return;
+    const imageItem = Array.from(event.clipboardData.items).find((item) =>
+      item.type.startsWith("image/")
+    );
+    const file = imageItem?.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    await onParseResumeImage(
+      new File([file], file.name || "pasted-resume-image.png", {
+        type: file.type || "image/png",
+      })
+    );
+  }
+
   const parsed = resumeImageResult?.parsed;
+  const hasParsedContent = parsed ? hasParsedResumeContent(parsed) : false;
   return (
-    <div className="query-view">
+    <div className="query-view" onPaste={(event) => void onPaste(event)}>
       <form className="query-form" onSubmit={onSubmit}>
         <textarea
           value={input}
@@ -534,14 +622,17 @@ function QueryView({
           rows={5}
           placeholder="Run a single task through /chat"
         />
-        <button
-          type="submit"
-          disabled={isLoading || !input.trim()}
-          className={isLoading ? "is-loading" : ""}
-        >
-          {isLoading ? <Loader2 size={18} /> : <FileSearch size={18} />}
-          Run
-        </button>
+        {isLoading ? (
+          <button type="button" className="is-loading" onClick={onCancel}>
+            <Loader2 size={18} />
+            Stop
+          </button>
+        ) : (
+          <button type="submit" disabled={!input.trim()}>
+            <FileSearch size={18} />
+            Run
+          </button>
+        )}
       </form>
       <div className="answer-panel">
         <div className="section-title">
@@ -555,7 +646,7 @@ function QueryView({
           <FileSearch size={18} />
           Resume Image Parse (MVP)
         </div>
-        <label className="field-label" htmlFor="resume-image-upload">Upload Resume Image</label>
+        <label className="field-label" htmlFor="resume-image-upload">Upload or Paste Resume Image</label>
         <input
           id="resume-image-upload"
           type="file"
@@ -563,7 +654,7 @@ function QueryView({
           onChange={onFileChange}
           disabled={isVisionLoading}
         />
-        {isVisionLoading ? <p>Parsing image...</p> : null}
+        {isVisionLoading ? <p>Parsing image, this may take up to a minute for dense resume screenshots...</p> : null}
         {resumeImageResult ? (
           <div className="source-list">
             <p><strong>Name:</strong> {parsed?.name || "—"}</p>
@@ -594,7 +685,7 @@ function QueryView({
             <button
               type="button"
               onClick={() => void onSaveParsedResume()}
-              disabled={isSavingResume}
+              disabled={isSavingResume || !hasParsedContent || Boolean(resumeImageResult.warnings.length)}
             >
               {isSavingResume ? "Saving..." : "Save as Resume"}
             </button>
@@ -603,10 +694,23 @@ function QueryView({
             ) : null}
           </div>
         ) : (
-          <p>Upload one resume screenshot/image to parse structured fields.</p>
+          <p>Upload one resume screenshot/image, or paste an image with Cmd+V / Ctrl+V.</p>
         )}
       </div>
     </div>
+  );
+}
+
+function hasParsedResumeContent(parsed: ResumeImageParseResponse["parsed"]): boolean {
+  return Boolean(
+    parsed.name ||
+      parsed.email ||
+      parsed.phone ||
+      parsed.summary ||
+      parsed.skills.length ||
+      parsed.projects.length ||
+      parsed.experience.length ||
+      parsed.education.length
   );
 }
 

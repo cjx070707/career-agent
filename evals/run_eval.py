@@ -245,6 +245,15 @@ def _run_expectations(
         trace = body.get("tool_trace") or []
         _check(checks, "tool_trace_equals", trace == want, got=trace, want=want)
 
+    loop_trace = body.get("loop_trace") or []
+    if expect.get("loop_trace_nonempty"):
+        _check(checks, "loop_trace_nonempty", len(loop_trace) > 0, got=len(loop_trace))
+
+    if "loop_replan_at_least" in expect:
+        want = int(expect["loop_replan_at_least"])
+        got = sum(1 for item in loop_trace if str(item.get("decision")) == "replan")
+        _check(checks, "loop_replan_at_least", got >= want, got=got, want=want)
+
     sources = body.get("sources") or []
     if expect.get("sources_nonempty"):
         _check(checks, "sources_nonempty", len(sources) > 0, got=len(sources))

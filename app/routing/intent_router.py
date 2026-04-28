@@ -11,6 +11,14 @@ _JOB_SEARCH_KEYWORDS_EN = ("job", "jobs", "position", "positions", "vacancy", "v
 # Compound-intent markers: user asks us to search AND leverage their resume in
 # the same message. This needs the full 4-step plan, not a bare search.
 _COMPOUND_MATCH_MARKERS = ("简历", "匹配度", "match my resume", "resume match")
+_GREETING_MESSAGES = {
+    "hi",
+    "hello",
+    "hey",
+    "你好",
+    "您好",
+    "嗨",
+}
 
 
 class IntentRouter:
@@ -25,6 +33,7 @@ class IntentRouter:
         user_state: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
         lowered_message = message.lower()
+        stripped_message = message.strip()
         profile_role = str(profile.get("target_role_preference", "")).strip()
         tools = set(available_tools)
 
@@ -40,6 +49,17 @@ class IntentRouter:
             marker in message or marker in lowered_message
             for marker in _COMPOUND_MATCH_MARKERS
         )
+
+        if stripped_message.lower() in _GREETING_MESSAGES:
+            return {
+                "task_type": "fallback",
+                "reason": "这是简单寒暄，不需要调用 Planner 或工具。",
+                "steps": [],
+                "needs_more_context": False,
+                "missing_context": [],
+                "follow_up_question": None,
+                "planner_source": "router",
+            }
 
         # Compound intent: search + match-with-resume in one message. Fire the
         # full match planning chain before the narrower job_search branch runs.
@@ -151,7 +171,16 @@ class IntentRouter:
         )
         has_career_next_step_signal = any(
             marker in message or marker in lowered_message
-            for marker in ("下一步", "为什么", "next step")
+            for marker in (
+                "下一步",
+                "接下来",
+                "怎么办",
+                "该做什么",
+                "该干嘛",
+                "怎么准备",
+                "next step",
+                "what should i do",
+            )
         ) and any(
             marker in message or marker in lowered_message
             for marker in (
@@ -167,7 +196,20 @@ class IntentRouter:
                 "career direction",
             )
         )
-        if has_career_diagnosis_signal or has_career_next_step_signal:
+        has_general_next_step_signal = any(
+            marker in message or marker in lowered_message
+            for marker in (
+                "下一步",
+                "接下来",
+                "怎么办",
+                "该做什么",
+                "该干嘛",
+                "怎么准备",
+                "next step",
+                "what should i do",
+            )
+        )
+        if has_career_diagnosis_signal or has_career_next_step_signal or has_general_next_step_signal:
             return {
                 "task_type": "career_insights",
                 "reason": "这是求职画像和状态诊断问题，需要聚合画像、投递和面试反馈。",

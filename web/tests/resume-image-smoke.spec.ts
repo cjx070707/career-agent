@@ -79,3 +79,42 @@ test("query page can parse and save resume image", async ({ page }) => {
   await page.getByRole("button", { name: "Save as Resume" }).click();
   await expect(page.getByText("Saved resume #12 as vision-v1")).toBeVisible();
 });
+
+test("query page disables saving when resume image parse is empty", async ({ page }) => {
+  await page.route("**/vision/resume-image", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...parseResponse,
+        parsed: {
+          name: null,
+          email: null,
+          phone: null,
+          education: [],
+          skills: [],
+          projects: [],
+          experience: [],
+          summary: null,
+        },
+        warnings: ["Vision parsing failed. Returned empty parsed payload."],
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Query" }).click();
+
+  await page.setInputFiles("#resume-image-upload", {
+    name: "resume.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("fake-image"),
+  });
+
+  await expect(page.getByText("Vision parsing failed. Returned empty parsed payload.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save as Resume" })).toBeDisabled();
+});

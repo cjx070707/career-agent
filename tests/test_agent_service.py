@@ -1,8 +1,12 @@
 from app.services.agent_service import AgentService
+from app.env import settings
 from app.services.interview_service import InterviewService
 from app.services.candidate_service import CandidateService
 from app.services.job_service import JobService
 from app.services.memory_service import MemoryService
+from app.services.tool_registry import ToolRegistry
+from app.tools.base import ToolDefinition
+from app.schemas.tool import SearchJobsToolInput
 
 
 class FakeLLMClient:
@@ -12,6 +16,7 @@ class FakeLLMClient:
         self.last_plan_source = "not_used"
         self.last_job_search_summary_source = "not_used"
         self.last_generate_source = "not_used"
+        self.observe_calls = []
 
     def generate_plan(self, **kwargs):
         self.called = True
@@ -36,6 +41,10 @@ class FakeLLMClient:
             {"message": message, "memory_context": list(memory_context), "jobs": jobs}
         )
         return "fake-job-search-summary"
+
+    def decide_next_action(self, **kwargs):
+        self.observe_calls.append(kwargs)
+        return {"decision": "continue", "reason": "default", "steps": []}
 
 
 def test_agent_service_uses_router_first_for_obvious_job_search(isolated_runtime) -> None:
@@ -207,6 +216,152 @@ def test_agent_service_search_jobs_uses_summarize_job_search(isolated_runtime) -
         "job_search_summary_source": "model",
         "generate_source": "not_used",
     }
+
+
+def test_agent_job_match_planning_can_replan_loop_steps(isolated_runtime) -> None:
+    class ReplanLLM(FakeLLMClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self._issued = False
+
+        def decide_next_action(self, **kwargs):
+            self.observe_calls.append(kwargs)
+            current_step = kwargs.get("current_step")
+            if current_step == "search_jobs" and not self._issued:
+                self._issued = True
+                return {
+                    "decision": "replan",
+                    "reason": "skip candidate step, go straight to resume match",
+                    "steps": ["match_resume_to_jobs"],
+                }
+            return {"decision": "continue", "reason": "continue", "steps": []}
+
+    fake_llm = ReplanLLM()
+    candidate = CandidateService().create_candidate(name="Loop User", user_id="loop-user")
+    from app.services.resume_service import ResumeService
+
+    ResumeService().create_resume(
+        candidate_id=int(candidate["id"]),
+        title="Loop Resume",
+        content="Python FastAPI backend APIs and SQL projects",
+        version="v1",
+    )
+    JobService().create_job(title="Python FastAPI Backend Engineer")
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("loop-user", "结合我的情况推荐适合投的岗位")
+
+    assert result.plan is not None
+    assert result.plan.task_type == "job_match_planning"
+    assert "search_jobs" in result.tool_trace
+    assert "match_resume_to_jobs" in result.tool_trace
+    assert fake_llm.observe_calls, "observe loop should run for job_match_planning"
+    assert result.loop_trace
+    assert any(item.get("decision") == "replan" for item in result.loop_trace)
+
+
+def test_agent_can_disable_observe_loop_via_settings(isolated_runtime) -> None:
+    class ReplanAlwaysLLM(FakeLLMClient):
+        def decide_next_action(self, **kwargs):
+            self.observe_calls.append(kwargs)
+            return {
+                "decision": "replan",
+                "reason": "force loop",
+                "steps": ["search_jobs"],
+            }
+
+    old = settings.agent_enable_observe_loop
+    settings.agent_enable_observe_loop = False
+    try:
+        fake_llm = ReplanAlwaysLLM()
+        candidate = CandidateService().create_candidate(name="Loop Off User", user_id="loop-off-user")
+        from app.services.resume_service import ResumeService
+
+        ResumeService().create_resume(
+            candidate_id=int(candidate["id"]),
+            title="Loop Off Resume",
+            content="Python FastAPI backend APIs and SQL projects",
+            version="v1",
+        )
+        JobService().create_job(title="Python FastAPI Backend Engineer")
+        service = AgentService(llm_client=fake_llm)
+
+        result = service.respond("loop-off-user", "结合我的情况推荐适合投的岗位")
+    finally:
+        settings.agent_enable_observe_loop = old
+
+    assert result.plan is not None
+    assert result.plan.task_type == "job_match_planning"
+    assert fake_llm.observe_calls == []
+    assert result.loop_trace == []
+
+
+def test_agent_loop_stops_on_no_progress_when_replan_repeats_same_search(
+    isolated_runtime,
+) -> None:
+    class RepeatSearchLLM(FakeLLMClient):
+        def decide_next_action(self, **kwargs):
+            self.observe_calls.append(kwargs)
+            if kwargs.get("current_step") == "search_jobs":
+                return {
+                    "decision": "replan",
+                    "reason": "retry same search",
+                    "steps": ["search_jobs"],
+                }
+            return {"decision": "continue", "reason": "continue", "steps": []}
+
+    fake_llm = RepeatSearchLLM()
+    candidate = CandidateService().create_candidate(
+        name="NoProgress User",
+        user_id="no-progress-user",
+    )
+    from app.services.resume_service import ResumeService
+
+    ResumeService().create_resume(
+        candidate_id=int(candidate["id"]),
+        title="NoProgress Resume",
+        content="Python FastAPI backend APIs",
+        version="v1",
+    )
+    JobService().create_job(title="Python FastAPI Backend Engineer")
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("no-progress-user", "结合我的情况推荐适合投的岗位")
+
+    assert result.plan is not None
+    assert result.plan.task_type == "job_match_planning"
+    # should avoid runaway loops even when observer keeps asking to rerun
+    assert result.tool_trace.count("search_jobs") <= 2
+
+
+def test_agent_stops_gracefully_when_tool_returns_error_result(isolated_runtime) -> None:
+    class BrokenRegistry(ToolRegistry):
+        def __init__(self) -> None:
+            super().__init__(
+                tools=[
+                    ToolDefinition(
+                        name="search_jobs",
+                        description="broken search",
+                        input_model=SearchJobsToolInput,
+                        handler=lambda payload: [],
+                    )
+                ]
+            )
+
+        def run(self, name: str, payload: dict) -> dict:
+            _ = (name, payload)
+            return {"ok": False, "tool_name": "search_jobs", "data": None, "error": "boom"}
+
+    fake_llm = FakeLLMClient()
+    service = AgentService(llm_client=fake_llm, tool_registry=BrokenRegistry())
+
+    result = service.respond("broken-tool-user", "帮我找一些 Python backend 岗位")
+
+    assert result.plan is not None
+    assert result.plan.task_type == "job_search"
+    assert result.tool_trace == []
+    assert result.tool_used is None
+    assert result.answer.startswith("fake-generate:")
 
 
 def test_chat_routes_to_interview_history_tool(isolated_runtime) -> None:

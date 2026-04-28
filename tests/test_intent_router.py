@@ -54,6 +54,17 @@ def test_job_search_still_catches_clear_search_phrasing() -> None:
     assert plan["task_type"] == "job_search"
 
 
+def test_greeting_routes_to_local_fallback_without_planner() -> None:
+    router = IntentRouter()
+
+    plan = _route(router, "你好")
+
+    assert plan is not None
+    assert plan["task_type"] == "fallback"
+    assert plan["steps"] == []
+    assert plan["planner_source"] == "router"
+
+
 def test_compound_search_plus_resume_match_routes_to_job_match_planning() -> None:
     router = IntentRouter()
 
@@ -75,8 +86,18 @@ def test_compound_search_plus_resume_match_routes_to_job_match_planning() -> Non
 def test_career_planning_question_falls_through_to_planner() -> None:
     router = IntentRouter()
 
-    assert _route(router, "我 USYD CS 大三想进 AI 方向，现在该怎么准备") is None
     assert _route(router, "有 Atlassian 的 grad program 吗") is None
+
+
+def test_career_preparation_question_routes_to_career_insights() -> None:
+    router = IntentRouter()
+
+    plan = _route(router, "我 USYD CS 大三想进 AI 方向，现在该怎么准备")
+
+    assert plan is not None
+    assert plan["task_type"] == "career_insights"
+    assert plan["steps"] == ["get_career_insights"]
+    assert plan["planner_source"] == "router"
 
 
 def test_application_history_routes_to_get_applications() -> None:
@@ -114,6 +135,17 @@ def test_career_direction_routes_to_get_career_insights() -> None:
     router = IntentRouter()
 
     plan = _route(router, "你觉得我下一步职业方向应该怎么考虑？")
+
+    assert plan is not None
+    assert plan["task_type"] == "career_insights"
+    assert plan["steps"] == ["get_career_insights"]
+    assert plan["planner_source"] == "router"
+
+
+def test_general_next_step_question_routes_to_career_insights() -> None:
+    router = IntentRouter()
+
+    plan = _route(router, "我下一步该做什么？")
 
     assert plan is not None
     assert plan["task_type"] == "career_insights"

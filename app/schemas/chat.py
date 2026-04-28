@@ -46,9 +46,11 @@ class ChatResponse(BaseModel):
         description="Stable /chat response contract version",
     )
     answer: str
+    stage: str = Field(default="done", description="High-level response stage")
     memory_used: bool = False
     sources: list[ChatSource] = Field(default_factory=list)
     tool_used: Optional[str] = None
     plan: Optional[ChatPlan] = None
     tool_trace: list[str] = Field(default_factory=list)
+    loop_trace: list[dict] = Field(default_factory=list)
     llm_trace: LLMTrace = Field(default_factory=LLMTrace)

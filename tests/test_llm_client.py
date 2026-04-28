@@ -142,6 +142,20 @@ class CareerEventExtractionClient(LLMClient):
         return {"output": [{"content": [{"text": self.response_text}]}]}
 
 
+class ObserveDecisionClient(LLMClient):
+    def __init__(self, response_json: str) -> None:
+        super().__init__()
+        self.response_json = response_json
+        self.calls = []
+
+    def is_configured(self) -> bool:
+        return True
+
+    def _post_responses(self, url, payload=None, api_key=None, **kwargs):
+        self.calls.append((url, payload, kwargs))
+        return {"choices": [{"message": {"content": self.response_json}}]}
+
+
 def test_generate_plan_uses_profile_and_memory_for_job_search() -> None:
     client = LLMClient()
     original_openai_api_key = settings.openai_api_key
@@ -723,7 +737,7 @@ def test_planner_uses_full_timeout_and_summarizer_uses_short_timeout() -> None:
         jobs=[{"title": "Backend Intern", "snippet": "Python team"}],
     )
 
-    assert client.calls[0][1]["timeout"] == 45.0
+    assert client.calls[0][1]["timeout"] == 12.0
     assert client.calls[1][1]["timeout"] == 12.0
 
 
@@ -759,3 +773,54 @@ def test_extract_career_events_returns_empty_when_model_payload_is_invalid() -> 
         user_id="event-user",
         message="Canva backend 面试没过。",
     ) == []
+
+
+def test_decide_next_action_returns_replan_with_sanitized_steps() -> None:
+    client = ObserveDecisionClient(
+        response_json='{"decision":"replan","reason":"adjust","steps":["search_jobs","imaginary_tool"]}'
+    )
+
+    result = client.decide_next_action(
+        task_type="job_match_planning",
+        message="结合我的情况推荐适合投的岗位",
+        current_step="search_jobs",
+        tool_result=[{"title": "Python FastAPI Backend Engineer"}],
+        remaining_steps=["match_resume_to_jobs"],
+        available_tools=["search_jobs", "match_resume_to_jobs"],
+    )
+
+    assert result["decision"] == "replan"
+    assert result["steps"] == ["search_jobs"]
+    assert client.calls
+
+
+def test_decide_react_action_returns_tool_for_valid_tool_name() -> None:
+    client = ObserveDecisionClient(
+        response_json='{"action":"tool","tool_name":"search_jobs","tool_input_hint":{"query":"backend"},"reason":"need jobs","observation_summary":"found candidates"}'
+    )
+    result = client.decide_react_action(
+        task_type="job_match_planning",
+        message="结合我的情况推荐适合投的岗位",
+        state={"_last_step": "get_resume_by_id"},
+        last_observation={"step": "get_resume_by_id", "result": {"id": 1}},
+        available_tools=["search_jobs", "match_resume_to_jobs"],
+    )
+    assert result["action"] == "tool"
+    assert result["tool_name"] == "search_jobs"
+    assert result["reason"] == "need jobs"
+    assert result["observation_summary"] == "found candidates"
+
+
+def test_decide_react_action_sanitizes_unknown_tool_to_finish() -> None:
+    client = ObserveDecisionClient(
+        response_json='{"action":"tool","tool_name":"imaginary_tool","tool_input_hint":{},"reason":"bad","observation_summary":""}'
+    )
+    result = client.decide_react_action(
+        task_type="job_match_planning",
+        message="结合我的情况推荐适合投的岗位",
+        state={"_last_step": "search_jobs"},
+        last_observation={"step": "search_jobs", "result": []},
+        available_tools=["search_jobs", "match_resume_to_jobs"],
+    )
+    assert result["action"] == "finish"
+    assert result["tool_name"] is None

@@ -35,19 +35,23 @@ def test_chat_search_contract_is_stable(isolated_runtime) -> None:
     assert set(body.keys()) == {
         "contract_version",
         "answer",
+        "stage",
         "memory_used",
         "sources",
         "tool_used",
         "plan",
         "tool_trace",
+        "loop_trace",
         "llm_trace",
     }
     assert body["contract_version"] == "chat.v1"
+    assert body["stage"] == "tool"
     assert body["tool_used"] == "search_jobs"
     assert body["plan"]["task_type"] == "job_search"
     assert body["plan"]["planner_source"] == "router"
     assert body["plan"]["steps"] == ["search_jobs"]
     assert body["tool_trace"] == ["search_jobs"]
+    assert body["loop_trace"] == []
     assert body["llm_trace"]["planner_source"] == "router"
     assert body["llm_trace"]["generate_source"] == "not_used"
     assert body["sources"]
@@ -83,6 +87,7 @@ def test_chat_recommendation_contract_is_stable(isolated_runtime) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["tool_used"] == "match_resume_to_jobs"
+    assert body["stage"] == "tool"
     assert body["plan"]["task_type"] == "job_match_planning"
     assert body["plan"]["planner_source"] == "router"
     assert body["tool_trace"] == [
@@ -113,6 +118,7 @@ def test_chat_missing_context_contract_is_stable(isolated_runtime) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["tool_used"] is None
+    assert body["stage"] == "fallback"
     assert body["sources"] == []
     assert body["tool_trace"] == []
     assert body["plan"]["task_type"] == "job_match"

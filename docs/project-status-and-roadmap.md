@@ -153,7 +153,7 @@ API 层          app/api/             HTTP 入口、参数校验
 
 | 任务 | 依赖 | 工程量 | 说明 |
 |---|---|---|---|
-| ReAct observe 环节 | 5.1 基本完成 | ~3 天 | `_should_continue_after_step` 改为 LLM 判断 |
+| ~~ReAct observe 环节~~ | ~~5.1 基本完成~~ | ~~完成~~ | ✅ 已实现 bounded ReAct-style observe loop（`loop_trace` 可观测） |
 | Multi-Agent 拆分 + Orchestrator | ReAct | ~5 天 | AgentService 拆 N 个 sub-agent |
 | CoT 显式推理链 | 无 | ~2 天 | Planner prompt 加 chain-of-thought |
 | ~~/chat contract 版本化 + schema 快照~~ | ~~无~~ | ~~完成~~ | ✅ `contract_version="chat.v1"` 字段 + pytest schema snapshot |
@@ -166,7 +166,7 @@ API 层          app/api/             HTTP 入口、参数校验
 |---|---|---|
 | #1 双层记忆 | 92% — 短期记忆 ✅，profile augment ✅，投递记录 ✅，面试反馈 ✅，长期画像落库 ✅，画像向量化 ✅；关键事件结构化沉淀 ✅，LLM 抽取 ✅；career insights 已输出 strengths / risk_areas / next_actions ✅ | 继续打磨记忆质量与召回评测 |
 | #2 MCP-ready 工具层 | 90% — 7 个工具 ✅（含 get_applications / get_interview_feedback / get_career_insights），ToolRegistry ✅，metadata/schema export ✅；真正 MCP 协议作为可选升级 | 可继续打磨工具分域与外部协议适配 |
-| #3 双层决策 + 可观测 | **90%** — Router ✅，Planner ✅，护栏 ✅，降级 ✅，trace ✅ | 基本完成，可打磨 |
+| #3 双层决策 + 可观测 | **94%** — Router ✅，Planner ✅，护栏 ✅，降级 ✅，trace ✅，bounded ReAct-style observe loop ✅（`loop_trace`） | 继续打磨循环策略与延迟 |
 | #4 混合召回 RAG | 88% — 向量召回 ✅，BM25 ✅，RRF ✅，rerank ✅，metadata filter ✅，reason ✅；career insights 可返回 source_summary 并被 Agent 回答消费 ✅；eval 已覆盖 career insights 与岗位搜索记忆隔离 ✅ | 继续补更细粒度排序调参 |
 | #5 图片多模态 + 多端交互 | 50% — React 双页面 ✅；Qwen3-VL 简历截图解析 ✅；解析结果保存为 resume ✅；JD 截图解析 ❌ | VL 图像输入（补齐 JD） |
 | #6 工程基建与评测 | 90% — FastAPI ✅，React ✅，evals 19 条 ✅，ToolRegistry ✅，工具 metadata export ✅，/chat contract_version + schema snapshot ✅ | 可继续做前端自动化验收 |

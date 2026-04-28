@@ -6,6 +6,8 @@ data/chroma/
 data/*.db
 evals/reports/*.md
 evals/reports/*.json
+evals/reports/*/
+!evals/reports/.gitkeep
 web/dist/
 web/node_modules/
 web/tsconfig.tsbuildinfo

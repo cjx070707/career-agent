@@ -34,15 +34,15 @@
 
 ## 条 3｜双层决策 + 可观测规划
 
-> 设计 Router-first + Planner-fallback 的双层决策架构：高置信度意图走规则路由，灰区查询由 LLM Planner 接管；Planner 输出经契约护栏（工具白名单、步骤顺序、步长上限）验证，违规自动降级；plan / tool_trace / llm_trace 字段对外可观测。
+> 设计 Router-first + Planner-fallback + Bounded ReAct-style execution 的双层决策架构：高置信度意图走规则路由，灰区查询由 LLM Planner 接管；复杂执行阶段由 observation-driven 决策动态选择下一步工具；Planner/Executor 输出经契约护栏（工具白名单、步长上限、重复保护）验证，违规自动降级；plan / tool_trace / loop_trace / llm_trace 字段对外可观测。
 
 **面试验收：**
-- 能画出 Router → Planner → Executor → Summarizer 的链路图
-- 能说出护栏的三条规则（白名单、顺序、步长）和降级策略（2 次重试 → fallback_plan）
+- 能画出 Router → Planner → Bounded Executor → Summarizer 的链路图
+- 能说出护栏规则（白名单、步长、重复保护）和降级策略（2 次重试 → fallback_plan / graceful fallback）
 - 能解释"为什么不全部让 LLM 决策"——对明显意图走 LLM 是浪费延迟和 token，不可解释不可测试
 - 能展示 `llm_trace.planner_source` 在 `router/model/fallback` 之间的分布
 
-**用词注意：** 不说"ReAct"（我们是 Plan-then-Execute，不是 Think→Act→Observe 循环）。不说"自我一致性"（Self-Consistency 是多次独立采样 + 多数投票，我们做的是契约护栏 + 降级）。这两个词有严格学术定义，简历上用了面试会被追问。
+**用词注意：** 说"Bounded ReAct-style execution"而不是"完整 ReAct"。不说"自我一致性"（Self-Consistency 是多次独立采样 + 多数投票，我们没有做多数投票链路）。
 
 ## 条 4｜混合召回 RAG
 
@@ -81,8 +81,8 @@
 
 | 升级方向 | 切入点 | 工程量 |
 |---|---|---|
-| Plan-Act → ReAct | `_should_continue_after_step` 从规则判断改为 LLM observe 判断 | ~3 天 |
+| Plan-Act → ReAct（完整版） | 由 bounded loop 升级为开放式 tool-action 循环 | ~3 天 |
 | 单 Agent → Multi-Agent | `AgentService` 拆为 N 个 sub-agent + Orchestrator 调度 | ~5 天 |
-| CoT 显式推理 | Planner prompt 加 chain-of-thought 并把推理过程存入 `llm_trace` | ~2 天 |
+| 显式 CoT 推理展示 | Planner prompt 加 chain-of-thought 并把推理过程存入 `llm_trace`（当前不建议产品化） | ~2 天 |
 
 这些升级路径不需要推翻现有底座。能力层（ToolRegistry / RetrievalService / MemoryService）不用动，只换决策层。

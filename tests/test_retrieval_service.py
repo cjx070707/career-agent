@@ -1,9 +1,15 @@
 from pathlib import Path
 
+import chromadb
+
 from app.db.session import init_db
 from app.env import settings
 from app.services.job_service import JobService
-from app.services.retrieval_service import RetrievalResult, RetrievalService
+from app.services.retrieval_service import (
+    LocalTokenEmbeddingFunction,
+    RetrievalResult,
+    RetrievalService,
+)
 
 
 def test_search_with_reasons_includes_matched_terms_and_reason_text(tmp_path: Path) -> None:
@@ -548,3 +554,66 @@ def test_retrieval_service_indexes_career_event_source(tmp_path: Path) -> None:
     assert results
     assert results[0].type == "career_event"
     assert results[0].title == "Atlassian - Backend Grad (tech1/rejected)"
+
+
+def test_search_with_reasons_returns_only_job_postings_even_with_profile_indexed(
+    tmp_path: Path,
+) -> None:
+    service = RetrievalService(
+        persist_directory=tmp_path / "chroma_search_jobs_only",
+        collection_name="search_jobs_only",
+    )
+    service.upsert_career_profile(
+        user_id="search-user",
+        profile={
+            "target_role_preference": "backend",
+            "skill_keywords": ["python", "fastapi"],
+            "interview_weaknesses": "system design fundamentals",
+        },
+    )
+
+    hits = service.search_with_reasons("python backend")
+
+    assert hits
+    assert all(hit.type == "job_posting" for hit in hits)
+
+
+def test_retrieval_service_seeds_static_jobs_when_collection_preexists_with_non_jobs(
+    tmp_path: Path,
+) -> None:
+    persist_dir = tmp_path / "chroma_preexisting_non_jobs"
+    collection_name = "preexisting_non_jobs"
+    client = chromadb.PersistentClient(path=str(persist_dir))
+    collection = client.get_or_create_collection(
+        name=collection_name,
+        embedding_function=LocalTokenEmbeddingFunction(),
+    )
+    collection.add(
+        ids=["career-profile-u1"],
+        documents=["Target role: backend. Skills: python, fastapi."],
+        metadatas=[
+            {
+                "type": "career_profile",
+                "title": "Career Profile",
+                "snippet": "Target role: backend. Skills: python, fastapi.",
+                "company": "",
+                "location": "",
+                "work_type": "",
+                "posted_at": "",
+                "url": "",
+                "tags": "career_profile",
+            }
+        ],
+    )
+
+    service = RetrievalService(
+        persist_directory=persist_dir,
+        collection_name=collection_name,
+    )
+
+    hits = service.search_with_reasons(
+        "backend intern",
+        filters={"location": "Sydney", "work_type": "intern"},
+    )
+    assert hits
+    assert all(hit.type == "job_posting" for hit in hits)

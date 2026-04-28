@@ -28,9 +28,10 @@ class LLMClient:
     # Hard cap on planner-produced step chains. Anything longer is treated as a
     # hallucinated tool loop and falls back to the deterministic plan.
     MAX_PLAN_STEPS = 6
-    PLANNER_TIMEOUT_SECONDS = 45.0
+    PLANNER_TIMEOUT_SECONDS = 12.0
     JOB_SEARCH_SUMMARY_TIMEOUT_SECONDS = 12.0
     CAREER_EVENT_EXTRACTION_TIMEOUT_SECONDS = 5.0
+    OBSERVE_DECISION_TIMEOUT_SECONDS = 10.0
 
     def __init__(self) -> None:
         self.model = settings.default_model
@@ -171,6 +172,117 @@ class LLMClient:
             return self._normalize_extracted_career_events(json.loads(text))
         except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
             return []
+
+    def decide_next_action(
+        self,
+        *,
+        task_type: str,
+        message: str,
+        current_step: str,
+        tool_result: Any,
+        remaining_steps: List[str],
+        available_tools: List[str],
+    ) -> Dict[str, Any]:
+        """Bounded observe step for executor loops.
+
+        Returns a structured decision:
+          - {"decision": "continue"|"stop"|"replan", "reason": str, "steps": list[str]}
+        """
+        if not self.is_configured():
+            return self._fallback_observe_decision(
+                task_type=task_type,
+                current_step=current_step,
+                tool_result=tool_result,
+                remaining_steps=remaining_steps,
+            )
+
+        request = self._build_observe_decision_request(
+            task_type=task_type,
+            message=message,
+            current_step=current_step,
+            tool_result=tool_result,
+            remaining_steps=remaining_steps,
+            available_tools=available_tools,
+        )
+        try:
+            payload = self._post_responses(
+                f"{self._planner_base_url().rstrip('/')}/chat/completions",
+                api_key=self._planner_api_key(),
+                payload=request,
+                timeout=self.OBSERVE_DECISION_TIMEOUT_SECONDS,
+            )
+            raw = self._extract_chat_completion_text(payload).strip()
+            parsed = json.loads(raw) if raw else {}
+            decision = str(parsed.get("decision") or "continue").strip().lower()
+            if decision not in {"continue", "stop", "replan"}:
+                decision = "continue"
+            steps = parsed.get("steps") if isinstance(parsed.get("steps"), list) else []
+            sanitized_steps = [
+                str(step).strip()
+                for step in steps
+                if isinstance(step, str) and str(step).strip() in set(available_tools)
+            ]
+            return {
+                "decision": decision,
+                "reason": str(parsed.get("reason") or "").strip(),
+                "steps": sanitized_steps,
+            }
+        except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
+            return self._fallback_observe_decision(
+                task_type=task_type,
+                current_step=current_step,
+                tool_result=tool_result,
+                remaining_steps=remaining_steps,
+            )
+
+    def decide_react_action(
+        self,
+        *,
+        task_type: str,
+        message: str,
+        state: Dict[str, Any],
+        last_observation: Optional[Dict[str, Any]],
+        available_tools: List[str],
+    ) -> Dict[str, Any]:
+        """Decide next bounded ReAct action.
+
+        Returns:
+          {"action": "tool"|"finish", "tool_name": str|None, "reason": str, "observation_summary": str}
+        """
+        if not self.is_configured():
+            return self._fallback_react_action(
+                state=state,
+                available_tools=available_tools,
+                reason="llm_not_configured",
+            )
+
+        request = self._build_react_action_request(
+            task_type=task_type,
+            message=message,
+            state=state,
+            last_observation=last_observation,
+            available_tools=available_tools,
+        )
+        try:
+            payload = self._post_responses(
+                f"{self._planner_base_url().rstrip('/')}/chat/completions",
+                api_key=self._planner_api_key(),
+                payload=request,
+                timeout=self.OBSERVE_DECISION_TIMEOUT_SECONDS,
+            )
+            raw = self._extract_chat_completion_text(payload).strip()
+            parsed = json.loads(raw) if raw else {}
+            return self._sanitize_react_action(
+                parsed=parsed,
+                state=state,
+                available_tools=available_tools,
+            )
+        except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
+            return self._fallback_react_action(
+                state=state,
+                available_tools=available_tools,
+                reason="react_fallback_after_error",
+            )
 
     def _generate_plan_with_model(
         self,
@@ -513,6 +625,209 @@ class LLMClient:
         }
         self._disable_thinking(request)
         return request
+
+    def _build_observe_decision_request(
+        self,
+        *,
+        task_type: str,
+        message: str,
+        current_step: str,
+        tool_result: Any,
+        remaining_steps: List[str],
+        available_tools: List[str],
+    ) -> Dict[str, Any]:
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "decision": {
+                    "type": "string",
+                    "enum": ["continue", "stop", "replan"],
+                },
+                "reason": {"type": "string"},
+                "steps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": ["decision", "reason", "steps"],
+        }
+        request = {
+            "model": self._planner_model(),
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an execution observer for a career agent. "
+                        "Given current step result, decide one of: continue, stop, replan. "
+                        "Use replan only when current result makes remaining steps clearly suboptimal."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "task_type": task_type,
+                            "message": message,
+                            "current_step": current_step,
+                            "tool_result": tool_result,
+                            "remaining_steps": remaining_steps,
+                            "available_tools": available_tools,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "observe_decision",
+                    "strict": True,
+                    "schema": schema,
+                },
+            },
+        }
+        if settings.planner_disable_thinking:
+            self._disable_thinking(request)
+        return request
+
+    def _build_react_action_request(
+        self,
+        *,
+        task_type: str,
+        message: str,
+        state: Dict[str, Any],
+        last_observation: Optional[Dict[str, Any]],
+        available_tools: List[str],
+    ) -> Dict[str, Any]:
+        schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "action": {"type": "string", "enum": ["tool", "finish"]},
+                "tool_name": {"type": ["string", "null"]},
+                "tool_input_hint": {"type": "object", "additionalProperties": True},
+                "reason": {"type": "string"},
+                "observation_summary": {"type": "string"},
+            },
+            "required": ["action", "tool_name", "tool_input_hint", "reason", "observation_summary"],
+        }
+        request = {
+            "model": self._planner_model(),
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a bounded ReAct controller for a career agent. "
+                        "Choose exactly one next action: call one tool or finish. "
+                        "Never output chain-of-thought."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "task_type": task_type,
+                            "message": message,
+                            "state": state,
+                            "last_observation": last_observation,
+                            "available_tools": available_tools,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "react_action",
+                    "strict": True,
+                    "schema": schema,
+                },
+            },
+        }
+        if settings.planner_disable_thinking:
+            self._disable_thinking(request)
+        return request
+
+    def _sanitize_react_action(
+        self,
+        *,
+        parsed: Dict[str, Any],
+        state: Dict[str, Any],
+        available_tools: List[str],
+    ) -> Dict[str, Any]:
+        action = str(parsed.get("action") or "finish").strip().lower()
+        if action not in {"tool", "finish"}:
+            action = "finish"
+        tool_name_raw = parsed.get("tool_name")
+        tool_name = str(tool_name_raw).strip() if isinstance(tool_name_raw, str) else ""
+        if action == "tool" and tool_name not in set(available_tools):
+            action = "finish"
+            tool_name = ""
+        return {
+            "action": action,
+            "tool_name": tool_name or None,
+            "reason": str(parsed.get("reason") or "").strip(),
+            "observation_summary": str(parsed.get("observation_summary") or "").strip(),
+            "tool_input_hint": parsed.get("tool_input_hint")
+            if isinstance(parsed.get("tool_input_hint"), dict)
+            else {},
+        }
+
+    def _fallback_react_action(
+        self,
+        *,
+        state: Dict[str, Any],
+        available_tools: List[str],
+        reason: str,
+    ) -> Dict[str, Any]:
+        if available_tools:
+            return {
+                "action": "tool",
+                "tool_name": available_tools[0],
+                "reason": reason,
+                "observation_summary": "",
+                "tool_input_hint": {},
+            }
+        last_step = str(state.get("_last_step") or "")
+        if last_step:
+            idx = available_tools.index(last_step) if last_step in available_tools else -1
+            if idx >= 0 and idx + 1 < len(available_tools):
+                return {
+                    "action": "tool",
+                    "tool_name": available_tools[idx + 1],
+                    "reason": reason,
+                    "observation_summary": "",
+                    "tool_input_hint": {},
+                }
+        return {
+            "action": "finish",
+            "tool_name": None,
+            "reason": reason,
+            "observation_summary": "",
+            "tool_input_hint": {},
+        }
+
+    def _fallback_observe_decision(
+        self,
+        *,
+        task_type: str,
+        current_step: str,
+        tool_result: Any,
+        remaining_steps: List[str],
+    ) -> Dict[str, Any]:
+        if task_type == "job_match_planning" and current_step == "search_jobs":
+            hits = tool_result if isinstance(tool_result, list) else []
+            if not hits:
+                return {"decision": "stop", "reason": "search returned no jobs", "steps": []}
+            if "match_resume_to_jobs" not in remaining_steps:
+                return {
+                    "decision": "replan",
+                    "reason": "search returned jobs; append matching step",
+                    "steps": ["match_resume_to_jobs"],
+                }
+        return {"decision": "continue", "reason": "default continue", "steps": []}
 
     def _extract_chat_completion_text(self, payload: Dict[str, Any]) -> str:
         choices = payload.get("choices", [])

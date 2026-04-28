@@ -12,10 +12,12 @@ def chat(payload: ChatRequest) -> ChatResponse:
     result = AgentService().respond(payload.user_id, payload.message)
     return ChatResponse(
         answer=result.answer,
+        stage=result.stage,
         memory_used=result.memory_used,
         sources=result.sources,
         tool_used=result.tool_used,
         plan=result.plan,
         tool_trace=result.tool_trace,
+        loop_trace=result.loop_trace,
         llm_trace=result.llm_trace,
     )
