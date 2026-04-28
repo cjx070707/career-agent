@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import time
 from typing import Any, Dict, List, Optional
 
 from app.llm.client import LLMClient
@@ -122,7 +123,7 @@ class AgentService:
         )
         self._apply_tool_resolution(plan, tool_resolution)
 
-        if plan.task_type == "fallback" and plan.planner_source == "router" and not plan.steps:
+        if plan.task_type == "fallback" and not plan.steps:
             answer = self._format_router_fallback_answer(message)
             self.memory_service.save_turn(user_id, message, answer)
             return AgentResult(
@@ -221,10 +222,15 @@ class AgentService:
         self.llm_client.last_plan_source = "not_used"
         self.llm_client.last_job_search_summary_source = "not_used"
         self.llm_client.last_generate_source = "not_used"
+        self.llm_client.last_plan_timed_out = False
+        self.llm_client.last_plan_elapsed_ms = 0.0
 
     def _format_router_fallback_answer(self, message: str) -> str:
         _ = message
-        return "你好！我可以帮你找岗位、分析简历匹配度、查看投递记录，或者结合面试反馈给你下一步准备建议。"
+        return (
+            "我可以帮你找岗位和做岗位搜索，也可以做这些事：简历总结与分析、岗位匹配、"
+            "面试准备、投递/面试诊断，以及第三方求职建议。"
+        )
 
     def _build_llm_trace(self, plan: Optional[ChatPlan]) -> LLMTrace:
         planner_source = "not_used"
@@ -261,6 +267,8 @@ class AgentService:
         ]
         available_tools = self.tool_registry.list_tool_names()
         user_state = self._build_user_state(user_id=user_id, message=message)
+        planner_used = False
+        router_started = time.perf_counter()
         plan_payload = self.intent_router.route(
             message=message,
             memory_context=memory_context,
@@ -268,7 +276,9 @@ class AgentService:
             available_tools=available_tools,
             user_state=user_state,
         )
+        router_elapsed_ms = (time.perf_counter() - router_started) * 1000
         if plan_payload is None:
+            planner_used = True
             plan_payload = self.llm_client.generate_plan(
                 message=message,
                 memory_context=memory_context,
@@ -280,6 +290,19 @@ class AgentService:
         # stable even when the payload comes from an older fallback path.
         if not plan_payload.get("planner_source"):
             plan_payload["planner_source"] = self.llm_client.last_plan_source
+        runtime_trace = {
+            "resolver": "planner_runtime",
+            "router_hit": not planner_used,
+            "planner_used": planner_used,
+            "planner_source": plan_payload.get("planner_source"),
+            "planner_elapsed_ms": round(float(getattr(self.llm_client, "last_plan_elapsed_ms", 0.0)), 2),
+            "planner_timeout": bool(getattr(self.llm_client, "last_plan_timed_out", False)),
+            "router_elapsed_ms": round(router_elapsed_ms, 2),
+        }
+        existing_trace = plan_payload.get("resolver_trace", [])
+        if not isinstance(existing_trace, list):
+            existing_trace = []
+        plan_payload["resolver_trace"] = list(existing_trace) + [runtime_trace]
         return ChatPlan.model_validate(plan_payload)
 
     def _build_user_state(self, *, user_id: str, message: str) -> Dict[str, Any]:

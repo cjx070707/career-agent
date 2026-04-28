@@ -63,6 +63,34 @@ def test_greeting_routes_to_local_fallback_without_planner() -> None:
     assert plan["planner_source"] == "router"
 
 
+def test_pinyin_greeting_routes_to_local_fallback_without_planner() -> None:
+    router = IntentRouter()
+    plan = _route(router, "nihao")
+    assert plan is not None
+    assert plan["task_type"] == "fallback"
+    assert plan["action"] == "greeting"
+    assert plan["planner_source"] == "router"
+
+
+def test_capability_help_routes_to_local_fallback_without_planner() -> None:
+    router = IntentRouter()
+    plan = _route(router, "你到底有什么用啊")
+    assert plan is not None
+    assert plan["task_type"] == "fallback"
+    assert plan["action"] == "capability_help"
+    assert plan["steps"] == []
+    assert plan["planner_source"] == "router"
+
+
+def test_resume_presence_query_routes_to_resume_analysis_without_planner() -> None:
+    router = IntentRouter()
+    plan = _route(router, "我的简历你有吗")
+    assert plan is not None
+    assert plan["task_type"] == "resume_analysis"
+    assert plan["action"] == "summarize"
+    assert plan["planner_source"] == "router"
+
+
 def test_compound_search_plus_resume_match_routes_to_job_match_planning() -> None:
     router = IntentRouter()
 
@@ -272,6 +300,42 @@ def test_router_resume_summary_cv_focus() -> None:
     assert plan["resources"] == ["resume"]
     assert plan["required_context"] == ["resume"]
     assert plan["plan_type"] == "analysis"
+
+
+def test_router_resume_summary_phrase_how_is_my_resume_cn() -> None:
+    router = IntentRouter()
+    plan = _route(router, "我的简历是怎样的？")
+    assert plan is not None
+    assert plan["task_type"] == "resume_analysis"
+    assert plan["domain"] == "resume_analysis"
+    assert plan["action"] == "summarize"
+
+
+def test_router_resume_summary_phrase_how_is_my_resume_cn_variant() -> None:
+    router = IntentRouter()
+    plan = _route(router, "我的简历怎么样？")
+    assert plan is not None
+    assert plan["task_type"] == "resume_analysis"
+    assert plan["domain"] == "resume_analysis"
+    assert plan["action"] == "summarize"
+
+
+def test_router_resume_summary_phrase_help_review_my_resume_cn() -> None:
+    router = IntentRouter()
+    plan = _route(router, "帮我看看我的简历")
+    assert plan is not None
+    assert plan["task_type"] == "resume_analysis"
+    assert plan["domain"] == "resume_analysis"
+    assert plan["action"] == "summarize"
+
+
+def test_router_resume_summary_phrase_review_my_cv_en() -> None:
+    router = IntentRouter()
+    plan = _route(router, "review my CV")
+    assert plan is not None
+    assert plan["task_type"] == "resume_analysis"
+    assert plan["domain"] == "resume_analysis"
+    assert plan["action"] == "summarize"
 
 
 def test_router_job_match_jd_phrase() -> None:

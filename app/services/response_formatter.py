@@ -1,4 +1,5 @@
 from typing import Any, List
+import re
 
 from app.schemas.chat import ChatSource
 
@@ -39,6 +40,35 @@ class ToolResponseFormatter:
                 follow_ups = "、".join(match["job_title"] for match in matches[1:3])
                 answer_parts.append(f"也可以继续关注 {follow_ups}。")
             return "".join(answer_parts)
+
+        if tool_name == "get_resume_by_id":
+            resume = tool_result if isinstance(tool_result, dict) else {}
+            content = str(resume.get("content", "")).strip()
+            if not content:
+                return "我没有读取到可总结的简历内容，请上传或粘贴简历。"
+
+            title = str(resume.get("title", "")).strip() or "未命名简历"
+            compact = self._compact_text(content)
+            role_hint = self._infer_role_hint(compact)
+            keywords = self._extract_resume_keywords(compact)
+            highlights = self._extract_highlights(compact)
+            risks = self._extract_resume_risks(compact)
+            actions = self._next_actions_from_risks(risks)
+
+            summary_line = self._first_sentence(compact)
+            if not summary_line:
+                summary_line = "已读取到简历文本，建议补充更完整的经历与成果描述。"
+
+            answer_parts = [
+                f"简历总结：{summary_line}",
+                f"整体定位：{role_hint}",
+                "核心技能/关键词：" + ("、".join(keywords) if keywords else "暂未识别出明确技能关键词"),
+                "经历或项目亮点：" + ("；".join(highlights) if highlights else "当前文本中可提取亮点较少"),
+                "风险/缺口：" + ("；".join(risks) if risks else "未发现明显结构性缺口"),
+                "下一步优化建议：" + ("；".join(actions) if actions else "保持当前结构，补充量化成果即可"),
+                f"（基于简历：{title}）",
+            ]
+            return "\n".join(answer_parts)
 
         if tool_name == "get_applications":
             rows = tool_result if isinstance(tool_result, list) else []
@@ -103,6 +133,104 @@ class ToolResponseFormatter:
             return "".join(answer_parts)
 
         return "工具执行完成。"
+
+    def _compact_text(self, content: str) -> str:
+        compact = re.sub(r"\s+", " ", content).strip()
+        return compact[:4000]
+
+    def _first_sentence(self, text: str) -> str:
+        if not text:
+            return ""
+        parts = re.split(r"[。！？.!?;；\n]", text)
+        for part in parts:
+            candidate = part.strip()
+            if len(candidate) >= 12:
+                return candidate[:120]
+        return text[:120]
+
+    def _infer_role_hint(self, text: str) -> str:
+        lowered = text.lower()
+        mapping = [
+            ("data analyst", "偏数据分析方向"),
+            ("backend", "偏后端开发方向"),
+            ("frontend", "偏前端开发方向"),
+            ("full stack", "偏全栈开发方向"),
+            ("machine learning", "偏机器学习方向"),
+            ("product", "偏产品方向"),
+            ("数据分析", "偏数据分析方向"),
+            ("后端", "偏后端开发方向"),
+            ("前端", "偏前端开发方向"),
+            ("全栈", "偏全栈开发方向"),
+            ("机器学习", "偏机器学习方向"),
+            ("产品", "偏产品方向"),
+        ]
+        for key, label in mapping:
+            if key in lowered:
+                return label
+        return "方向信息不够明确，建议在简历抬头补充目标岗位"
+
+    def _extract_resume_keywords(self, text: str) -> List[str]:
+        lowered = text.lower()
+        candidates = [
+            "python",
+            "java",
+            "sql",
+            "fastapi",
+            "django",
+            "flask",
+            "react",
+            "typescript",
+            "node",
+            "aws",
+            "docker",
+            "kubernetes",
+            "machine learning",
+            "pandas",
+            "tableau",
+            "power bi",
+        ]
+        found: List[str] = []
+        for item in candidates:
+            if item in lowered:
+                found.append(item)
+        return found[:6]
+
+    def _extract_highlights(self, text: str) -> List[str]:
+        fragments = re.split(r"[。！？.!?\n]", text)
+        selected: List[str] = []
+        strong_markers = ("project", "实习", "项目", "intern", "built", "developed", "优化", "提升", "设计")
+        for frag in fragments:
+            line = frag.strip()
+            if not line:
+                continue
+            lowered = line.lower()
+            if any(marker in lowered for marker in strong_markers) and len(line) >= 10:
+                selected.append(line[:90])
+            if len(selected) >= 2:
+                break
+        return selected
+
+    def _extract_resume_risks(self, text: str) -> List[str]:
+        lowered = text.lower()
+        risks: List[str] = []
+        has_number = bool(re.search(r"\d", text))
+        if not has_number:
+            risks.append("缺少量化成果（如效率提升、规模、指标）")
+        if "project" not in lowered and "项目" not in text:
+            risks.append("项目信息不足，建议补充代表性项目")
+        if "intern" not in lowered and "实习" not in text and "experience" not in lowered and "经历" not in text:
+            risks.append("经历描述偏少，建议补充实习/实践经历")
+        return risks[:3]
+
+    def _next_actions_from_risks(self, risks: List[str]) -> List[str]:
+        actions: List[str] = []
+        if any("量化成果" in item for item in risks):
+            actions.append("为每段经历补 1-2 个量化结果")
+        if any("项目信息不足" in item for item in risks):
+            actions.append("补充 1-2 个项目并写清问题、动作、结果")
+        if any("经历描述偏少" in item for item in risks):
+            actions.append("增加与目标岗位相关的实践经历")
+        return actions[:3]
 
     def extract_sources(self, tool_name: str, tool_result: Any) -> List[ChatSource]:
         if tool_name == "search_jobs":

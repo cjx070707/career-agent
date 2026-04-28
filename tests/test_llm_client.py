@@ -1,4 +1,5 @@
 import json
+import time
 
 import httpx
 
@@ -102,6 +103,23 @@ class JobSearchSummarizeChatClient(LLMClient):
     def _post_responses(self, url, payload=None, api_key=None, **kwargs):
         self.summarize_chat_calls.append((url, payload, kwargs))
         return {"choices": [{"message": {"content": "Model job-search summary."}}]}
+
+
+class GenerateChatClient(LLMClient):
+    def __init__(self, response_text: str, error=None) -> None:
+        super().__init__()
+        self.response_text = response_text
+        self.error = error
+        self.calls = []
+
+    def is_configured(self) -> bool:
+        return True
+
+    def _post_responses(self, url, payload=None, api_key=None, **kwargs):
+        self.calls.append((url, payload, kwargs))
+        if self.error is not None:
+            raise self.error
+        return {"choices": [{"message": {"content": self.response_text}}]}
 
 
 class TimeoutCaptureLLMClient(LLMClient):
@@ -309,6 +327,26 @@ def test_generate_plan_falls_back_after_model_failure() -> None:
     assert client.fallback_calls == 1
     assert plan["task_type"] == "job_search"
     assert plan["planner_source"] == "fallback"
+    assert client.model_calls == 1
+
+
+def test_generate_plan_timeout_falls_back_quickly_single_attempt() -> None:
+    client = ModelFirstLLMClient(
+        model_error=httpx.ReadTimeout("planner timeout"),
+    )
+    started = time.perf_counter()
+    plan = client.generate_plan(
+        message="你到底有什么用啊",
+        memory_context=[],
+        profile={},
+        available_tools=[],
+    )
+    elapsed = time.perf_counter() - started
+
+    assert client.model_calls == 1
+    assert client.fallback_calls == 1
+    assert plan["planner_source"] == "fallback"
+    assert elapsed < 1.0
 
 
 def test_generate_plan_falls_back_after_schema_failure() -> None:
@@ -760,8 +798,8 @@ def test_planner_uses_full_timeout_and_summarizer_uses_short_timeout() -> None:
         jobs=[{"title": "Backend Intern", "snippet": "Python team"}],
     )
 
-    assert client.calls[0][1]["timeout"] == 12.0
-    assert client.calls[1][1]["timeout"] == 12.0
+    assert client.calls[0][1]["timeout"] == client.PLANNER_TIMEOUT_SECONDS
+    assert client.calls[1][1]["timeout"] == client.JOB_SEARCH_SUMMARY_TIMEOUT_SECONDS
 
 
 def test_extract_career_events_uses_structured_responses_payload() -> None:
@@ -1081,3 +1119,34 @@ def test_build_diagnostic_plan_request_uses_dedicated_prompt_and_schema() -> Non
     schema = request["text"]["format"]["schema"]
     assert schema == DiagnosticPlannerOutput.model_json_schema()
     assert request["text"]["format"]["strict"] is True
+
+
+def test_generate_uses_chat_completions_when_configured() -> None:
+    client = GenerateChatClient(response_text="Model generated answer.")
+
+    answer = client.generate(
+        message="我该如何准备面试？",
+        memory_context=["用户偏向后端岗位"],
+        evidence=["Backend Intern at Canva"],
+    )
+
+    assert answer == "Model generated answer."
+    assert client.last_generate_source == "model"
+    assert len(client.calls) == 1
+    url, payload, kwargs = client.calls[0]
+    assert url.endswith("/chat/completions")
+    assert payload["model"] == client.model
+    assert kwargs["timeout"] == 12.0
+
+
+def test_generate_falls_back_when_model_call_fails() -> None:
+    client = GenerateChatClient(response_text="", error=httpx.HTTPError("boom"))
+
+    answer = client.generate(
+        message="帮我看下一步",
+        memory_context=[],
+        evidence=["e1"],
+    )
+
+    assert "Fallback response for '帮我看下一步'" in answer
+    assert client.last_generate_source == "fallback"

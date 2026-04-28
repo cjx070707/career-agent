@@ -4,10 +4,12 @@ from app.services.interview_service import InterviewService
 from app.services.candidate_service import CandidateService
 from app.services.job_service import JobService
 from app.services.memory_service import MemoryService
+from app.services.resume_service import ResumeService
 from app.tools.registry import ToolRegistry
 from app.tools.base import ToolDefinition
 from app.schemas.tool import SearchJobsToolInput
 from app.schemas.diagnostic_planner import DiagnosticPlannerOutput
+import time
 
 
 class FakeLLMClient:
@@ -79,6 +81,21 @@ class PlannerAwareLLMClient(FakeLLMClient):
         }
 
 
+class TimeoutFallbackPlanLLMClient(FakeLLMClient):
+    def generate_plan(self, **kwargs):
+        self.called = True
+        self.last_plan_source = "fallback"
+        return {
+            "task_type": "fallback",
+            "reason": "planner timeout fallback",
+            "steps": [],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": None,
+            "planner_source": "fallback",
+        }
+
+
 def test_agent_service_uses_router_first_for_obvious_job_search(isolated_runtime) -> None:
     fake_llm = FakeLLMClient()
     CandidateService().create_candidate(name="Planner User")
@@ -100,6 +117,60 @@ def test_agent_service_uses_router_first_for_obvious_job_search(isolated_runtime
     }
 
 
+def test_agent_service_handles_nihao_via_router_fastpath(isolated_runtime) -> None:
+    fake_llm = FakeLLMClient()
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("nihao-user", "nihao")
+
+    assert fake_llm.called is False
+    assert result.plan is not None
+    assert result.plan.task_type == "fallback"
+    assert result.plan.planner_source == "router"
+    assert result.tool_trace == []
+
+
+def test_agent_service_handles_capability_help_via_router_fastpath(isolated_runtime) -> None:
+    fake_llm = FakeLLMClient()
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("help-user", "你到底有什么用啊")
+
+    assert fake_llm.called is False
+    assert result.plan is not None
+    assert result.plan.task_type == "fallback"
+    assert result.plan.planner_source == "router"
+    assert "简历总结" in result.answer
+    assert "岗位搜索" in result.answer
+    assert "第三方求职建议" in result.answer
+
+
+def test_agent_service_handles_resume_presence_query_via_router_fastpath(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Resume Presence User",
+        user_id="resume-presence-user",
+    )
+    ResumeService().create_resume(
+        candidate_id=int(candidate["id"]),
+        title="Backend Resume",
+        content="Python FastAPI SQL",
+        version="v1",
+    )
+    fake_llm = FakeLLMClient()
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("resume-presence-user", "我的简历你有吗")
+
+    assert fake_llm.called is False
+    assert result.plan is not None
+    assert result.plan.task_type == "resume_analysis"
+    assert result.plan.planner_source == "router"
+    assert result.tool_trace == ["get_resume_by_id"]
+    assert "简历总结" in result.answer
+
+
 def test_agent_service_uses_llm_layer_for_gray_query(isolated_runtime) -> None:
     fake_llm = FakeLLMClient()
     CandidateService().create_candidate(name="Planner User")
@@ -118,6 +189,24 @@ def test_agent_service_uses_llm_layer_for_gray_query(isolated_runtime) -> None:
         "job_search_summary_source": "model",
         "generate_source": "not_used",
     }
+
+
+def test_agent_service_planner_timeout_falls_back_without_long_wait(
+    isolated_runtime,
+) -> None:
+    timeout_llm = TimeoutFallbackPlanLLMClient()
+    service = AgentService(llm_client=timeout_llm)
+
+    started = time.perf_counter()
+    result = service.respond("planner-timeout-user", "最近市场怎么看")
+    elapsed = time.perf_counter() - started
+
+    assert timeout_llm.called is True
+    assert elapsed < 1.0
+    assert result.plan is not None
+    assert result.plan.planner_source == "fallback"
+    assert result.stage == "fallback"
+    assert result.tool_trace == []
 
 
 def test_agent_routes_career_direction_to_career_insights(isolated_runtime) -> None:
@@ -409,6 +498,57 @@ def test_agent_service_search_jobs_uses_summarize_job_search(isolated_runtime) -
         "job_search_summary_source": "model",
         "generate_source": "not_used",
     }
+
+
+def test_agent_resume_summary_formats_resume_answer_not_default_tool_message(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Resume Summary User",
+        user_id="resume-summary-user",
+    )
+    ResumeService().create_resume(
+        candidate_id=int(candidate["id"]),
+        title="Backend Resume",
+        content=(
+            "Backend intern project: built Python FastAPI APIs and optimized SQL queries. "
+            "Implemented service monitoring and improved reliability."
+        ),
+        version="v1",
+    )
+    service = AgentService(llm_client=FakeLLMClient())
+
+    result = service.respond("resume-summary-user", "总结一下我的简历")
+
+    assert result.plan is not None
+    assert result.plan.task_type == "resume_analysis"
+    assert result.tool_trace == ["get_resume_by_id"]
+    assert "工具执行完成。" not in result.answer
+    assert "简历总结" in result.answer
+    assert "整体定位" in result.answer
+
+
+def test_agent_resume_summary_empty_content_returns_clear_prompt(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Empty Resume User",
+        user_id="empty-resume-user",
+    )
+    ResumeService().create_resume(
+        candidate_id=int(candidate["id"]),
+        title="Empty Resume",
+        content="",
+        version="v1",
+    )
+    service = AgentService(llm_client=FakeLLMClient())
+
+    result = service.respond("empty-resume-user", "总结一下我的简历")
+
+    assert result.plan is not None
+    assert result.plan.task_type == "resume_analysis"
+    assert result.tool_trace == ["get_resume_by_id"]
+    assert result.answer == "我没有读取到可总结的简历内容，请上传或粘贴简历。"
 
 
 def test_agent_job_match_planning_can_replan_loop_steps(isolated_runtime) -> None:

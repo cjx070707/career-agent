@@ -46,16 +46,17 @@ flowchart TD
 ## 3) 每阶段交付清单
 
 ### Phase 1 — Planner Schema 升级 + Profile 写入防污染（兼容旧字段）
+状态：✅ 已完成
 
 **目标**：把 plan 从“steps 列表”升级为“任务语义对象”，并尽早控制 message-based profile 更新污染。
 
 交付：
 
-- `ChatPlan` 扩展字段：`domain/action/resources/confidence/goal/subgoals/plan_type/evidence_policy/stop_criteria`
-- validator 增加 task/action 语义约束
-- confidence 低阈值行为（追问或 fallback）
-- `ProfileService.update_from_message` 增加主体识别/写入门控，避免“我朋友…”类输入污染当前用户画像
-- 保留旧字段与 `chat.v1` 兼容
+- [x] `ChatPlan` 扩展字段：`domain/action/resources/confidence/goal/subgoals/plan_type/evidence_policy/stop_criteria`
+- [x] validator 增加 task/action 语义约束
+- [x] confidence 低阈值行为（追问或 fallback）
+- [x] `ProfileService.update_from_message` 增加主体识别/写入门控，避免“我朋友…”类输入污染当前用户画像
+- [x] 保留旧字段与 `chat.v1` 兼容
 
 验收：
 
@@ -66,16 +67,17 @@ flowchart TD
 ---
 
 ### Phase 2 — ContextRequirementResolver + ToolResolver
+状态：✅ 已完成
 
 **目标**：把“缺什么上下文”“该调哪些工具”从 LLM 决策中解耦出来。
 
 交付：
 
-- `ContextRequirementResolver`：required/optional context 判定
-- `ToolResolver`：`domain+action+resources -> tool_chain`
-- 保留旧 `steps` 字段兼容，新增 `tool_chain` 由 `ToolResolver` 生成或校验
-- 标准化追问输出
-- resolver trace（reason 可观测）
+- [x] `ContextRequirementResolver`：required/optional context 判定
+- [x] `ToolResolver`：`domain+action+resources -> tool_chain`
+- [x] 保留旧 `steps` 字段兼容，新增 `tool_chain` 由 `ToolResolver` 生成或校验
+- [x] 标准化追问输出
+- [x] resolver trace（reason 可观测）
 
 验收：
 
@@ -86,19 +88,20 @@ flowchart TD
 ---
 
 ### Phase 3A — Rule-based Diagnosis Engine
+状态：✅ 已完成
 
 **目标**：先落地可测试、可解释的规则诊断层，保证诊断可回归。
 
 交付：
 
-- `Career Diagnosis Engine` 输出：
+- [x] `Career Diagnosis Engine` 输出：
   - `bottleneck_type`
     - 枚举：`resume_positioning / job_targeting / application_volume / interview_performance / skill_gap / insufficient_evidence`
   - `confidence`
   - `evidence[]`
   - `priority`
   - `recommended_actions[]`
-- `insufficient_evidence` 分支
+- [x] `insufficient_evidence` 分支
 
 验收：
 
@@ -108,14 +111,16 @@ flowchart TD
 ---
 
 ### Phase 3B — LLM-assisted Diagnostic Planner
+状态：⚠️ 部分完成（A1/A2 已落地，完整 3B 未完成）
 
 **目标**：在规则诊断稳定后，引入 LLM 辅助假设生成与证据收集策略，不替代规则底座。
 
 交付：
 
-- `Diagnostic Planner` 输出 hypotheses + evidence_to_collect
-- 支持按 observation 动态切换诊断假设优先级
-- 与 Rule-based Diagnosis Engine 结果对齐，不产生无证据结论
+- [x] `Diagnostic Planner` 输出 hypotheses + evidence_to_collect（A1）
+- [x] 最小主链路接入：career_insights 路径可观测 `diagnostic_plan`（A2）
+- [ ] 支持按 observation 动态切换诊断假设优先级
+- [ ] 与 Rule-based Diagnosis Engine 深度协同消费（仅最小接入，未做策略联动）
 
 验收：
 
@@ -125,14 +130,15 @@ flowchart TD
 ---
 
 ### Phase 4 — Strategy-level ReAct Replan
+状态：⬜ 未开始
 
 **目标**：让 loop 从“换下一工具”升级到“改诊断策略”。
 
 交付：
 
-- executor 接入 `MAX_REPLANS` 真正计数
-- 新动作：`switch_tool/replan_strategy/ask_for_context`
-- replan reason 强制进入 `loop_trace`
+- [ ] executor 接入 `MAX_REPLANS` 真正计数
+- [ ] 新动作：`switch_tool/replan_strategy/ask_for_context`
+- [ ] replan reason 强制进入 `loop_trace`
 
 验收：
 
@@ -142,15 +148,16 @@ flowchart TD
 ---
 
 ### Phase 5 — Structured Response + Layered Profile Update
+状态：⬜ 未开始
 
 **目标**：产品化输出 + 可审计画像更新。
 
 交付：
 
-- `structured_report`：diagnosis/job_matches/skill_gaps/recommended_actions/learning_plan
-- `structured_report` 不替代 `answer` 字段；`answer` 继续作为用户可读总结，`structured_report` 供前端卡片化展示
-- Profile 更新三层：message-based、evidence-based、diagnosis-based
-- profile update log（field/source/confidence/evidence/time）
+- [ ] `structured_report`：diagnosis/job_matches/skill_gaps/recommended_actions/learning_plan
+- [ ] `structured_report` 不替代 `answer` 字段；`answer` 继续作为用户可读总结，`structured_report` 供前端卡片化展示
+- [ ] Profile 更新三层：message-based、evidence-based、diagnosis-based
+- [ ] profile update log（field/source/confidence/evidence/time）
 
 验收：
 
@@ -200,4 +207,3 @@ graph TD
   3. diagnostic reasoning
   4. bounded replan
   5. structured action output
-

@@ -42,6 +42,47 @@ class IntentRouter:
                 stop_criteria=["greeting completed"],
             )
 
+        if signals.has_capability_help:
+            return build_router_plan(
+                task_type="fallback",
+                reason="这是能力说明请求，直接返回本地能力说明，无需调用 Planner 或工具。",
+                steps=[],
+                needs_more_context=False,
+                missing_context=[],
+                follow_up_question=None,
+                domain="conversation",
+                action="capability_help",
+                goal="Explain core capabilities in a concise local response.",
+                confidence=0.99,
+                plan_type="direct",
+                evidence_policy="none",
+                stop_criteria=["capability help provided"],
+            )
+
+        if signals.has_resume_presence_query:
+            has_resume = bool(user_state.get("has_resume", False))
+            return build_router_plan(
+                task_type="resume_analysis",
+                reason="这是简历是否存在的查询，优先本地读取简历状态。",
+                steps=keep_available(["get_resume_by_id"]) if has_resume else [],
+                needs_more_context=not has_resume,
+                missing_context=["resume"] if not has_resume else [],
+                follow_up_question=(
+                    "我还没有读取到你的简历。请上传简历文件，或直接粘贴简历文本。"
+                    if not has_resume
+                    else None
+                ),
+                domain="resume_analysis",
+                action="summarize",
+                goal="Check whether resume exists and summarize when available.",
+                resources=["resume"],
+                required_context=["resume"],
+                confidence=0.97,
+                plan_type="analysis",
+                evidence_policy="use_existing",
+                stop_criteria=["resume presence confirmed", "missing resume confirmed"],
+            )
+
         if signals.is_third_party:
             return build_router_plan(
                 task_type="fallback",

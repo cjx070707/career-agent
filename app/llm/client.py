@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -33,7 +34,7 @@ class LLMClient:
     # Hard cap on planner-produced step chains. Anything longer is treated as a
     # hallucinated tool loop and falls back to the deterministic plan.
     MAX_PLAN_STEPS = 6
-    PLANNER_TIMEOUT_SECONDS = 12.0
+    PLANNER_TIMEOUT_SECONDS = 8.0
     JOB_SEARCH_SUMMARY_TIMEOUT_SECONDS = 12.0
     CAREER_EVENT_EXTRACTION_TIMEOUT_SECONDS = 5.0
     OBSERVE_DECISION_TIMEOUT_SECONDS = 10.0
@@ -44,6 +45,8 @@ class LLMClient:
         self.last_plan_source = "not_used"
         self.last_job_search_summary_source = "not_used"
         self.last_generate_source = "not_used"
+        self.last_plan_timed_out = False
+        self.last_plan_elapsed_ms = 0.0
         self.plan_validator = PlanValidator(
             allowed_task_types=self.ALLOWED_TASK_TYPES,
             max_plan_steps=self.MAX_PLAN_STEPS,
@@ -72,39 +75,40 @@ class LLMClient:
         user_state: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
         normalized_user_state = user_state or {}
-        last_error: Optional[Exception] = None
-
-        for _ in range(2):
-            try:
-                plan_payload = self._generate_plan_with_model(
-                    message=message,
-                    memory_context=memory_context,
-                    profile=profile,
-                    available_tools=available_tools,
-                    user_state=normalized_user_state,
-                )
-                self.last_plan_source = "model"
-                return self._validated_plan(
-                    plan_payload,
-                    planner_source="model",
-                    available_tools=available_tools,
-                )
-            except (RuntimeError, ValidationError, ValueError, httpx.HTTPError) as exc:
-                last_error = exc
-
-        _ = last_error
-        self.last_plan_source = "fallback"
-        return self._validated_plan(
-            self._fallback_plan(
-                message,
-                memory_context,
-                profile,
-                available_tools,
-                normalized_user_state,
-            ),
-            planner_source="fallback",
-            available_tools=available_tools,
-        )
+        self.last_plan_timed_out = False
+        self.last_plan_elapsed_ms = 0.0
+        start = time.perf_counter()
+        try:
+            plan_payload = self._generate_plan_with_model(
+                message=message,
+                memory_context=memory_context,
+                profile=profile,
+                available_tools=available_tools,
+                user_state=normalized_user_state,
+            )
+            self.last_plan_source = "model"
+            return self._validated_plan(
+                plan_payload,
+                planner_source="model",
+                available_tools=available_tools,
+            )
+        except (RuntimeError, ValidationError, ValueError, httpx.HTTPError) as exc:
+            if isinstance(exc, httpx.TimeoutException):
+                self.last_plan_timed_out = True
+            self.last_plan_source = "fallback"
+            return self._validated_plan(
+                self._fallback_plan(
+                    message,
+                    memory_context,
+                    profile,
+                    available_tools,
+                    normalized_user_state,
+                ),
+                planner_source="fallback",
+                available_tools=available_tools,
+            )
+        finally:
+            self.last_plan_elapsed_ms = (time.perf_counter() - start) * 1000
 
     def generate_diagnostic_plan(
         self,
@@ -141,12 +145,27 @@ class LLMClient:
         memory_context: list[str],
         evidence: list[str],
     ) -> str:
-        self.last_generate_source = "fallback"
         if self.is_configured():
-            return (
-                f"Model {self.model} is configured, but live completion is not wired yet."
-            )
+            try:
+                request = self._build_generate_chat_request(
+                    message=message,
+                    memory_context=memory_context,
+                    evidence=evidence,
+                )
+                payload = self._post_responses(
+                    f"{self._planner_base_url().rstrip('/')}/chat/completions",
+                    api_key=self._planner_api_key(),
+                    payload=request,
+                    timeout=self.JOB_SEARCH_SUMMARY_TIMEOUT_SECONDS,
+                )
+                text = self._extract_chat_completion_text(payload).strip()
+                if text:
+                    self.last_generate_source = "model"
+                    return text
+            except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
+                pass
 
+        self.last_generate_source = "fallback"
         if evidence:
             titles = ", ".join(evidence)
             return f"Fallback response for '{message}'. Relevant evidence: {titles}."
@@ -418,6 +437,39 @@ class LLMClient:
         }
         if settings.planner_disable_thinking:
             self._disable_thinking(request)
+        return request
+
+    def _build_generate_chat_request(
+        self,
+        *,
+        message: str,
+        memory_context: List[str],
+        evidence: List[str],
+    ) -> Dict[str, Any]:
+        request = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a concise career assistant. Use provided memory and evidence "
+                        "to answer the user directly. If evidence is empty, answer with practical next steps."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "message": message,
+                            "memory_context": memory_context,
+                            "evidence": evidence,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+        }
+        self._disable_thinking(request)
         return request
 
     def _build_diagnostic_plan_request(

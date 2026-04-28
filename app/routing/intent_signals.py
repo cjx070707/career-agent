@@ -7,9 +7,19 @@ _JOB_SEARCH_ACTION_KEYWORDS_EN = ("find", "search", "recommend", "look for")
 _JOB_SEARCH_OBJECT_KEYWORDS_EN = ("job", "jobs", "role", "position", "internship")
 _COMPOUND_MATCH_MARKERS = ("简历", "匹配度", "match my resume", "resume match")
 _GREETING_MESSAGES = {"hi", "hello", "hey", "你好", "您好", "嗨"}
+_GREETING_PHRASES = ("nihao", "ni hao")
 _THIRD_PARTY_MARKERS = ("我朋友", "my friend", "室友", "同学")
 _RESUME_MARKERS = ("简历", "resume", "cv")
 _RESUME_SUMMARY_MARKERS = ("总结", "概括", "亮点", "summary", "summarize", "highlight")
+_RESUME_REVIEW_MARKERS = (
+    "我的简历是怎样的",
+    "我的简历怎么样",
+    "帮我看看我的简历",
+    "评价一下我的简历",
+    "看一下我的 resume",
+    "how is my resume",
+    "review my cv",
+)
 _JOB_FIT_MARKERS = (
     "适不适合我",
     "适合我吗",
@@ -65,6 +75,20 @@ _INTERVIEW_MARKERS = ("面试", "interview")
 _INTERVIEW_PREP_MARKERS = ("准备", "prepare", "prep", "plan")
 _INTERVIEW_HISTORY_MARKERS = ("最近", "记录", "反馈", "进展", "history", "哪些", "结果")
 _INTERVIEW_FEEDBACK_MARKERS = ("feedback", "复盘", "笔试", "hr 面", "hr面")
+_CAPABILITY_HELP_MARKERS = (
+    "你到底有什么用啊",
+    "你能做什么",
+    "你有什么用",
+    "help",
+    "what can you do",
+)
+_RESUME_PRESENCE_MARKERS = (
+    "我的简历你有吗",
+    "你有我的简历吗",
+    "我上传过简历吗",
+    "do you have my resume",
+    "have you got my cv",
+)
 
 
 def _has_any(text: str, lowered: str, markers: tuple[str, ...]) -> bool:
@@ -74,7 +98,9 @@ def _has_any(text: str, lowered: str, markers: tuple[str, ...]) -> bool:
 @dataclass(frozen=True)
 class IntentSignals:
     is_greeting: bool
+    has_capability_help: bool
     is_third_party: bool
+    has_resume_presence_query: bool
     has_resume_summary: bool
     has_job_search: bool
     has_compound_match: bool
@@ -92,6 +118,7 @@ class IntentSignals:
 
 
 def collect_intent_signals(message: str, lowered_message: str, stripped_message: str) -> IntentSignals:
+    normalized_stripped = stripped_message.lower().replace(" ", "")
     has_job_search_zh = any(kw in message for kw in _JOB_SEARCH_ACTION_KEYWORDS_ZH) and any(
         kw in message for kw in _JOB_SEARCH_OBJECT_KEYWORDS_ZH
     )
@@ -102,6 +129,7 @@ def collect_intent_signals(message: str, lowered_message: str, stripped_message:
 
     has_resume_signal = _has_any(message, lowered_message, _RESUME_MARKERS)
     has_summary_signal = _has_any(message, lowered_message, _RESUME_SUMMARY_MARKERS)
+    has_review_signal = _has_any(message, lowered_message, _RESUME_REVIEW_MARKERS)
     has_interview_signal = _has_any(message, lowered_message, _INTERVIEW_MARKERS)
     has_interview_history_signal = _has_any(message, lowered_message, _INTERVIEW_HISTORY_MARKERS)
 
@@ -111,9 +139,14 @@ def collect_intent_signals(message: str, lowered_message: str, stripped_message:
     has_history = _has_any(message, lowered_message, _HISTORY_MARKERS)
 
     return IntentSignals(
-        is_greeting=stripped_message.lower() in _GREETING_MESSAGES,
+        is_greeting=(
+            stripped_message.lower() in _GREETING_MESSAGES
+            or any(phrase.replace(" ", "") == normalized_stripped for phrase in _GREETING_PHRASES)
+        ),
+        has_capability_help=_has_any(message, lowered_message, _CAPABILITY_HELP_MARKERS),
         is_third_party=_has_any(message, lowered_message, _THIRD_PARTY_MARKERS),
-        has_resume_summary=has_resume_signal and has_summary_signal,
+        has_resume_presence_query=_has_any(message, lowered_message, _RESUME_PRESENCE_MARKERS),
+        has_resume_summary=has_resume_signal and (has_summary_signal or has_review_signal),
         has_job_search=has_job_search,
         has_compound_match=_has_any(message, lowered_message, _COMPOUND_MATCH_MARKERS),
         has_job_fit=_has_any(message, lowered_message, _JOB_FIT_MARKERS),
