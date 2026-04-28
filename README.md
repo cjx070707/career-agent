@@ -1,6 +1,26 @@
-# Career Agent
+# Career Coaching Agent
 
-Backend-first scaffold for a job coaching Agent application.
+Career Coaching Agent is a controlled vertical agent for career coaching and job-search
+support. It focuses on resume analysis, job search, job matching, interview preparation,
+career insights, and profile-safe third-party advice.
+
+This repository is an evolving prototype with a stable backend contract and deterministic
+guardrails. It is not presented as a complete production system.
+
+## Current Checkpoint
+
+Completed phases:
+
+- **Phase 1**: expanded `ChatPlan` semantics and added profile anti-pollution safeguards.
+- **Phase 1.5**: aligned `IntentRouter` output with the structured plan fields used by the agent pipeline.
+- **Phase 2A**: added `ContextRequirementResolver` and `ToolResolver`, with minimal `AgentService` integration.
+- **Phase 3A**: added a deterministic rule-based `CareerDiagnosisEngine` behind `get_career_insights`.
+
+Not yet implemented:
+
+- Phase 3B LLM-assisted diagnostic planner
+- Phase 4 ReAct planning upgrades
+- Phase 5 structured reports and frontend cards
 
 ## Run
 
@@ -26,6 +46,24 @@ After the backend starts:
 
 - API docs: `http://127.0.0.1:8000/docs`
 - Stage B demo page: `http://127.0.0.1:8000/demo/`
+
+Install Python dependencies when setting up a fresh checkout:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+Run the full backend test suite:
+
+```bash
+python3 -m pytest -q
+```
+
+Useful project docs:
+
+- `docs/ARCHITECTURE.md`: current `/chat` pipeline and module boundaries
+- `docs/ROADMAP.md`: completed and pending phases
+- `docs/DEMO_SCRIPT.md`: five demo cases for the current agent behavior
 
 ## MCP Server (stdio)
 
@@ -249,6 +287,7 @@ The tool refreshes persisted long-term profile fields and returns an aggregation
 - `profile`: target role, skill keywords, and focus notes
 - `application_summary`: recent application records and status counts
 - `interview_summary`: recent interview records, result counts, and feedback highlights
+- `diagnosis`: deterministic bottleneck diagnosis with evidence, confidence, priority, and recommended actions
 - `suggestions`: deterministic next-step suggestions derived from the available data
 
 The refreshed `career_profiles` fields include:
