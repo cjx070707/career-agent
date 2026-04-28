@@ -161,6 +161,17 @@
           "default": null,
           "title": "Follow Up Question"
         },
+        "diagnostic_plan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiagnosticPlannerOutput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "planner_source": {
           "anyOf": [
             {
@@ -271,6 +282,148 @@
         "snippet"
       ],
       "title": "ChatSource",
+      "type": "object"
+    },
+    "DiagnosticHypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "bottleneck_type": {
+          "enum": [
+            "insufficient_evidence",
+            "application_volume",
+            "resume_positioning",
+            "interview_performance",
+            "skill_gap",
+            "job_targeting"
+          ],
+          "title": "Bottleneck Type",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "bottleneck_type",
+        "summary",
+        "rationale",
+        "confidence"
+      ],
+      "title": "DiagnosticHypothesis",
+      "type": "object"
+    },
+    "DiagnosticPlannerOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "diagnostic_hypotheses": {
+          "items": {
+            "$ref": "#/$defs/DiagnosticHypothesis"
+          },
+          "maxItems": 3,
+          "title": "Diagnostic Hypotheses",
+          "type": "array"
+        },
+        "evidence_to_collect": {
+          "items": {
+            "$ref": "#/$defs/EvidenceToCollect"
+          },
+          "maxItems": 5,
+          "title": "Evidence To Collect",
+          "type": "array"
+        },
+        "next_question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Question"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "stop_criteria": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Stop Criteria",
+          "type": "array"
+        }
+      },
+      "required": [
+        "confidence"
+      ],
+      "title": "DiagnosticPlannerOutput",
+      "type": "object"
+    },
+    "EvidenceToCollect": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": [
+            "profile",
+            "applications",
+            "interviews",
+            "feedback",
+            "resume",
+            "job_detail"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "priority": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "required": {
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source",
+        "reason",
+        "priority",
+        "required"
+      ],
+      "title": "EvidenceToCollect",
       "type": "object"
     },
     "LLMTrace": {

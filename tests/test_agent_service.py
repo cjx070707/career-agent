@@ -7,6 +7,7 @@ from app.services.memory_service import MemoryService
 from app.tools.registry import ToolRegistry
 from app.tools.base import ToolDefinition
 from app.schemas.tool import SearchJobsToolInput
+from app.schemas.diagnostic_planner import DiagnosticPlannerOutput
 
 
 class FakeLLMClient:
@@ -45,6 +46,37 @@ class FakeLLMClient:
     def decide_next_action(self, **kwargs):
         self.observe_calls.append(kwargs)
         return {"decision": "continue", "reason": "default", "steps": []}
+
+
+class PlannerAwareLLMClient(FakeLLMClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.diagnostic_calls = []
+
+    def generate_diagnostic_plan(self, **kwargs):
+        self.diagnostic_calls.append(kwargs)
+        return {
+            "diagnostic_hypotheses": [
+                {
+                    "bottleneck_type": "resume_positioning",
+                    "summary": "Likely weak resume-to-interview conversion.",
+                    "rationale": "Applications are mostly early-stage.",
+                    "confidence": 0.7,
+                    "evidence_refs": ["applications.status_counts"],
+                }
+            ],
+            "evidence_to_collect": [
+                {
+                    "source": "applications",
+                    "reason": "Need funnel status breakdown.",
+                    "priority": "high",
+                    "required": True,
+                }
+            ],
+            "next_question": "Can you share your latest application statuses?",
+            "confidence": 0.7,
+            "stop_criteria": ["main bottleneck hypothesis selected"],
+        }
 
 
 def test_agent_service_uses_router_first_for_obvious_job_search(isolated_runtime) -> None:
@@ -89,7 +121,7 @@ def test_agent_service_uses_llm_layer_for_gray_query(isolated_runtime) -> None:
 
 
 def test_agent_routes_career_direction_to_career_insights(isolated_runtime) -> None:
-    fake_llm = FakeLLMClient()
+    fake_llm = PlannerAwareLLMClient()
     service = AgentService(llm_client=fake_llm)
 
     result = service.respond("career-direction-user", "你觉得我下一步职业方向应该怎么考虑？")
@@ -99,13 +131,22 @@ def test_agent_routes_career_direction_to_career_insights(isolated_runtime) -> N
     assert result.plan.task_type == "career_insights"
     assert result.tool_trace == ["get_career_insights"]
     assert result.tool_used == "get_career_insights"
+    assert result.plan.diagnostic_plan is not None
+    DiagnosticPlannerOutput.model_validate(result.plan.diagnostic_plan.model_dump())
+    planner_events = [
+        item
+        for item in result.plan.resolver_trace
+        if item.get("resolver") == "diagnostic_planner"
+    ]
+    assert planner_events
+    assert planner_events[-1]["status"] in {"applied", "fallback"}
     assert "推荐行动" in result.answer
 
 
 def test_agent_service_resolver_missing_context_returns_follow_up_without_tools(
     isolated_runtime,
 ) -> None:
-    fake_llm = FakeLLMClient()
+    fake_llm = PlannerAwareLLMClient()
     service = AgentService(llm_client=fake_llm)
 
     result = service.respond("interview-prep-missing-role", "帮我准备面试")
@@ -117,6 +158,15 @@ def test_agent_service_resolver_missing_context_returns_follow_up_without_tools(
     assert result.answer == result.plan.follow_up_question
     assert result.tool_trace == []
     assert result.plan.resolver_trace
+    assert result.plan.diagnostic_plan is None
+    planner_events = [
+        item
+        for item in result.plan.resolver_trace
+        if item.get("resolver") == "diagnostic_planner"
+    ]
+    assert planner_events[-1]["status"] == "skipped"
+    assert planner_events[-1]["reason"] == "context_missing"
+    assert fake_llm.diagnostic_calls == []
 
 
 def test_agent_service_executes_tool_chain_when_plan_steps_conflict(
@@ -220,6 +270,27 @@ def test_agent_service_includes_resolver_trace_on_plan(isolated_runtime) -> None
     trace = result.plan.resolver_trace
     assert trace
     assert {item["resolver"] for item in trace} >= {"context_requirement", "tool"}
+
+
+def test_agent_service_non_career_task_keeps_diagnostic_plan_none(isolated_runtime) -> None:
+    fake_llm = PlannerAwareLLMClient()
+    JobService().create_job(title="Python FastAPI Backend Engineer")
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("non-career-task-user", "帮我找 Python backend 岗位")
+
+    assert result.plan is not None
+    assert result.plan.task_type == "job_search"
+    assert result.plan.diagnostic_plan is None
+    planner_events = [
+        item
+        for item in result.plan.resolver_trace
+        if item.get("resolver") == "diagnostic_planner"
+    ]
+    assert planner_events
+    assert planner_events[-1]["status"] == "skipped"
+    assert planner_events[-1]["reason"] == "not_applicable"
+    assert fake_llm.diagnostic_calls == []
 
 
 class PlannerRequestingMissingCandidateLLM(FakeLLMClient):
@@ -531,7 +602,7 @@ def test_chat_routes_to_career_insights_tool(isolated_runtime) -> None:
         result="rejected",
         feedback="need stronger system design examples",
     )
-    fake_llm = FakeLLMClient()
+    fake_llm = PlannerAwareLLMClient()
     service = AgentService(llm_client=fake_llm)
 
     result = service.respond(
@@ -544,6 +615,14 @@ def test_chat_routes_to_career_insights_tool(isolated_runtime) -> None:
     assert result.plan.task_type == "career_insights"
     assert result.tool_trace == ["get_career_insights"]
     assert result.tool_used == "get_career_insights"
+    assert result.plan.diagnostic_plan is not None
+    assert [step["tool_name"] for step in result.plan.tool_chain] == ["get_career_insights"]
+    planner_events = [
+        item
+        for item in result.plan.resolver_trace
+        if item.get("resolver") == "diagnostic_planner"
+    ]
+    assert planner_events[-1]["status"] in {"applied", "fallback"}
     assert {source.type for source in result.sources} >= {
         "application",
         "interview_feedback",

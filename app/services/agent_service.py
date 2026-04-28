@@ -9,6 +9,7 @@ from app.routing.intent_router import IntentRouter
 from app.schemas.chat import ChatPlan, ChatSource, LLMTrace
 from app.services.candidate_service import CandidateService
 from app.services.career_event_service import CareerEventService
+from app.services.career_diagnostic_planner import CareerDiagnosticPlanner
 from app.services.memory_service import MemoryService
 from app.services.plan_executor import PlanExecutor
 from app.services.profile_service import ProfileService
@@ -73,6 +74,9 @@ class AgentService:
             retrieval_service=self.retrieval_service,
             llm_client=self.llm_client,
         )
+        self.career_diagnostic_planner = CareerDiagnosticPlanner(
+            llm_client=self.llm_client,
+        )
 
     def respond(self, user_id: str, message: str) -> AgentResult:
         self._reset_llm_trace_markers()
@@ -89,6 +93,13 @@ class AgentService:
             memory_context=[turn.content for turn in recent_turns],
         )
         self._apply_context_resolution(plan, context_resolution)
+        self._apply_diagnostic_plan(
+            plan=plan,
+            message=message,
+            profile=profile,
+            context_resolution=context_resolution,
+            memory_context=[turn.content for turn in recent_turns],
+        )
         if plan.needs_more_context:
             answer = plan.follow_up_question or "我还需要更多信息，才能继续。"
             self.memory_service.save_turn(user_id, message, answer)
@@ -303,6 +314,83 @@ class AgentService:
                     "reason": resolution.blocking_reason,
                 }
             )
+
+    def _should_apply_diagnostic_planner(self, plan: ChatPlan) -> bool:
+        task_type = str(plan.task_type or "").strip().lower()
+        domain = str(plan.domain or "").strip().lower()
+        action = str(plan.action or "").strip().lower()
+        if task_type == "career_insights":
+            return True
+        return domain == "career_strategy" and action == "diagnose"
+
+    def _is_fallback_diagnostic_output(self, plan: ChatPlan) -> bool:
+        diagnostic_plan = plan.diagnostic_plan
+        if diagnostic_plan is None:
+            return False
+        hypotheses = list(diagnostic_plan.diagnostic_hypotheses or [])
+        if not hypotheses:
+            return False
+        first = hypotheses[0]
+        return (
+            first.bottleneck_type == "insufficient_evidence"
+            and float(diagnostic_plan.confidence) <= 0.4
+            and "enough evidence collected" in list(diagnostic_plan.stop_criteria or [])
+        )
+
+    def _apply_diagnostic_plan(
+        self,
+        *,
+        plan: ChatPlan,
+        message: str,
+        profile: Dict[str, Any],
+        context_resolution: Any,
+        memory_context: List[str],
+    ) -> None:
+        if plan.needs_more_context:
+            plan.diagnostic_plan = None
+            plan.resolver_trace = list(plan.resolver_trace) + [
+                {
+                    "resolver": "diagnostic_planner",
+                    "status": "skipped",
+                    "reason": "context_missing",
+                }
+            ]
+            return
+
+        if not self._should_apply_diagnostic_planner(plan):
+            plan.diagnostic_plan = None
+            plan.resolver_trace = list(plan.resolver_trace) + [
+                {
+                    "resolver": "diagnostic_planner",
+                    "status": "skipped",
+                    "reason": "not_applicable",
+                }
+            ]
+            return
+
+        resolution_payload = (
+            context_resolution.model_dump()
+            if hasattr(context_resolution, "model_dump")
+            else dict(context_resolution or {})
+        )
+        plan_payload = plan.model_dump()
+        diagnostic_output = self.career_diagnostic_planner.plan(
+            message=message,
+            plan_semantics=plan_payload,
+            profile=profile,
+            context_resolution=resolution_payload,
+            memory_context=memory_context,
+        )
+        plan.diagnostic_plan = diagnostic_output
+        status = "fallback" if self._is_fallback_diagnostic_output(plan) else "applied"
+        plan.resolver_trace = list(plan.resolver_trace) + [
+            {
+                "resolver": "diagnostic_planner",
+                "status": status,
+                "reason": "career_diagnosis_task",
+                "confidence": float(diagnostic_output.confidence),
+            }
+        ]
 
     def _tool_chain_to_steps(self, tool_chain: List[Dict[str, Any]]) -> List[str]:
         return [

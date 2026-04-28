@@ -1,6 +1,7 @@
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+from app.schemas.diagnostic_planner import DiagnosticPlannerOutput
 
 CHAT_CONTRACT_VERSION = "chat.v1"
 
@@ -42,6 +43,7 @@ class ChatPlan(BaseModel):
     needs_more_context: bool = False
     missing_context: list[str] = Field(default_factory=list)
     follow_up_question: Optional[str] = None
+    diagnostic_plan: Optional[DiagnosticPlannerOutput] = None
     planner_source: Optional[str] = Field(
         default=None,
         description="Where the plan came from: router, model, or fallback",

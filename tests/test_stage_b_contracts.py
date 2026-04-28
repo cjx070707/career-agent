@@ -50,6 +50,8 @@ def test_chat_search_contract_is_stable(isolated_runtime) -> None:
     assert body["plan"]["task_type"] == "job_search"
     assert body["plan"]["planner_source"] == "router"
     assert body["plan"]["steps"] == ["search_jobs"]
+    assert "diagnostic_plan" in body["plan"]
+    assert body["plan"]["diagnostic_plan"] is None
     assert body["tool_trace"] == ["search_jobs"]
     assert body["loop_trace"] == []
     assert body["llm_trace"]["planner_source"] == "router"
@@ -123,6 +125,8 @@ def test_chat_missing_context_contract_is_stable(isolated_runtime) -> None:
     assert body["tool_trace"] == []
     assert body["plan"]["task_type"] == "job_match"
     assert body["plan"]["steps"] == []
+    assert "diagnostic_plan" in body["plan"]
+    assert body["plan"]["diagnostic_plan"] is None
     assert body["plan"]["needs_more_context"] is True
     assert body["plan"]["missing_context"] == ["resume"]
     assert body["plan"]["planner_source"] == "router"
