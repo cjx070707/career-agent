@@ -102,6 +102,126 @@ def test_agent_routes_career_direction_to_career_insights(isolated_runtime) -> N
     assert "推荐行动" in result.answer
 
 
+def test_agent_service_resolver_missing_context_returns_follow_up_without_tools(
+    isolated_runtime,
+) -> None:
+    fake_llm = FakeLLMClient()
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("interview-prep-missing-role", "帮我准备面试")
+
+    assert result.plan is not None
+    assert result.plan.task_type == "interview_prep"
+    assert result.plan.needs_more_context is True
+    assert result.plan.missing_context == ["target_role"]
+    assert result.answer == result.plan.follow_up_question
+    assert result.tool_trace == []
+    assert result.plan.resolver_trace
+
+
+def test_agent_service_executes_tool_chain_when_plan_steps_conflict(
+    isolated_runtime,
+) -> None:
+    class ConflictingStepsLLM(FakeLLMClient):
+        def generate_plan(self, **kwargs):
+            self.called = True
+            self.last_plan_source = "model"
+            return {
+                "task_type": "job_search",
+                "reason": "model picked the wrong low-level step",
+                "steps": ["get_candidate_profile"],
+                "domain": "job_search",
+                "action": "search",
+                "needs_more_context": False,
+                "planner_source": "model",
+            }
+
+    fake_llm = ConflictingStepsLLM()
+    JobService().create_job(title="Python FastAPI Backend Engineer")
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("conflicting-steps-user", "你觉得最近市场怎么样")
+
+    assert fake_llm.called is True
+    assert result.plan is not None
+    assert result.plan.steps == ["get_candidate_profile"]
+    assert [step["tool_name"] for step in result.plan.tool_chain] == ["search_jobs"]
+    assert result.tool_trace == ["search_jobs"]
+
+
+def test_agent_service_executes_tool_chain_when_plan_steps_empty(
+    isolated_runtime,
+) -> None:
+    class EmptyStepsJobSearchLLM(FakeLLMClient):
+        def generate_plan(self, **kwargs):
+            self.called = True
+            self.last_plan_source = "model"
+            return {
+                "task_type": "job_search",
+                "reason": "semantic plan with empty legacy steps",
+                "steps": [],
+                "domain": "job_search",
+                "action": "search",
+                "needs_more_context": False,
+                "planner_source": "model",
+            }
+
+    fake_llm = EmptyStepsJobSearchLLM()
+    JobService().create_job(title="Data Analyst Intern")
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("empty-steps-tool-chain-user", "你觉得最近市场怎么样")
+
+    assert fake_llm.called is True
+    assert result.plan is not None
+    assert result.plan.steps == []
+    assert [step["tool_name"] for step in result.plan.tool_chain] == ["search_jobs"]
+    assert result.tool_trace == ["search_jobs"]
+
+
+def test_agent_service_keeps_legacy_no_tool_path_when_steps_and_tool_chain_empty(
+    isolated_runtime,
+) -> None:
+    class EmptyStepsNoToolChainLLM(FakeLLMClient):
+        def generate_plan(self, **kwargs):
+            self.called = True
+            self.last_plan_source = "model"
+            return {
+                "task_type": "retrieval",
+                "reason": "retrieve evidence without tool execution",
+                "steps": [],
+                "domain": "retrieval",
+                "action": "search",
+                "needs_more_context": False,
+                "planner_source": "model",
+            }
+
+    fake_llm = EmptyStepsNoToolChainLLM()
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("legacy-no-tool-user", "你觉得最近市场怎么样")
+
+    assert fake_llm.called is True
+    assert result.plan is not None
+    assert result.plan.steps == []
+    assert result.plan.tool_chain == []
+    assert result.tool_trace == []
+    assert result.answer.startswith("fake-generate:")
+
+
+def test_agent_service_includes_resolver_trace_on_plan(isolated_runtime) -> None:
+    fake_llm = FakeLLMClient()
+    JobService().create_job(title="Python FastAPI Backend Engineer")
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("resolver-trace-user", "帮我找 Python backend 岗位")
+
+    assert result.plan is not None
+    trace = result.plan.resolver_trace
+    assert trace
+    assert {item["resolver"] for item in trace} >= {"context_requirement", "tool"}
+
+
 class PlannerRequestingMissingCandidateLLM(FakeLLMClient):
     def generate_plan(self, **kwargs):
         self.called = True
@@ -122,9 +242,11 @@ class RetrievalOnlyLLM(FakeLLMClient):
         self.called = True
         self.last_plan_source = "model"
         return {
-            "task_type": "job_search",
+            "task_type": "retrieval",
             "reason": "retrieve evidence without tool execution",
             "steps": [],
+            "domain": "retrieval",
+            "action": "search",
             "needs_more_context": False,
             "missing_context": [],
             "follow_up_question": None,

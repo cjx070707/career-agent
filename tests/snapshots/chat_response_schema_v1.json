@@ -121,6 +121,22 @@
           "title": "Stop Criteria",
           "type": "array"
         },
+        "tool_chain": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Tool Chain",
+          "type": "array"
+        },
+        "resolver_trace": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Resolver Trace",
+          "type": "array"
+        },
         "needs_more_context": {
           "default": false,
           "title": "Needs More Context",

@@ -37,6 +37,8 @@ class ChatPlan(BaseModel):
     plan_type: Optional[str] = None
     evidence_policy: Optional[str] = None
     stop_criteria: list[str] = Field(default_factory=list)
+    tool_chain: list[dict] = Field(default_factory=list)
+    resolver_trace: list[dict] = Field(default_factory=list)
     needs_more_context: bool = False
     missing_context: list[str] = Field(default_factory=list)
     follow_up_question: Optional[str] = None

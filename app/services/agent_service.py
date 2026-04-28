@@ -3,6 +3,8 @@ from typing import Any, Dict, List, Optional
 
 from app.llm.client import LLMClient
 from app.env import settings
+from app.resolvers.context_requirement_resolver import ContextRequirementResolver
+from app.resolvers.tool_resolver import ToolResolver
 from app.routing.intent_router import IntentRouter
 from app.schemas.chat import ChatPlan, ChatSource, LLMTrace
 from app.services.candidate_service import CandidateService
@@ -50,6 +52,8 @@ class AgentService:
         self.llm_client = llm_client or LLMClient()
         self.tool_registry = tool_registry or build_default_tool_registry()
         self.intent_router = intent_router or IntentRouter()
+        self.context_requirement_resolver = ContextRequirementResolver()
+        self.tool_resolver = ToolResolver()
         self.candidate_service = CandidateService()
         self.resume_service = ResumeService()
         self.profile_service = ProfileService()
@@ -76,7 +80,16 @@ class AgentService:
         profile = self.profile_service.update_from_message(user_id, message)
         self.career_event_service.sync_from_message(user_id, message)
         plan = self._build_plan(user_id, message, bool(recent_turns), profile)
-        if plan.needs_more_context and not plan.steps:
+        user_state = self._build_user_state(user_id=user_id, message=message)
+        context_resolution = self.context_requirement_resolver.resolve(
+            plan=plan,
+            message=message,
+            user_state=user_state,
+            profile=profile,
+            memory_context=[turn.content for turn in recent_turns],
+        )
+        self._apply_context_resolution(plan, context_resolution)
+        if plan.needs_more_context:
             answer = plan.follow_up_question or "我还需要更多信息，才能继续。"
             self.memory_service.save_turn(user_id, message, answer)
             return AgentResult(
@@ -90,6 +103,14 @@ class AgentService:
                 loop_trace=[],
                 llm_trace=self._build_llm_trace(plan),
             )
+
+        tool_resolution = self.tool_resolver.resolve(
+            plan=plan,
+            resolved_context=context_resolution,
+            available_tools=self.tool_registry.list_tool_names(),
+        )
+        self._apply_tool_resolution(plan, tool_resolution)
+
         if plan.task_type == "fallback" and plan.planner_source == "router" and not plan.steps:
             answer = self._format_router_fallback_answer(message)
             self.memory_service.save_turn(user_id, message, answer)
@@ -104,12 +125,17 @@ class AgentService:
                 loop_trace=[],
                 llm_trace=self._build_llm_trace(plan),
             )
-        if plan.steps:
+        resolved_steps = self._tool_chain_to_steps(plan.tool_chain)
+        execution_steps = resolved_steps if resolved_steps else list(plan.steps)
+        if tool_resolution.executable is False:
+            execution_steps = []
+
+        if execution_steps:
             if self._should_use_react_loop(plan.task_type):
                 tool_trace, execution_state, loop_trace = self.plan_executor.execute_react_loop(
                     user_id=user_id,
                     message=message,
-                    initial_steps=plan.steps,
+                    initial_steps=execution_steps,
                     task_type=plan.task_type,
                     build_payload=self._build_tool_payload,
                     should_continue_after_step=self._should_continue_after_step,
@@ -118,7 +144,7 @@ class AgentService:
                 tool_trace, execution_state, loop_trace = self.plan_executor.execute_plan(
                     user_id=user_id,
                     message=message,
-                    steps=plan.steps,
+                    steps=execution_steps,
                     build_payload=self._build_tool_payload,
                     should_continue_after_step=self._should_continue_after_step,
                 )
@@ -223,10 +249,7 @@ class AgentService:
             turn.content for turn in self.memory_service.load_recent_messages(user_id)
         ]
         available_tools = self.tool_registry.list_tool_names()
-        user_state = {
-            "has_candidate": self.candidate_service.has_candidate(user_id),
-            "has_resume": self.resume_service.has_resume(user_id),
-        }
+        user_state = self._build_user_state(user_id=user_id, message=message)
         plan_payload = self.intent_router.route(
             message=message,
             memory_context=memory_context,
@@ -247,6 +270,46 @@ class AgentService:
         if not plan_payload.get("planner_source"):
             plan_payload["planner_source"] = self.llm_client.last_plan_source
         return ChatPlan.model_validate(plan_payload)
+
+    def _build_user_state(self, *, user_id: str, message: str) -> Dict[str, Any]:
+        return {
+            "has_candidate": self.candidate_service.has_candidate(user_id),
+            "has_resume": self.resume_service.has_resume(user_id),
+            "has_job_detail": self._message_has_job_detail(message),
+        }
+
+    def _message_has_job_detail(self, message: str) -> bool:
+        lowered = message.lower()
+        return any(
+            marker in lowered
+            for marker in ("jd", "job description", "requirements", "招聘链接", "岗位描述", "职责", "要求")
+        )
+
+    def _apply_context_resolution(self, plan: ChatPlan, resolution: Any) -> None:
+        plan.required_context = resolution.required_context
+        plan.missing_context = resolution.missing_context
+        plan.needs_more_context = resolution.needs_more_context
+        plan.follow_up_question = resolution.follow_up_question
+        plan.resolver_trace = list(resolution.resolver_trace)
+
+    def _apply_tool_resolution(self, plan: ChatPlan, resolution: Any) -> None:
+        plan.tool_chain = list(resolution.tool_chain)
+        plan.resolver_trace = list(plan.resolver_trace) + list(resolution.resolver_trace)
+        if resolution.executable is False and resolution.blocking_reason:
+            plan.resolver_trace.append(
+                {
+                    "resolver": "tool",
+                    "decision": "block_execution",
+                    "reason": resolution.blocking_reason,
+                }
+            )
+
+    def _tool_chain_to_steps(self, tool_chain: List[Dict[str, Any]]) -> List[str]:
+        return [
+            str(item.get("tool_name")).strip()
+            for item in tool_chain
+            if isinstance(item, dict) and str(item.get("tool_name") or "").strip()
+        ]
 
     def _execute_plan(
         self,
