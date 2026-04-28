@@ -8,9 +8,11 @@ from app.env import settings
 from app.llm.career_event_extractor_client import CareerEventExtractorClient
 from app.llm.plan_validator import PlanValidator
 from app.llm.prompts import (
+    DIAGNOSTIC_PLANNER_SYSTEM_PROMPT,
     JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT,
     PLANNER_SYSTEM_PROMPT,
 )
+from app.schemas.diagnostic_planner import DiagnosticPlannerOutput
 from app.llm.react_decider_client import ReactDeciderClient
 from app.schemas.chat import ChatPlan
 
@@ -35,6 +37,7 @@ class LLMClient:
     JOB_SEARCH_SUMMARY_TIMEOUT_SECONDS = 12.0
     CAREER_EVENT_EXTRACTION_TIMEOUT_SECONDS = 5.0
     OBSERVE_DECISION_TIMEOUT_SECONDS = 10.0
+    DIAGNOSTIC_PLANNER_TIMEOUT_SECONDS = 12.0
 
     def __init__(self) -> None:
         self.model = settings.default_model
@@ -102,6 +105,35 @@ class LLMClient:
             planner_source="fallback",
             available_tools=available_tools,
         )
+
+    def generate_diagnostic_plan(
+        self,
+        *,
+        message: str,
+        plan_semantics: Dict[str, Any],
+        profile: Dict[str, Any],
+        context_resolution: Dict[str, Any],
+        memory_context: List[str],
+    ) -> Dict[str, Any]:
+        try:
+            payload = self._generate_diagnostic_plan_with_model(
+                message=message,
+                plan_semantics=plan_semantics,
+                profile=profile,
+                context_resolution=context_resolution,
+                memory_context=memory_context,
+            )
+            parsed = DiagnosticPlannerOutput.model_validate(payload)
+            return parsed.model_dump()
+        except (
+            RuntimeError,
+            ValidationError,
+            ValueError,
+            TypeError,
+            json.JSONDecodeError,
+            httpx.HTTPError,
+        ):
+            return self._fallback_diagnostic_plan()
 
     def generate(
         self,
@@ -300,6 +332,52 @@ class LLMClient:
         )
         return self._extract_chat_completions_plan_payload(chat_payload)
 
+    def _generate_diagnostic_plan_with_model(
+        self,
+        *,
+        message: str,
+        plan_semantics: Dict[str, Any],
+        profile: Dict[str, Any],
+        context_resolution: Dict[str, Any],
+        memory_context: List[str],
+    ) -> Dict[str, Any]:
+        if not self._planner_api_key():
+            raise RuntimeError("Diagnostic planner not configured")
+
+        request = self._build_diagnostic_plan_request(
+            message=message,
+            plan_semantics=plan_semantics,
+            profile=profile,
+            context_resolution=context_resolution,
+            memory_context=memory_context,
+        )
+        try:
+            response_payload = self._post_responses(
+                f"{self._planner_base_url().rstrip('/')}/responses",
+                api_key=self._planner_api_key(),
+                payload=request,
+                timeout=self.DIAGNOSTIC_PLANNER_TIMEOUT_SECONDS,
+            )
+            return self._extract_diagnostic_plan_payload(response_payload)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                raise
+
+        chat_request = self._build_chat_completions_diagnostic_plan_request(
+            message=message,
+            plan_semantics=plan_semantics,
+            profile=profile,
+            context_resolution=context_resolution,
+            memory_context=memory_context,
+        )
+        chat_payload = self._post_responses(
+            f"{self._planner_base_url().rstrip('/')}/chat/completions",
+            api_key=self._planner_api_key(),
+            payload=chat_request,
+            timeout=self.DIAGNOSTIC_PLANNER_TIMEOUT_SECONDS,
+        )
+        return self._extract_chat_completions_diagnostic_plan_payload(chat_payload)
+
     def _build_plan_request(
         self,
         message: str,
@@ -335,6 +413,46 @@ class LLMClient:
                     "name": "chat_plan",
                     "strict": True,
                     "schema": ChatPlan.model_json_schema(),
+                }
+            },
+        }
+        if settings.planner_disable_thinking:
+            self._disable_thinking(request)
+        return request
+
+    def _build_diagnostic_plan_request(
+        self,
+        *,
+        message: str,
+        plan_semantics: Dict[str, Any],
+        profile: Dict[str, Any],
+        context_resolution: Dict[str, Any],
+        memory_context: List[str],
+    ) -> Dict[str, Any]:
+        request = {
+            "model": self._planner_model(),
+            "input": [
+                {"role": "system", "content": DIAGNOSTIC_PLANNER_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "message": message,
+                            "plan_semantics": plan_semantics,
+                            "profile": profile,
+                            "context_resolution": context_resolution,
+                            "memory_context": memory_context,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "diagnostic_planner_output",
+                    "strict": True,
+                    "schema": DiagnosticPlannerOutput.model_json_schema(),
                 }
             },
         }
@@ -384,11 +502,57 @@ class LLMClient:
             self._disable_thinking(request)
         return request
 
+    def _build_chat_completions_diagnostic_plan_request(
+        self,
+        *,
+        message: str,
+        plan_semantics: Dict[str, Any],
+        profile: Dict[str, Any],
+        context_resolution: Dict[str, Any],
+        memory_context: List[str],
+    ) -> Dict[str, Any]:
+        request = {
+            "model": self._planner_model(),
+            "messages": [
+                {"role": "system", "content": DIAGNOSTIC_PLANNER_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "message": message,
+                            "plan_semantics": plan_semantics,
+                            "profile": profile,
+                            "context_resolution": context_resolution,
+                            "memory_context": memory_context,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "diagnostic_planner_output",
+                    "strict": True,
+                    "schema": DiagnosticPlannerOutput.model_json_schema(),
+                },
+            },
+        }
+        if settings.planner_disable_thinking:
+            self._disable_thinking(request)
+        return request
+
     def _extract_plan_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         text = self._extract_responses_text(payload)
         if text:
             return json.loads(text)
         raise ValueError("No structured planner payload returned by model")
+
+    def _extract_diagnostic_plan_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        text = self._extract_responses_text(payload)
+        if text:
+            return json.loads(text)
+        raise ValueError("No structured diagnostic planner payload returned by model")
 
     def _extract_responses_text(self, payload: Dict[str, Any]) -> str:
         output = payload.get("output", [])
@@ -410,6 +574,18 @@ class LLMClient:
             if content:
                 return json.loads(content)
         raise ValueError("No structured planner payload returned by chat completions")
+
+    def _extract_chat_completions_diagnostic_plan_payload(
+        self,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        choices = payload.get("choices", [])
+        for choice in choices:
+            message = choice.get("message", {})
+            content = message.get("content")
+            if content:
+                return json.loads(content)
+        raise ValueError("No structured diagnostic planner payload returned by chat completions")
 
     def _validated_plan(
         self,
@@ -824,3 +1000,40 @@ class LLMClient:
             "missing_context": [],
             "follow_up_question": None,
         }
+
+    def _fallback_diagnostic_plan(self) -> Dict[str, Any]:
+        fallback = DiagnosticPlannerOutput(
+            diagnostic_hypotheses=[
+                {
+                    "bottleneck_type": "insufficient_evidence",
+                    "summary": "Current evidence is not enough for a high-confidence hypothesis.",
+                    "rationale": "Need real application, interview, and feedback signals to narrow down bottlenecks.",
+                    "confidence": 0.4,
+                    "evidence_refs": [],
+                }
+            ],
+            evidence_to_collect=[
+                {
+                    "source": "applications",
+                    "reason": "Application funnel states are needed to identify conversion bottlenecks.",
+                    "priority": "high",
+                    "required": True,
+                },
+                {
+                    "source": "interviews",
+                    "reason": "Interview outcomes are needed to separate interview from resume bottlenecks.",
+                    "priority": "high",
+                    "required": True,
+                },
+                {
+                    "source": "feedback",
+                    "reason": "Concrete interview feedback is needed to detect skill-specific gaps.",
+                    "priority": "high",
+                    "required": True,
+                },
+            ],
+            next_question="Could you share recent application outcomes, interview results, and feedback details?",
+            confidence=0.4,
+            stop_criteria=["enough evidence collected"],
+        )
+        return fallback.model_dump()

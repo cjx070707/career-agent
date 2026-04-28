@@ -4,7 +4,11 @@ import httpx
 
 from app.llm.client import LLMClient
 from app.env import settings
-from app.llm.prompts import JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT
+from app.llm.prompts import (
+    DIAGNOSTIC_PLANNER_SYSTEM_PROMPT,
+    JOB_SEARCH_SUMMARIZER_SYSTEM_PROMPT,
+)
+from app.schemas.diagnostic_planner import DiagnosticPlannerOutput
 
 
 CAREER_EVENT_RESPONSE_TEXT = json.dumps(
@@ -154,6 +158,25 @@ class ObserveDecisionClient(LLMClient):
     def _post_responses(self, url, payload=None, api_key=None, **kwargs):
         self.calls.append((url, payload, kwargs))
         return {"choices": [{"message": {"content": self.response_json}}]}
+
+
+class DiagnosticModelFirstLLMClient(LLMClient):
+    def __init__(self, model_result=None, model_error=None) -> None:
+        super().__init__()
+        self.model_result = model_result
+        self.model_error = model_error
+        self.model_calls = 0
+        self.fallback_calls = 0
+
+    def _generate_diagnostic_plan_with_model(self, **kwargs):
+        self.model_calls += 1
+        if self.model_error is not None:
+            raise self.model_error
+        return self.model_result
+
+    def _fallback_diagnostic_plan(self):
+        self.fallback_calls += 1
+        return super()._fallback_diagnostic_plan()
 
 
 def test_generate_plan_uses_profile_and_memory_for_job_search() -> None:
@@ -889,3 +912,172 @@ def test_generate_plan_falls_back_when_diagnostic_plan_missing_goal() -> None:
 
     assert client.fallback_calls == 1
     assert plan["planner_source"] == "fallback"
+
+
+def test_generate_diagnostic_plan_accepts_valid_payload() -> None:
+    client = DiagnosticModelFirstLLMClient(
+        model_result={
+            "diagnostic_hypotheses": [
+                {
+                    "bottleneck_type": "resume_positioning",
+                    "summary": "Likely conversion bottleneck before interviews.",
+                    "rationale": "Applications remain in early statuses.",
+                    "confidence": 0.7,
+                    "evidence_refs": ["applications.status_counts"],
+                }
+            ],
+            "evidence_to_collect": [
+                {
+                    "source": "applications",
+                    "reason": "Need status funnel breakdown.",
+                    "priority": "high",
+                    "required": True,
+                }
+            ],
+            "next_question": "Could you share your last 10 application statuses?",
+            "confidence": 0.7,
+            "stop_criteria": ["main bottleneck hypothesis selected"],
+        }
+    )
+
+    result = client.generate_diagnostic_plan(
+        message="为什么我一直没回音？",
+        plan_semantics={"task_type": "career_insights"},
+        profile={},
+        context_resolution={"needs_more_context": False},
+        memory_context=[],
+    )
+
+    parsed = DiagnosticPlannerOutput.model_validate(result)
+    assert parsed.confidence == 0.7
+    assert client.model_calls == 1
+    assert client.fallback_calls == 0
+
+
+def test_generate_diagnostic_plan_falls_back_on_invalid_json_error() -> None:
+    client = DiagnosticModelFirstLLMClient(model_error=json.JSONDecodeError("bad", "x", 0))
+
+    result = client.generate_diagnostic_plan(
+        message="为什么我一直没回音？",
+        plan_semantics={"task_type": "career_insights"},
+        profile={},
+        context_resolution={"needs_more_context": False},
+        memory_context=[],
+    )
+
+    assert client.model_calls == 1
+    assert client.fallback_calls == 1
+    assert result["diagnostic_hypotheses"][0]["bottleneck_type"] == "insufficient_evidence"
+
+
+def test_generate_diagnostic_plan_falls_back_on_schema_mismatch() -> None:
+    client = DiagnosticModelFirstLLMClient(
+        model_result={
+            "diagnostic_hypotheses": "bad",
+            "evidence_to_collect": [],
+            "next_question": None,
+            "confidence": 0.5,
+            "stop_criteria": [],
+        }
+    )
+
+    result = client.generate_diagnostic_plan(
+        message="为什么我一直没回音？",
+        plan_semantics={"task_type": "career_insights"},
+        profile={},
+        context_resolution={"needs_more_context": False},
+        memory_context=[],
+    )
+
+    assert client.fallback_calls == 1
+    assert result["confidence"] <= 0.4
+
+
+def test_generate_diagnostic_plan_falls_back_on_unknown_enum() -> None:
+    client = DiagnosticModelFirstLLMClient(
+        model_result={
+            "diagnostic_hypotheses": [
+                {
+                    "bottleneck_type": "unknown_type",
+                    "summary": "x",
+                    "rationale": "y",
+                    "confidence": 0.9,
+                    "evidence_refs": ["foo"],
+                }
+            ],
+            "evidence_to_collect": [],
+            "next_question": None,
+            "confidence": 0.9,
+            "stop_criteria": [],
+        }
+    )
+
+    result = client.generate_diagnostic_plan(
+        message="为什么我一直没回音？",
+        plan_semantics={"task_type": "career_insights"},
+        profile={},
+        context_resolution={"needs_more_context": False},
+        memory_context=[],
+    )
+
+    assert client.fallback_calls == 1
+    assert result["diagnostic_hypotheses"][0]["bottleneck_type"] == "insufficient_evidence"
+
+
+def test_generate_diagnostic_plan_falls_back_on_extra_keys_and_tool_fields() -> None:
+    client = DiagnosticModelFirstLLMClient(
+        model_result={
+            "diagnostic_hypotheses": [
+                {
+                    "bottleneck_type": "skill_gap",
+                    "summary": "x",
+                    "rationale": "y",
+                    "confidence": 0.8,
+                    "evidence_refs": ["feedback.0"],
+                    "tool_name": "search_jobs",
+                }
+            ],
+            "evidence_to_collect": [
+                {
+                    "source": "feedback",
+                    "reason": "need interview feedback",
+                    "priority": "high",
+                    "required": True,
+                    "tool_chain": ["search_jobs"],
+                }
+            ],
+            "next_question": None,
+            "confidence": 0.8,
+            "stop_criteria": [],
+            "steps": ["search_jobs"],
+        }
+    )
+
+    result = client.generate_diagnostic_plan(
+        message="为什么我一直没回音？",
+        plan_semantics={"task_type": "career_insights"},
+        profile={},
+        context_resolution={"needs_more_context": False},
+        memory_context=[],
+    )
+
+    assert client.fallback_calls == 1
+    assert "tool_name" not in result
+    assert "steps" not in result
+
+
+def test_build_diagnostic_plan_request_uses_dedicated_prompt_and_schema() -> None:
+    client = LLMClient()
+
+    request = client._build_diagnostic_plan_request(
+        message="为什么我一直没回音？",
+        plan_semantics={"task_type": "career_insights"},
+        profile={"target_role_preference": "backend"},
+        context_resolution={"needs_more_context": False},
+        memory_context=["最近收到两次拒信"],
+    )
+
+    assert request["input"][0]["content"] == DIAGNOSTIC_PLANNER_SYSTEM_PROMPT
+    schema = request["text"]["format"]["schema"]
+    assert schema == DiagnosticPlannerOutput.model_json_schema()
+    assert request["text"]["format"]["strict"] is True
