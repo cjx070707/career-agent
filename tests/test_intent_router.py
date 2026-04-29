@@ -146,6 +146,14 @@ def test_interview_history_routes_to_get_interview_feedback() -> None:
     assert plan["planner_source"] == "router"
 
 
+def test_strategy_style_no_response_query_routes_to_career_insights() -> None:
+    router = IntentRouter()
+    plan = _route(router, "我投了很多没回音，结合我的投递和面试反馈，给我一个两周行动策略")
+    assert plan is not None
+    assert plan["task_type"] == "career_insights"
+    assert plan["action"] == "diagnose"
+
+
 def test_career_insights_routes_to_get_career_insights() -> None:
     router = IntentRouter()
 
@@ -392,6 +400,16 @@ def test_router_job_search_recommend_backend_phrase() -> None:
     assert plan is not None
     assert plan["task_type"] == "job_search"
     assert plan["domain"] == "job_search"
+
+
+def test_router_background_recommend_tradeoff_routes_to_match_planning() -> None:
+    router = IntentRouter()
+    plan = _route(router, "根据我背景，推荐3个最适合我投的岗位并解释取舍")
+    assert plan is not None
+    assert plan["task_type"] == "job_match_planning"
+    assert plan["action"] == "recommend"
+    assert "search_jobs" in plan["steps"]
+    assert "match_resume_to_jobs" in plan["steps"]
 
 
 def test_router_oral_job_fit_phrase_routes_to_job_match_planning() -> None:

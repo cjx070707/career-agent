@@ -37,7 +37,7 @@ class AgentResult:
 
 class AgentService:
     """Minimal Agent orchestration for message -> memory -> retrieval -> answer."""
-    LOOP_ENABLED_TASK_TYPES = {"job_match_planning", "career_insights"}
+    LOOP_ENABLED_TASK_TYPES = {"job_match_planning", "career_insights", "interview_prep"}
     MAX_LOOP_STEPS = 8
     MAX_REPLANS = 2
     MAX_STEP_REPEAT = 2
@@ -257,7 +257,19 @@ class AgentService:
             )
 
         if tool_trace:
-            if final_tool_name == "search_jobs":
+            if (
+                plan.task_type == "resume_analysis"
+                and final_tool_name == "get_resume_by_id"
+                and self._is_resume_optimization_request(message)
+            ):
+                answer = self.response_formatter.format_resume_optimization_answer(final_result, message)
+            elif plan.task_type == "interview_prep":
+                answer = self._format_interview_prep_answer(
+                    message=message,
+                    profile=profile,
+                    execution_state=execution_state,
+                )
+            elif final_tool_name == "search_jobs":
                 jobs = final_result if isinstance(final_result, list) else []
                 answer = self.llm_client.summarize_job_search(
                     message=message,
@@ -697,6 +709,57 @@ class AgentService:
 
     def _format_tool_answer(self, tool_name: str, tool_result: Any) -> str:
         return self.response_formatter.format_tool_answer(tool_name, tool_result)
+
+    def _is_resume_optimization_request(self, message: str) -> bool:
+        lowered = message.lower()
+        markers = ("优化简历", "改简历", "润色简历", "简历怎么改", "简历优化", "optimize resume", "improve resume")
+        return any(marker in message or marker in lowered for marker in markers)
+
+    def _format_interview_prep_answer(
+        self,
+        *,
+        message: str,
+        profile: Dict[str, Any],
+        execution_state: Dict[str, Any],
+    ) -> str:
+        resume_data = execution_state.get("get_resume_by_id")
+        resume_text = ""
+        if isinstance(resume_data, dict):
+            resume_text = str(resume_data.get("content", "")).lower()
+
+        role = str(profile.get("target_role_preference") or "").strip()
+        if not role:
+            lowered = message.lower()
+            if "数据分析" in message or "data analyst" in lowered:
+                role = "数据分析"
+            elif "后端" in message or "backend" in lowered:
+                role = "后端开发"
+            elif "前端" in message or "frontend" in lowered:
+                role = "前端开发"
+            else:
+                role = "目标岗位"
+
+        strengths: List[str] = []
+        if "sql" in resume_text:
+            strengths.append("SQL")
+        if "python" in resume_text:
+            strengths.append("Python")
+        if "fastapi" in resume_text:
+            strengths.append("FastAPI")
+        if "tableau" in resume_text:
+            strengths.append("Tableau")
+        if "机器学习" in resume_text or "machine learning" in resume_text:
+            strengths.append("机器学习基础")
+        strengths = strengths[:3]
+
+        strengths_line = "、".join(strengths) if strengths else "你已有的项目经历"
+        return (
+            f"面试准备计划（{role}）：\n"
+            f"1. 先用 {strengths_line} 组织一段 90 秒自我介绍，重点讲 1 个最有代表性的项目（背景-动作-结果）。\n"
+            "2. 技术准备分三块：岗位核心知识（按目标岗位 JD）、项目追问（为什么这么做/如何取舍）、"
+            "行为题（协作与复盘）。\n"
+            "3. 本周执行：每天 1 轮模拟问答（30 分钟）+ 1 次复盘，记录薄弱点并在下一轮针对性补齐。"
+        )
 
     def _extract_sources(self, tool_name: str, tool_result: Any) -> List[ChatSource]:
         return self.response_formatter.extract_sources(tool_name, tool_result)

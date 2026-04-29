@@ -47,15 +47,19 @@ class ToolResponseFormatter:
             if not content:
                 return "我没有读取到可总结的简历内容，请上传或粘贴简历。"
 
-            title = str(resume.get("title", "")).strip() or "未命名简历"
-            compact = self._compact_text(content)
+            raw_title = str(resume.get("title", "")).strip()
+            title = raw_title or "未命名简历"
+            if "resume parsed from image" in title.lower():
+                title = "已上传简历"
+            normalized = self._normalize_resume_text(content)
+            compact = self._compact_text(normalized)
             role_hint = self._infer_role_hint(compact)
             keywords = self._extract_resume_keywords(compact)
-            highlights = self._extract_highlights(compact)
+            highlights = self._extract_highlights(normalized)
             risks = self._extract_resume_risks(compact)
             actions = self._next_actions_from_risks(risks)
 
-            summary_line = self._first_sentence(compact)
+            summary_line = self._resume_summary_line(normalized)
             if not summary_line:
                 summary_line = "已读取到简历文本，建议补充更完整的经历与成果描述。"
 
@@ -134,9 +138,101 @@ class ToolResponseFormatter:
 
         return "我已执行相关工具，但当前结果不足以直接给出建议。请补充更具体的目标岗位、简历或岗位描述。"
 
+    def format_resume_optimization_answer(self, tool_result: Any, message: str) -> str:
+        resume = tool_result if isinstance(tool_result, dict) else {}
+        content = str(resume.get("content", "")).strip()
+        if not content:
+            return "我没有读取到可优化的简历内容，请上传或粘贴简历。"
+
+        normalized = self._normalize_resume_text(content)
+        compact = self._compact_text(normalized)
+        role_hint = self._infer_role_hint(compact)
+        keywords = self._extract_resume_keywords(compact)
+        risks = self._extract_resume_risks(compact)
+
+        top_risks = risks[:3]
+        if not top_risks:
+            top_risks = ["经历描述还可以更聚焦目标岗位，建议补充量化成果和项目影响"]
+
+        rewrite_suggestions: List[str] = []
+        if any("量化成果" in item for item in top_risks):
+            rewrite_suggestions.append("将“负责接口开发”改为“负责 8 个核心接口开发，查询耗时下降 35%”。")
+        if any("项目信息不足" in item for item in top_risks):
+            rewrite_suggestions.append("每个项目用“问题-动作-结果”三行写法，至少写出一个业务结果。")
+        if any("经历描述偏少" in item for item in top_risks):
+            rewrite_suggestions.append("补 1 段与目标岗位最相关的实习/实践经历，并写清技术栈和成果。")
+        if not rewrite_suggestions:
+            rewrite_suggestions.append("把最相关的项目放在最前面，并补充可量化结果（效率、规模、转化等）。")
+
+        keyword_line = "、".join(keywords[:5]) if keywords else "建议补充目标岗位核心关键词（如 Python/SQL/业务指标）"
+        _ = message
+        return (
+            f"优化方向：先按 {role_hint} 岗位标准优化。\n"
+            "优先优化 3 项：\n"
+            f"1) {top_risks[0]}\n"
+            f"2) {top_risks[1] if len(top_risks) > 1 else '项目亮点需要更聚焦目标岗位'}\n"
+            f"3) {top_risks[2] if len(top_risks) > 2 else '关键词需要更贴近目标岗位 JD'}\n"
+            "改写示例：\n"
+            f"- {rewrite_suggestions[0]}\n"
+            f"- {rewrite_suggestions[1] if len(rewrite_suggestions) > 1 else '每段经历保留“场景-动作-结果”结构'}\n"
+            f"关键词建议：{keyword_line}\n"
+            "下一步：先改完最相关的 2 段经历，再发我，我帮你做第二轮精修。"
+        )
+
     def _compact_text(self, content: str) -> str:
         compact = re.sub(r"\s+", " ", content).strip()
         return compact[:4000]
+
+    def _normalize_resume_text(self, content: str) -> str:
+        text = content.replace("\r", "\n")
+        text = re.sub(r"(?m)^\s*#+\s*", "", text)
+        text = re.sub(r"(?i)\bparsed resume\b", "", text)
+        text = re.sub(r"(?i)\bresume parsed from image\b", "", text)
+        text = re.sub(r"(?im)^\s*email\s*:\s*[^\n]+$", "", text)
+        text = re.sub(r"(?im)^\s*(phone|mobile|tel|电话)\s*:\s*[^\n]+$", "", text)
+        text = re.sub(r"(?im)^\s*(name|姓名)\s*:\s*[^\n]+$", "", text)
+        # Remove common section headers from OCR/markdown exports.
+        text = re.sub(r"(?im)^\s*(summary|education|skills?|experience|projects?)\s*[:：]?\s*$", "", text)
+        # Drop leftover inline tags if OCR merged labels into one line.
+        text = re.sub(r"(?i)\b(name|email|phone)\s*:\s*[^\s;，。]+", "", text)
+        text = re.sub(r"(?i)\b(summary|education|skills?)\b\s*[:：-]?", "", text)
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{2,}", "\n", text)
+        return text.strip()
+
+    def _resume_summary_line(self, text: str) -> str:
+        if not text:
+            return ""
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
+        noisy_markers = (
+            "education",
+            "skill",
+            "skills",
+            "email",
+            "phone",
+            "联系方式",
+            "邮箱",
+            "电话",
+        )
+        strong_markers = (
+            "summary",
+            "experience",
+            "project",
+            "intern",
+            "实习",
+            "项目",
+            "负责",
+            "构建",
+            "优化",
+        )
+        for line in lines:
+            lowered = line.lower()
+            if any(marker in lowered for marker in noisy_markers):
+                continue
+            if any(marker in lowered for marker in strong_markers) and len(line) >= 12:
+                cleaned = re.sub(r"(?i)^(summary|experience|project)\s*[:：-]?\s*", "", line).strip()
+                return cleaned[:120] if cleaned else line[:120]
+        return self._first_sentence(text)
 
     def _first_sentence(self, text: str) -> str:
         if not text:
@@ -199,11 +295,14 @@ class ToolResponseFormatter:
         fragments = re.split(r"[。！？.!?\n]", text)
         selected: List[str] = []
         strong_markers = ("project", "实习", "项目", "intern", "built", "developed", "优化", "提升", "设计")
+        noisy_markers = ("name:", "email:", "phone:", "education", "skills")
         for frag in fragments:
             line = frag.strip()
             if not line:
                 continue
             lowered = line.lower()
+            if any(marker in lowered for marker in noisy_markers):
+                continue
             if any(marker in lowered for marker in strong_markers) and len(line) >= 10:
                 selected.append(line[:90])
             if len(selected) >= 2:

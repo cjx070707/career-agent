@@ -49,6 +49,16 @@ class FakeLLMClient:
         self.observe_calls.append(kwargs)
         return {"decision": "continue", "reason": "default", "steps": []}
 
+    def decide_react_action(self, **kwargs):
+        self.observe_calls.append(kwargs)
+        return {
+            "action": "continue",
+            "reason": "default continue",
+            "observation_summary": "",
+            "tool_name": "",
+            "planned_tools": [],
+        }
+
 
 class PlannerAwareLLMClient(FakeLLMClient):
     def __init__(self) -> None:
@@ -142,6 +152,34 @@ def test_agent_service_handles_oral_job_fit_phrase_without_fallback(
     assert result.plan.planner_source == "router"
     assert result.plan.task_type != "fallback"
     assert "match_resume_to_jobs" in result.tool_trace
+
+
+def test_agent_service_background_recommend_tradeoff_uses_match_planning_chain(
+    isolated_runtime,
+) -> None:
+    fake_llm = FakeLLMClient()
+    candidate = CandidateService().create_candidate(
+        name="Tradeoff User",
+        user_id="tradeoff-user",
+    )
+    ResumeService().create_resume(
+        candidate_id=int(candidate["id"]),
+        title="Tradeoff Resume",
+        content="Backend and data projects using Python SQL FastAPI",
+        version="v1",
+    )
+    JobService().create_job(title="Data Analyst Intern")
+    JobService().create_job(title="Backend Python Intern")
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("tradeoff-user", "根据我背景，推荐3个最适合我投的岗位并解释取舍")
+
+    assert result.plan is not None
+    assert result.plan.task_type == "job_match_planning"
+    assert result.plan.planner_source == "router"
+    assert "search_jobs" in result.tool_trace
+    assert "match_resume_to_jobs" in result.tool_trace
+    assert result.loop_trace
 
 
 def test_agent_service_handles_nihao_via_router_fastpath(isolated_runtime) -> None:
@@ -381,7 +419,7 @@ def test_agent_service_executes_tool_chain_when_plan_steps_conflict(
 
     result = service.respond(
         "conflicting-steps-user",
-        "帮我权衡先改简历还是继续投递，并给两周计划",
+        "你觉得最近市场怎么样，顺便给我一些岗位建议",
     )
 
     assert fake_llm.called is True
@@ -414,7 +452,7 @@ def test_agent_service_executes_tool_chain_when_plan_steps_empty(
 
     result = service.respond(
         "empty-steps-tool-chain-user",
-        "帮我权衡先改简历还是继续投递，并给两周计划",
+        "你觉得最近市场怎么样，顺便给我一些岗位建议",
     )
 
     assert fake_llm.called is True
@@ -446,7 +484,7 @@ def test_agent_service_keeps_legacy_no_tool_path_when_steps_and_tool_chain_empty
 
     result = service.respond(
         "legacy-no-tool-user",
-        "帮我权衡先改简历还是继续投递，并给两周计划",
+        "你觉得最近市场怎么样，顺便给我一些岗位建议",
     )
 
     assert fake_llm.called is True
@@ -663,23 +701,68 @@ def test_agent_resume_summary_empty_content_returns_clear_prompt(
     assert result.answer == "我没有读取到可总结的简历内容，请上传或粘贴简历。"
 
 
+def test_agent_resume_optimize_cleans_parsed_resume_noise(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Parsed Resume User",
+        user_id="parsed-resume-user",
+    )
+    ResumeService().create_resume(
+        candidate_id=int(candidate["id"]),
+        title="Resume parsed from image",
+        content=(
+            "# Parsed Resume\n"
+            "Name: 陈XX\n"
+            "Email: test@example.com\n"
+            "Phone: 18948770463\n"
+            "## Summary\n"
+            "具备扎实的数据分析与后端开发能力，熟悉 Python、SQL、FastAPI。\n"
+            "## Project\n"
+            "负责搭建数据处理 API，并优化查询性能。"
+        ),
+        version="v1",
+    )
+    service = AgentService(llm_client=FakeLLMClient())
+
+    result = service.respond("parsed-resume-user", "优化简历")
+
+    assert result.plan is not None
+    assert result.plan.task_type == "resume_analysis"
+    assert result.tool_trace == ["get_resume_by_id"]
+    assert "Parsed Resume" not in result.answer
+    assert "Email:" not in result.answer
+    assert "Phone:" not in result.answer
+    assert "优先优化 3 项" in result.answer
+    assert "改写示例" in result.answer
+
+
 def test_agent_job_match_planning_can_replan_loop_steps(isolated_runtime) -> None:
     class ReplanLLM(FakeLLMClient):
         def __init__(self) -> None:
             super().__init__()
             self._issued = False
 
-        def decide_next_action(self, **kwargs):
+        def decide_react_action(self, **kwargs):
             self.observe_calls.append(kwargs)
-            current_step = kwargs.get("current_step")
+            last_observation = kwargs.get("last_observation") or {}
+            current_step = str(last_observation.get("step") or "")
             if current_step == "search_jobs" and not self._issued:
                 self._issued = True
                 return {
-                    "decision": "replan",
+                    "action": "replan_strategy",
                     "reason": "skip candidate step, go straight to resume match",
-                    "steps": ["match_resume_to_jobs"],
+                    "observation_summary": "",
+                    "tool_name": "",
+                    "planned_tools": ["match_resume_to_jobs"],
                 }
-            return {"decision": "continue", "reason": "continue", "steps": []}
+            return {
+                "action": "continue",
+                "reason": "continue",
+                "observation_summary": "",
+                "tool_name": "",
+                "planned_tools": [],
+            }
 
     fake_llm = ReplanLLM()
     candidate = CandidateService().create_candidate(name="Loop User", user_id="loop-user")
@@ -780,6 +863,30 @@ def test_agent_loop_stops_on_no_progress_when_replan_repeats_same_search(
     assert result.tool_trace.count("search_jobs") <= 2
 
 
+def test_agent_interview_prep_uses_react_loop_and_trace(
+    isolated_runtime,
+) -> None:
+    fake_llm = FakeLLMClient()
+    candidate = CandidateService().create_candidate(name="Interview Loop User", user_id="interview-loop-user")
+    ResumeService().create_resume(
+        candidate_id=int(candidate["id"]),
+        title="Interview Resume",
+        content="Data analyst intern with Python SQL dashboard projects",
+        version="v1",
+    )
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("interview-loop-user", "我想准备数据分析岗面试")
+
+    assert result.plan is not None
+    assert result.plan.task_type == "interview_prep"
+    assert "get_candidate_profile" in result.tool_trace
+    assert fake_llm.observe_calls
+    assert result.loop_trace
+    assert "面试准备计划" in result.answer
+    assert "简历总结：" not in result.answer
+
+
 def test_agent_stops_gracefully_when_tool_returns_error_result(isolated_runtime) -> None:
     class BrokenRegistry(ToolRegistry):
         def __init__(self) -> None:
@@ -832,6 +939,42 @@ def test_chat_routes_to_interview_history_tool(isolated_runtime) -> None:
     assert result.sources
     assert result.sources[0].type == "interview_feedback"
     assert "Atlassian" in result.answer
+
+
+def test_chat_strategy_no_response_query_routes_to_career_insights(
+    isolated_runtime,
+) -> None:
+    candidate = CandidateService().create_candidate(
+        name="Strategy Query User",
+        user_id="strategy-query-user",
+    )
+    from app.services.application_service import ApplicationService
+
+    ApplicationService().create_application(
+        candidate_id=int(candidate["id"]),
+        company="Canva",
+        job_title="Backend Intern",
+        status="applied",
+    )
+    InterviewService().create_interview(
+        candidate_id=int(candidate["id"]),
+        company="Atlassian",
+        job_title="Backend Grad",
+        interview_round="tech1",
+        result="rejected",
+        feedback="need stronger system design examples",
+    )
+    fake_llm = PlannerAwareLLMClient()
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond(
+        "strategy-query-user",
+        "我投了很多没回音，结合我的投递和面试反馈，给我一个两周行动策略",
+    )
+
+    assert result.plan is not None
+    assert result.plan.task_type == "career_insights"
+    assert result.tool_trace == ["get_career_insights"]
 
 
 def test_chat_routes_to_career_insights_tool(isolated_runtime) -> None:

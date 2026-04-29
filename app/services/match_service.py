@@ -22,6 +22,8 @@ class MatchService:
         matches: list[JobMatch] = []
         seen_titles: set[str] = set()
         for result in retrieval_results:
+            if str(getattr(result, "type", "")).strip() != "job_posting":
+                continue
             # Dedupe by job_title so repeated postings (or noisy re-indexing) do not
             # surface the same role twice in the recommendation answer.
             if result.title in seen_titles:

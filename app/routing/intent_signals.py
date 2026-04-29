@@ -47,6 +47,18 @@ _JOB_DISCOVERY_FOR_ME_MARKERS = (
     "what roles fit me",
     "what jobs are suitable for me",
 )
+_RECOMMEND_MATCH_MARKERS = (
+    "结合我的情况",
+    "推荐适合投",
+    "推荐适合",
+    "根据我背景",
+    "按我背景",
+    "最适合我投",
+    "解释取舍",
+    "推荐我投",
+    "based on my background",
+    "best jobs for me",
+)
 _CAREER_DIAGNOSIS_MARKERS = (
     "求职画像",
     "求职状态",
@@ -68,6 +80,11 @@ _NEXT_STEP_MARKERS = (
     "怎么准备",
     "next step",
     "what should i do",
+    "行动策略",
+    "策略",
+    "计划",
+    "一周计划",
+    "两周计划",
 )
 _CAREER_CONTEXT_MARKERS = (
     "投递",
@@ -87,6 +104,7 @@ _INTERVIEW_MARKERS = ("面试", "interview")
 _INTERVIEW_PREP_MARKERS = ("准备", "prepare", "prep", "plan")
 _INTERVIEW_HISTORY_MARKERS = ("最近", "记录", "反馈", "进展", "history", "哪些", "结果")
 _INTERVIEW_FEEDBACK_MARKERS = ("feedback", "复盘", "笔试", "hr 面", "hr面")
+_STRATEGY_MARKERS = ("行动策略", "策略", "计划", "一周", "两周", "roadmap", "plan")
 _CAPABILITY_HELP_MARKERS = (
     "你到底有什么用啊",
     "你能做什么",
@@ -147,6 +165,7 @@ def collect_intent_signals(message: str, lowered_message: str, stripped_message:
     has_review_signal = _has_any(message, lowered_message, _RESUME_REVIEW_MARKERS)
     has_interview_signal = _has_any(message, lowered_message, _INTERVIEW_MARKERS)
     has_interview_history_signal = _has_any(message, lowered_message, _INTERVIEW_HISTORY_MARKERS)
+    has_strategy_signal = _has_any(message, lowered_message, _STRATEGY_MARKERS)
 
     has_next_step = _has_any(message, lowered_message, _NEXT_STEP_MARKERS)
     has_career_context = _has_any(message, lowered_message, _CAREER_CONTEXT_MARKERS)
@@ -174,9 +193,11 @@ def collect_intent_signals(message: str, lowered_message: str, stripped_message:
             and not has_interview_history_signal
         ),
         has_application_history=has_application and has_history,
-        has_interview_history=has_interview_signal and has_interview_history_signal,
+        has_interview_history=has_interview_signal and has_interview_history_signal and not has_strategy_signal,
         has_interview_feedback_history=(
-            _has_any(message, lowered_message, _INTERVIEW_FEEDBACK_MARKERS) and has_interview_history_signal
+            _has_any(message, lowered_message, _INTERVIEW_FEEDBACK_MARKERS)
+            and has_interview_history_signal
+            and not has_strategy_signal
         ),
         has_profile_query=_has_any(message, lowered_message, ("资料", "画像", "我是谁")),
         has_simple_job_match=_has_any(
@@ -184,5 +205,5 @@ def collect_intent_signals(message: str, lowered_message: str, stripped_message:
             lowered_message,
             ("适合投", "适合哪些岗位", *_JOB_DISCOVERY_FOR_ME_MARKERS),
         ),
-        has_recommend_match=_has_any(message, lowered_message, ("结合我的情况", "推荐适合投", "推荐适合")),
+        has_recommend_match=_has_any(message, lowered_message, _RECOMMEND_MATCH_MARKERS),
     )
