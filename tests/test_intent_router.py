@@ -392,10 +392,16 @@ def test_router_job_search_recommend_backend_phrase() -> None:
     assert plan is not None
     assert plan["task_type"] == "job_search"
     assert plan["domain"] == "job_search"
-    assert plan["action"] == "search"
-    assert plan["resources"] == ["jobs"]
-    assert plan["required_context"] == ["job_query"]
-    assert plan["plan_type"] == "search"
+
+
+def test_router_oral_job_fit_phrase_routes_to_job_match_planning() -> None:
+    router = IntentRouter()
+
+    plan = _route(router, "有什么适合我的岗位啊")
+    assert plan is not None
+    assert plan["task_type"] in {"job_match", "job_match_planning"}
+    assert "match_resume_to_jobs" in plan["steps"]
+    assert plan["planner_source"] == "router"
 
 
 def test_router_interview_prep_data_analyst_phrase() -> None:

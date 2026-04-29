@@ -19,6 +19,7 @@ from app.services.response_formatter import ToolResponseFormatter
 from app.services.resume_service import ResumeService
 from app.services.tool_payload_builder import ToolPayloadBuilder
 from app.tools.registry import ToolRegistry, build_default_tool_registry
+from app.routing.intent_gateway import IntentGateway
 
 
 @dataclass
@@ -71,6 +72,7 @@ class AgentService:
             max_loop_steps=self.MAX_LOOP_STEPS,
             max_step_repeat=self.MAX_STEP_REPEAT,
         )
+        self.intent_gateway = IntentGateway()
         self.career_event_service = CareerEventService(
             retrieval_service=self.retrieval_service,
             llm_client=self.llm_client,
@@ -80,6 +82,7 @@ class AgentService:
         )
 
     def respond(self, user_id: str, message: str) -> AgentResult:
+        request_started = time.perf_counter()
         self._reset_llm_trace_markers()
         recent_turns = self.memory_service.load_recent_messages(user_id)
         profile = self.profile_service.update_from_message(user_id, message)
@@ -104,6 +107,11 @@ class AgentService:
         if plan.needs_more_context:
             answer = plan.follow_up_question or "我还需要更多信息，才能继续。"
             self.memory_service.save_turn(user_id, message, answer)
+            self._append_runtime_timing_trace(
+                plan=plan,
+                execution_ms=0.0,
+                total_ms=(time.perf_counter() - request_started) * 1000,
+            )
             return AgentResult(
                 answer=answer,
                 stage="fallback",
@@ -124,8 +132,23 @@ class AgentService:
         self._apply_tool_resolution(plan, tool_resolution)
 
         if plan.task_type == "fallback" and not plan.steps:
-            answer = self._format_router_fallback_answer(message)
+            fallback_type = None
+            for item in plan.resolver_trace or []:
+                if item.get("resolver") == "intent_gateway":
+                    fallback_type = item.get("fallback_type")
+                    break
+            if fallback_type == "system":
+                answer = plan.follow_up_question or "我目前遇到系统规划超时，先做一个安全下一步：请告诉我你的目标岗位/简历内容，以便继续。"
+            elif fallback_type == "recoverable":
+                answer = plan.follow_up_question or "我还需要更多信息才能继续。请补充目标岗位/简历/岗位 JD 等关键内容。"
+            else:
+                answer = self._format_router_fallback_answer(message)
             self.memory_service.save_turn(user_id, message, answer)
+            self._append_runtime_timing_trace(
+                plan=plan,
+                execution_ms=0.0,
+                total_ms=(time.perf_counter() - request_started) * 1000,
+            )
             return AgentResult(
                 answer=answer,
                 stage="fallback",
@@ -142,8 +165,13 @@ class AgentService:
         if tool_resolution.executable is False:
             execution_steps = []
 
+        execute_started = time.perf_counter()
         if execution_steps:
             if self._should_use_react_loop(plan.task_type):
+                allowed_executor_tools = self.tool_resolver.executor_allowed_tool_order(
+                    plan=plan,
+                    available_tools=self.tool_registry.list_tool_names(),
+                )
                 tool_trace, execution_state, loop_trace = self.plan_executor.execute_react_loop(
                     user_id=user_id,
                     message=message,
@@ -151,6 +179,14 @@ class AgentService:
                     task_type=plan.task_type,
                     build_payload=self._build_tool_payload,
                     should_continue_after_step=self._should_continue_after_step,
+                    replan_budget=self.MAX_REPLANS,
+                    whitelist_executor_tools=allowed_executor_tools,
+                    validate_replan_chain=lambda proposed, exec_trace: self.tool_resolver.normalize_executor_replan_chain(
+                        plan=plan,
+                        proposed_tools=list(proposed),
+                        available_tools=self.tool_registry.list_tool_names(),
+                        executed_trace=list(exec_trace),
+                    ),
                 )
             else:
                 tool_trace, execution_state, loop_trace = self.plan_executor.execute_plan(
@@ -160,6 +196,16 @@ class AgentService:
                     build_payload=self._build_tool_payload,
                     should_continue_after_step=self._should_continue_after_step,
                 )
+                execution_state["_loop_control"] = {
+                    "executor_mode": "sequential",
+                    "replan_budget": 0,
+                    "strategy_replans_used": 0,
+                    "switch_count": 0,
+                    "replan_count": 0,
+                    "step_repeat_count": 0,
+                    "terminated_by": "finish",
+                    "last_observation": execution_state.get("last_observation"),
+                }
             # If `_execute_plan` could not run any step (e.g., the planner asked
             # for `get_candidate_profile` but the user has no candidate yet), we
             # fall through to the generic retrieval+LLM answer path so the
@@ -168,6 +214,47 @@ class AgentService:
             final_result = execution_state.get("last_result")
         else:
             tool_trace, final_tool_name, final_result, loop_trace = [], None, None, []
+            execution_state = {}
+        execute_elapsed_ms = (time.perf_counter() - execute_started) * 1000
+        loop_control = execution_state.get("_loop_control") if execution_steps else None
+        if isinstance(loop_control, dict):
+            plan.resolver_trace = list(plan.resolver_trace) + [
+                {
+                    "resolver": "executor",
+                    "executor_mode": str(loop_control.get("executor_mode") or "sequential"),
+                    "replan_budget": int(loop_control.get("replan_budget") or 0),
+                    "strategy_replans_used": int(loop_control.get("strategy_replans_used") or 0),
+                    "switch_count": int(loop_control.get("switch_count") or 0),
+                    "replan_count": int(loop_control.get("replan_count") or 0),
+                    "terminated_by": str(loop_control.get("terminated_by") or "finish"),
+                }
+            ]
+
+        missing_context = execution_state.get("_missing_context") if execution_steps else None
+        follow_up_question = execution_state.get("_follow_up_question") if execution_steps else None
+        if isinstance(missing_context, list) and missing_context:
+            plan.needs_more_context = True
+            plan.missing_context = [str(item) for item in missing_context if str(item).strip()]
+            if isinstance(follow_up_question, str) and follow_up_question.strip():
+                plan.follow_up_question = follow_up_question.strip()
+            answer = plan.follow_up_question or "我还需要更多信息，才能继续。"
+            self.memory_service.save_turn(user_id, message, answer)
+            self._append_runtime_timing_trace(
+                plan=plan,
+                execution_ms=execute_elapsed_ms,
+                total_ms=(time.perf_counter() - request_started) * 1000,
+            )
+            return AgentResult(
+                answer=answer,
+                stage="fallback",
+                memory_used=bool(recent_turns),
+                sources=[],
+                tool_used=None,
+                plan=plan,
+                tool_trace=tool_trace,
+                loop_trace=loop_trace,
+                llm_trace=self._build_llm_trace(plan),
+            )
 
         if tool_trace:
             if final_tool_name == "search_jobs":
@@ -181,6 +268,11 @@ class AgentService:
                 answer = self.response_formatter.format_tool_answer(final_tool_name, final_result)
             sources = self.response_formatter.extract_sources(final_tool_name, final_result)
             self.memory_service.save_turn(user_id, message, answer)
+            self._append_runtime_timing_trace(
+                plan=plan,
+                execution_ms=execute_elapsed_ms,
+                total_ms=(time.perf_counter() - request_started) * 1000,
+            )
             return AgentResult(
                 answer=answer,
                 stage="tool",
@@ -203,6 +295,11 @@ class AgentService:
         )
 
         self.memory_service.save_turn(user_id, message, answer)
+        self._append_runtime_timing_trace(
+            plan=plan,
+            execution_ms=execute_elapsed_ms,
+            total_ms=(time.perf_counter() - request_started) * 1000,
+        )
         return AgentResult(
             answer=answer,
             stage="done",
@@ -277,15 +374,72 @@ class AgentService:
             user_state=user_state,
         )
         router_elapsed_ms = (time.perf_counter() - router_started) * 1000
+        gateway_decision = None
+        gateway_event = {
+            "resolver": "intent_gateway",
+            "router_hit": plan_payload is not None,
+            "router_reason": "router_hit" if plan_payload is not None else "router_miss",
+            "gateway_domain": None,
+            "gateway_intent": None,
+            "gateway_action": None,
+            "gateway_confidence": None,
+            "planner_called": False,
+            "planner_source": None,
+            "fallback_type": "none",
+        }
         if plan_payload is None:
-            planner_used = True
-            plan_payload = self.llm_client.generate_plan(
+            # Router miss: hand over to IntentGateway.
+            gateway_decision = self.intent_gateway.resolve_after_router_miss(
                 message=message,
-                memory_context=memory_context,
                 profile=profile,
-                available_tools=available_tools,
                 user_state=user_state,
+                memory_context=memory_context,
+                available_tools=available_tools,
             )
+            gateway_event.update(
+                {
+                    "gateway_domain": gateway_decision.domain,
+                    "gateway_intent": gateway_decision.intent_cluster,
+                    "gateway_action": gateway_decision.action,
+                    "gateway_confidence": float(gateway_decision.confidence),
+                    "fallback_type": gateway_decision.fallback_type,
+                }
+            )
+
+            if gateway_decision.action in {"route", "clarify", "true_fallback"}:
+                plan_payload = gateway_decision.local_plan_payload or {}
+                plan_payload["planner_source"] = "gateway"
+            elif gateway_decision.action == "escalate_to_planner":
+                planner_used = True
+                gateway_event["planner_called"] = True
+                plan_payload = self.llm_client.generate_plan(
+                    message=message,
+                    memory_context=memory_context,
+                    profile=profile,
+                    available_tools=available_tools,
+                    user_state=user_state,
+                )
+                gateway_event["planner_source"] = getattr(self.llm_client, "last_plan_source", None)
+                # Planner timeout/error should never become true-fallback
+                # inside career domain; recover locally.
+                if (
+                    gateway_decision.domain == "career"
+                    and (
+                        bool(getattr(self.llm_client, "last_plan_timed_out", False))
+                        or getattr(self.llm_client, "last_plan_source", None) == "fallback"
+                    )
+                ):
+                    gateway_event["fallback_type"] = "system"
+                    plan_payload = self._build_system_fallback_plan_for_gateway(
+                        message=message,
+                        intent_cluster=gateway_decision.intent_cluster,
+                    )
+                    plan_payload["planner_source"] = "gateway"
+            else:
+                # Safety: unknown action => keep system safe behavior.
+                plan_payload = self.intent_gateway._build_true_fallback_plan()
+                plan_payload["planner_source"] = "gateway"
+                gateway_event["fallback_type"] = "true"
         # Ensure `planner_source` is always populated so the /chat contract is
         # stable even when the payload comes from an older fallback path.
         if not plan_payload.get("planner_source"):
@@ -302,8 +456,50 @@ class AgentService:
         existing_trace = plan_payload.get("resolver_trace", [])
         if not isinstance(existing_trace, list):
             existing_trace = []
-        plan_payload["resolver_trace"] = list(existing_trace) + [runtime_trace]
+        plan_payload["resolver_trace"] = list(existing_trace) + [gateway_event, runtime_trace]
         return ChatPlan.model_validate(plan_payload)
+
+    def _build_system_fallback_plan_for_gateway(
+        self,
+        *,
+        message: str,
+        intent_cluster: str,
+    ) -> Dict[str, Any]:
+        _ = message
+        # System fallback should be executable next-step guidance.
+        if intent_cluster in {"job_match", "job_recommend"}:
+            follow_up = "我这边的规划超时了。为了继续做岗位匹配/推荐，请补充：目标岗位 JD/链接 + 你的简历（或简历内容）。"
+        elif intent_cluster == "resume_analysis":
+            follow_up = "我这边的规划超时了。为了继续做简历分析，请上传或粘贴你的简历内容。"
+        elif intent_cluster == "application_diag":
+            follow_up = "我这边的规划超时了。为了继续投递诊断，请告诉我你的目标岗位方向，以及最近的大致投递/反馈情况（不需要完整列表）。"
+        elif intent_cluster == "interview_prep":
+            follow_up = "我这边的规划超时了。为了继续面试准备，请告诉我目标岗位名称/方向，以及是否已有面试轮次或反馈。"
+        else:
+            follow_up = "我这边的规划超时了。请告诉我你想完成的求职目标：岗位匹配 / 投递诊断 / 面试准备，并补充目标岗位信息。"
+
+        return {
+            "task_type": "fallback",
+            "reason": "system_fallback: planner_timeout_overridden_by_gateway",
+            "steps": [],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": follow_up,
+            "domain": "conversation",
+            "action": "system_fallback",
+            "planner_source": "gateway",
+            "confidence": 0.6,
+            "plan_type": "direct",
+            "evidence_policy": "system_local_recovery",
+            "stop_criteria": ["system fallback returned"],
+            # Key for AgentService fallback answer branching.
+            "resolver_trace": [
+                {
+                    "resolver": "intent_gateway",
+                    "fallback_type": "system",
+                }
+            ],
+        }
 
     def _build_user_state(self, *, user_id: str, message: str) -> Dict[str, Any]:
         return {
@@ -324,7 +520,9 @@ class AgentService:
         plan.missing_context = resolution.missing_context
         plan.needs_more_context = resolution.needs_more_context
         plan.follow_up_question = resolution.follow_up_question
-        plan.resolver_trace = list(resolution.resolver_trace)
+        # Preserve previous resolver_trace (e.g., IntentGateway event) so
+        # downstream debugging remains possible.
+        plan.resolver_trace = list(plan.resolver_trace or []) + list(resolution.resolver_trace)
 
     def _apply_tool_resolution(self, plan: ChatPlan, resolution: Any) -> None:
         plan.tool_chain = list(resolution.tool_chain)
@@ -420,6 +618,21 @@ class AgentService:
             str(item.get("tool_name")).strip()
             for item in tool_chain
             if isinstance(item, dict) and str(item.get("tool_name") or "").strip()
+        ]
+
+    def _append_runtime_timing_trace(
+        self,
+        *,
+        plan: ChatPlan,
+        execution_ms: float,
+        total_ms: float,
+    ) -> None:
+        plan.resolver_trace = list(plan.resolver_trace) + [
+            {
+                "resolver": "runtime_timing",
+                "execution_elapsed_ms": round(execution_ms, 2),
+                "total_elapsed_ms": round(total_ms, 2),
+            }
         ]
 
     def _execute_plan(

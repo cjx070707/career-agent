@@ -855,9 +855,9 @@ def test_decide_next_action_returns_replan_with_sanitized_steps() -> None:
     assert client.calls
 
 
-def test_decide_react_action_returns_tool_for_valid_tool_name() -> None:
+def test_decide_react_action_returns_continue_for_valid_action() -> None:
     client = ObserveDecisionClient(
-        response_json='{"action":"tool","tool_name":"search_jobs","tool_input_hint":{"query":"backend"},"reason":"need jobs","observation_summary":"found candidates"}'
+        response_json='{"action":"continue","reason":"need jobs","observation_summary":"found candidates"}'
     )
     result = client.decide_react_action(
         task_type="job_match_planning",
@@ -866,15 +866,14 @@ def test_decide_react_action_returns_tool_for_valid_tool_name() -> None:
         last_observation={"step": "get_resume_by_id", "result": {"id": 1}},
         available_tools=["search_jobs", "match_resume_to_jobs"],
     )
-    assert result["action"] == "tool"
-    assert result["tool_name"] == "search_jobs"
+    assert result["action"] == "continue"
     assert result["reason"] == "need jobs"
     assert result["observation_summary"] == "found candidates"
 
 
-def test_decide_react_action_sanitizes_unknown_tool_to_finish() -> None:
+def test_decide_react_action_maps_legacy_tool_action_to_continue() -> None:
     client = ObserveDecisionClient(
-        response_json='{"action":"tool","tool_name":"imaginary_tool","tool_input_hint":{},"reason":"bad","observation_summary":""}'
+        response_json='{"action":"tool","tool_name":"imaginary_tool","tool_input_hint":{},"reason":"legacy","observation_summary":""}'
     )
     result = client.decide_react_action(
         task_type="job_match_planning",
@@ -883,8 +882,58 @@ def test_decide_react_action_sanitizes_unknown_tool_to_finish() -> None:
         last_observation={"step": "search_jobs", "result": []},
         available_tools=["search_jobs", "match_resume_to_jobs"],
     )
-    assert result["action"] == "finish"
-    assert result["tool_name"] is None
+    assert result["action"] == "continue"
+    assert result["reason"] == "legacy"
+
+
+def test_decide_react_action_sanitizes_unknown_action_to_continue() -> None:
+    client = ObserveDecisionClient(
+        response_json='{"action":"switch_tool","reason":"bad","observation_summary":""}'
+    )
+    result = client.decide_react_action(
+        task_type="job_match_planning",
+        message="结合我的情况推荐适合投的岗位",
+        state={"_last_step": "search_jobs"},
+        last_observation={"step": "search_jobs", "result": []},
+        available_tools=["search_jobs", "match_resume_to_jobs"],
+    )
+    assert result["action"] == "continue"
+
+
+def test_decide_react_action_accepts_switch_tool_with_whitelist() -> None:
+    client = ObserveDecisionClient(
+        response_json='{"action":"switch_tool","tool_name":"match_resume_to_jobs","reason":"resume already loaded","observation_summary":"switch to scoring"}'
+    )
+    result = client.decide_react_action(
+        task_type="job_match_planning",
+        message="结合我的情况推荐适合投的岗位",
+        state={"_last_step": "search_jobs"},
+        last_observation={"step": "search_jobs", "result": [{"title": "Backend Engineer"}]},
+        available_tools=["search_jobs", "match_resume_to_jobs"],
+        executor_whitelist=["search_jobs", "match_resume_to_jobs"],
+    )
+    assert result["action"] == "switch_tool"
+    assert result["tool_name"] == "match_resume_to_jobs"
+    assert result["planned_tools"] == []
+    assert result["reason"] == "resume already loaded"
+
+
+def test_decide_react_action_accepts_replan_strategy_chain() -> None:
+    client = ObserveDecisionClient(
+        response_json='{"action":"replan_strategy","planned_tools":["match_resume_to_jobs","search_jobs"],"reason":"skip low-value repetition","observation_summary":"rewrite remaining chain"}'
+    )
+    result = client.decide_react_action(
+        task_type="job_match_planning",
+        message="结合我的情况推荐适合投的岗位",
+        state={"_last_step": "get_resume_by_id"},
+        last_observation={"step": "get_resume_by_id", "result": {"id": 1}},
+        available_tools=["search_jobs", "match_resume_to_jobs"],
+        executor_whitelist=["search_jobs", "match_resume_to_jobs"],
+    )
+    assert result["action"] == "replan_strategy"
+    assert result["tool_name"] == ""
+    assert result["planned_tools"] == ["match_resume_to_jobs", "search_jobs"]
+    assert result["reason"] == "skip low-value repetition"
 
 
 def test_generate_plan_accepts_optional_extended_schema_fields() -> None:
@@ -1150,3 +1199,18 @@ def test_generate_falls_back_when_model_call_fails() -> None:
 
     assert "Fallback response for '帮我看下一步'" in answer
     assert client.last_generate_source == "fallback"
+
+
+def test_fallback_plan_defaults_to_safe_no_tool_execution() -> None:
+    client = LLMClient()
+    plan = client._fallback_plan(
+        message="any unknown message",
+        memory_context=["ctx"],
+        profile={"target_role_preference": "backend"},
+        available_tools=["search_jobs", "match_resume_to_jobs"],
+        user_state={"has_resume": True},
+    )
+
+    assert plan["task_type"] == "fallback"
+    assert plan["steps"] == []
+    assert plan["needs_more_context"] is False

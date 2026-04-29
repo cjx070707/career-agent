@@ -1,5 +1,6 @@
 import re
-from typing import Any, Callable, Dict, List, Optional
+import time
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.tools.registry import ToolRegistry
 
@@ -55,29 +56,79 @@ class PlanExecutor:
         task_type: str,
         build_payload: Callable[[str, str, str, Dict[str, Any]], Dict[str, Any]],
         should_continue_after_step: Callable[[str, Any, Dict[str, Any]], bool],
+        replan_budget: int = 2,
+        whitelist_executor_tools: Optional[List[str]] = None,
+        validate_replan_chain: Optional[
+            Callable[[Sequence[str], List[str]], Tuple[List[str], str]]
+        ] = None,
     ) -> tuple[List[str], Dict[str, Any], List[Dict[str, Any]]]:
         trace: List[str] = []
         state: Dict[str, Any] = {}
         loop_trace: List[Dict[str, Any]] = []
         queue: List[str] = [step for step in initial_steps if step in self.tool_registry.list_tool_names()]
+        strategy_replans_used = 0
+        switch_count = 0
+        step_repeat_count = 0
+        last_step = ""
+        loop_started = time.perf_counter()
+        terminated_by = "plan_exhausted"
+
+        whitelist = whitelist_executor_tools or list(self.tool_registry.list_tool_names())
+        registry_names = self.tool_registry.list_tool_names()
+
+        def validator(proposed: Sequence[str], exec_trace: List[str]) -> tuple[List[str], str]:
+            if validate_replan_chain is None:
+                return [], "rejected"
+            return validate_replan_chain(proposed, exec_trace)
 
         while queue and len(trace) < self.max_loop_steps:
+            iteration = len(trace) + 1
             step = queue.pop(0)
+            if step == last_step:
+                step_repeat_count += 1
+            else:
+                step_repeat_count = 1
+            last_step = step
+            if step_repeat_count > self.max_step_repeat:
+                terminated_by = "max_repeat_guard"
+                loop_trace.append(
+                    {
+                        "iteration": iteration,
+                        "current_step": step,
+                        "tool_result_summary": "step repeated over guard threshold",
+                        "decider_action": "finish",
+                        "decider_reason": "max_repeat_guard",
+                        "strategy_replans_used": strategy_replans_used,
+                        "budget_remaining": max(replan_budget - strategy_replans_used, 0),
+                        "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
+                    }
+                )
+                break
             try:
                 payload = build_payload(user_id, message, step, state)
                 tool_result = self.tool_registry.run(step, payload)
             except ValueError:
+                terminated_by = "finish"
                 break
 
             observation_summary = self._summarize_observation(step, tool_result.get("data"))
+            state["last_observation"] = {
+                "step": step,
+                "result": tool_result.get("data"),
+                "summary": observation_summary,
+            }
             if not bool(tool_result.get("ok", False)):
+                terminated_by = "finish"
                 loop_trace.append(
                     {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "stop",
-                        "reason": "tool_error",
-                        "observation_summary": observation_summary,
+                        "iteration": iteration,
+                        "current_step": step,
+                        "tool_result_summary": observation_summary,
+                        "decider_action": "finish",
+                        "decider_reason": "tool_error",
+                        "strategy_replans_used": strategy_replans_used,
+                        "budget_remaining": max(replan_budget - strategy_replans_used, 0),
+                        "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
                     }
                 )
                 break
@@ -88,36 +139,48 @@ class PlanExecutor:
             state["_last_step"] = step
 
             if not should_continue_after_step(step, tool_result["data"], state):
+                terminated_by = "finish"
                 loop_trace.append(
                     {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "stop",
-                        "reason": "rule_stop_after_step",
-                        "observation_summary": observation_summary,
+                        "iteration": iteration,
+                        "current_step": step,
+                        "tool_result_summary": observation_summary,
+                        "decider_action": "finish",
+                        "decider_reason": "rule_stop_after_step",
+                        "strategy_replans_used": strategy_replans_used,
+                        "budget_remaining": max(replan_budget - strategy_replans_used, 0),
+                        "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
                     }
                 )
                 break
             if self._is_no_progress(step, tool_result["data"], state):
+                terminated_by = "finish"
                 loop_trace.append(
                     {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "stop",
-                        "reason": "no_progress",
-                        "observation_summary": observation_summary,
+                        "iteration": iteration,
+                        "current_step": step,
+                        "tool_result_summary": observation_summary,
+                        "decider_action": "finish",
+                        "decider_reason": "no_progress",
+                        "strategy_replans_used": strategy_replans_used,
+                        "budget_remaining": max(replan_budget - strategy_replans_used, 0),
+                        "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
                     }
                 )
                 break
 
             if not queue:
+                terminated_by = "finish"
                 loop_trace.append(
                     {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "finish",
-                        "reason": "plan_exhausted",
-                        "observation_summary": observation_summary,
+                        "iteration": iteration,
+                        "current_step": step,
+                        "tool_result_summary": observation_summary,
+                        "decider_action": "finish",
+                        "decider_reason": "plan_exhausted",
+                        "strategy_replans_used": strategy_replans_used,
+                        "budget_remaining": max(replan_budget - strategy_replans_used, 0),
+                        "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
                     }
                 )
                 break
@@ -132,62 +195,233 @@ class PlanExecutor:
                     "summary": observation_summary,
                 },
                 remaining_steps=list(queue),
+                whitelist_executor_tools=list(whitelist),
             )
-            action = str(react_action.get("action") or "finish").strip().lower()
-            if action != "tool":
+            action_before = str(react_action.get("action") or "continue").strip().lower()
+            reason = str(react_action.get("reason") or "")
+            consume_budget = bool(react_action.get("consume_budget", False))
+            inferred_context = self._infer_missing_context(step=step, tool_result=tool_result["data"])
+
+            def _budget_meta() -> Dict[str, Any]:
+                return {
+                    "strategy_replans_used": strategy_replans_used,
+                    "switch_count": switch_count,
+                    "budget_remaining": max(replan_budget - strategy_replans_used, 0),
+                }
+
+            if inferred_context["missing_context"] and action_before != "ask_for_context":
+                action_before = "ask_for_context"
+
+            if action_before == "ask_for_context" or inferred_context["missing_context"]:
+                terminated_by = "ask_for_context"
+                state["_missing_context"] = inferred_context["missing_context"]
+                state["_follow_up_question"] = inferred_context["follow_up_question"]
                 loop_trace.append(
                     {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "finish",
-                        "reason": str(react_action.get("reason") or "observer_finish"),
-                        "observation_summary": observation_summary,
+                        "iteration": iteration,
+                        "current_step": step,
+                        "tool_result_summary": observation_summary,
+                        "decider_action": "ask_for_context",
+                        "decider_reason": reason or inferred_context["reason"],
+                        "action_before": action_before,
+                        "action_after": "ask_for_context",
+                        "replan_reason": "",
+                        "candidate_tools": list(queue),
+                        "selected_tool": None,
+                        "replanned_chain": [],
+                        "guardrail_decision": "accepted",
+                        **_budget_meta(),
+                        "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
                     }
                 )
                 break
 
-            next_tool = str(react_action.get("tool_name") or "").strip()
-            if not next_tool:
+            if action_before == "finish":
+                terminated_by = "finish"
                 loop_trace.append(
                     {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "finish",
-                        "reason": "missing_tool_name",
-                        "observation_summary": observation_summary,
+                        "iteration": iteration,
+                        "current_step": step,
+                        "tool_result_summary": observation_summary,
+                        "decider_action": "finish",
+                        "decider_reason": reason or "observer_finish",
+                        "action_before": action_before,
+                        "action_after": "finish",
+                        "candidate_tools": list(queue),
+                        "selected_tool": None,
+                        "replanned_chain": [],
+                        "guardrail_decision": "accepted",
+                        **_budget_meta(),
+                        "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
                     }
                 )
                 break
 
-            executed_counts: Dict[str, int] = {}
-            for executed_step in trace:
-                executed_counts[executed_step] = executed_counts.get(executed_step, 0) + 1
-            if executed_counts.get(next_tool, 0) >= self.max_step_repeat:
+            if action_before == "switch_tool":
+                tool_name = str(react_action.get("tool_name") or "").strip()
+                prior_queue = list(queue)
+                remaining_tool_set = set(prior_queue)
+                switch_ok = (
+                    tool_name
+                    and tool_name in remaining_tool_set
+                    and tool_name in set(whitelist)
+                    and tool_name in set(registry_names)
+                )
+                replanned_chain_snapshot: List[str] = []
+                if switch_ok:
+                    remainder_after = [tool_name] + [s for s in prior_queue if s != tool_name]
+                    queue[:] = remainder_after
+                    switch_count += 1
+                    strategy_replans_used += 1
+                    rr_guardrail = "accepted"
+                    action_after = "switch_tool"
+                else:
+                    rr_guardrail = "rejected"
+                    action_after = "continue"
+
                 loop_trace.append(
                     {
-                        "step": step,
-                        "action": "finish",
-                        "decision": "stop",
-                        "reason": "max_step_repeat_reached",
-                        "observation_summary": observation_summary,
+                        "iteration": iteration,
+                        "current_step": step,
+                        "tool_result_summary": observation_summary,
+                        "decider_action": action_before if rr_guardrail == "accepted" else "continue",
+                        "decider_reason": reason or "switch_tool",
+                        "action_before": action_before,
+                        "action_after": action_after,
+                        "replan_reason": reason or "",
+                        "candidate_tools": prior_queue,
+                        "selected_tool": tool_name if rr_guardrail == "accepted" else None,
+                        "replanned_chain": replanned_chain_snapshot,
+                        "guardrail_decision": rr_guardrail,
+                        **_budget_meta(),
+                        "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
                     }
                 )
-                break
 
-            if not queue or queue[0] != next_tool:
-                queue.insert(0, next_tool)
-            queue = self._dedupe_over_repeated_steps(queue, trace)
+                spend = 1 if rr_guardrail == "accepted" else 0
+                if spend and strategy_replans_used > replan_budget:
+                    terminated_by = "budget_exhausted"
+                    loop_trace.append(
+                        {
+                            "iteration": iteration,
+                            "current_step": step,
+                            "tool_result_summary": observation_summary,
+                            "decider_action": "finish",
+                            "decider_reason": "budget_exhausted",
+                            "action_before": action_before,
+                            "action_after": "finish",
+                            "guardrail_decision": "fallback",
+                            **_budget_meta(),
+                            "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
+                        }
+                    )
+                    break
+
+                continue
+
+            if action_before == "replan_strategy":
+                proposed = react_action.get("planned_tools") or []
+                if not isinstance(proposed, list):
+                    proposed = []
+                normalized, gd = validator(proposed, trace)
+                normalized_chain = list(normalized)
+                replaced = ""
+                action_after_rs = action_before
+                if gd != "accepted" or not normalized_chain:
+                    normalized_chain_out: List[str] = []
+                    replan_gr = "rejected"
+                    action_after_rs = "continue"
+                else:
+                    queue[:] = normalized_chain
+                    strategy_replans_used += 1
+                    replan_gr = "accepted"
+                    replaced = "queue_replaced"
+                    normalized_chain_out = normalized_chain
+
+                loop_trace.append(
+                    {
+                        "iteration": iteration,
+                        "current_step": step,
+                        "tool_result_summary": observation_summary,
+                        "decider_action": action_before if replan_gr == "accepted" else "continue",
+                        "decider_reason": reason or "replan_strategy",
+                        "action_before": action_before,
+                        "action_after": action_after_rs,
+                        "replan_reason": replaced,
+                        "candidate_tools": list(proposed),
+                        "selected_tool": None,
+                        "replanned_chain": normalized_chain_out if replan_gr == "accepted" else [],
+                        "guardrail_decision": replan_gr,
+                        **_budget_meta(),
+                        "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
+                    }
+                )
+
+                if replan_gr == "accepted" and strategy_replans_used > replan_budget:
+                    terminated_by = "budget_exhausted"
+                    loop_trace.append(
+                        {
+                            "iteration": iteration,
+                            "current_step": step,
+                            "tool_result_summary": observation_summary,
+                            "decider_action": "finish",
+                            "decider_reason": "budget_exhausted",
+                            "guardrail_decision": "fallback",
+                            **_budget_meta(),
+                            "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
+                        }
+                    )
+                    break
+
+                continue
+
+            if consume_budget:
+                strategy_replans_used += 1
+                if strategy_replans_used > replan_budget:
+                    terminated_by = "budget_exhausted"
+                    loop_trace.append(
+                        {
+                            "iteration": iteration,
+                            "current_step": step,
+                            "tool_result_summary": observation_summary,
+                            "decider_action": "finish",
+                            "decider_reason": "budget_exhausted",
+                            "guardrail_decision": "fallback",
+                            **_budget_meta(),
+                            "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
+                        }
+                    )
+                    break
+
             loop_trace.append(
                 {
-                    "step": step,
-                    "action": "tool",
-                    "decision": str(react_action.get("decision") or "continue"),
-                    "reason": str(react_action.get("reason") or ""),
-                    "next_tool": next_tool,
-                    "observation_summary": str(react_action.get("observation_summary") or observation_summary),
+                    "iteration": iteration,
+                    "current_step": step,
+                    "tool_result_summary": str(react_action.get("observation_summary") or observation_summary),
+                    "decider_action": "continue",
+                    "decider_reason": reason or "observer_continue",
+                    "action_before": action_before,
+                    "action_after": "continue",
+                    "candidate_tools": list(queue),
+                    "selected_tool": None,
+                    "replanned_chain": [],
+                    "guardrail_decision": "accepted",
+                    **_budget_meta(),
+                    "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
                 }
             )
+            continue
 
+        state["_loop_control"] = {
+            "executor_mode": "react_strategy",
+            "replan_budget": replan_budget,
+            "strategy_replans_used": strategy_replans_used,
+            "switch_count": switch_count,
+            "replan_count": strategy_replans_used,
+            "step_repeat_count": step_repeat_count,
+            "terminated_by": terminated_by,
+            "last_observation": state.get("last_observation"),
+        }
         return trace, state, loop_trace
 
     def _decide_react_action(
@@ -198,6 +432,7 @@ class PlanExecutor:
         state: Dict[str, Any],
         last_observation: Optional[Dict[str, Any]],
         remaining_steps: List[str],
+        whitelist_executor_tools: List[str],
     ) -> Dict[str, Any]:
         decider = getattr(self.llm_client, "decide_react_action", None)
         if callable(decider):
@@ -207,9 +442,8 @@ class PlanExecutor:
                 state=state,
                 last_observation=last_observation,
                 available_tools=remaining_steps or self.tool_registry.list_tool_names(),
+                executor_whitelist=whitelist_executor_tools,
             )
-            if "decision" not in result:
-                result["decision"] = "continue" if result.get("action") == "tool" else "stop"
             return result
         fallback_decider = getattr(self.llm_client, "decide_next_action", None)
         if callable(fallback_decider):
@@ -223,24 +457,36 @@ class PlanExecutor:
             )
             decision = str(fallback.get("decision") or "continue").strip().lower()
             if decision == "stop":
-                return {"action": "finish", "tool_name": None, "reason": "legacy_stop", "decision": "stop"}
+                return {"action": "finish", "reason": "legacy_stop"}
             if decision == "replan":
-                steps = fallback.get("steps") if isinstance(fallback.get("steps"), list) else []
-                next_tool = str(steps[0]).strip() if steps else None
                 return {
-                    "action": "tool" if next_tool else "finish",
-                    "tool_name": next_tool,
+                    "action": "continue",
                     "reason": str(fallback.get("reason") or "legacy_replan"),
-                    "decision": "replan" if next_tool else "stop",
+                    "consume_budget": True,
                 }
-            next_tool = remaining_steps[0] if remaining_steps else None
             return {
-                "action": "tool" if next_tool else "finish",
-                "tool_name": next_tool,
+                "action": "continue" if remaining_steps else "finish",
                 "reason": str(fallback.get("reason") or "legacy_continue"),
-                "decision": "continue" if next_tool else "stop",
+                "consume_budget": False,
             }
-        return {"action": "finish", "tool_name": None, "reason": "no_decider", "decision": "stop"}
+        return {"action": "finish", "reason": "no_decider"}
+
+    def _infer_missing_context(self, *, step: str, tool_result: Any) -> Dict[str, Any]:
+        if isinstance(tool_result, dict):
+            missing = tool_result.get("missing_context")
+            if isinstance(missing, list) and missing:
+                return {
+                    "missing_context": [str(item) for item in missing if str(item).strip()],
+                    "follow_up_question": str(tool_result.get("follow_up_question") or "").strip() or None,
+                    "reason": "missing_context_from_tool",
+                }
+        if step == "search_jobs" and isinstance(tool_result, list) and not tool_result:
+            return {
+                "missing_context": ["job_detail"],
+                "follow_up_question": "我还缺少明确岗位信息。请提供岗位 JD、岗位链接，或粘贴岗位描述。",
+                "reason": "missing_job_detail",
+            }
+        return {"missing_context": [], "follow_up_question": None, "reason": ""}
 
     def _dedupe_over_repeated_steps(self, queue: List[str], trace: List[str]) -> List[str]:
         if not queue:

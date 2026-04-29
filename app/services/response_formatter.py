@@ -132,7 +132,7 @@ class ToolResponseFormatter:
                 answer_parts.append("推荐行动（下一步）：先补充投递记录和面试反馈。")
             return "".join(answer_parts)
 
-        return "工具执行完成。"
+        return "我已执行相关工具，但当前结果不足以直接给出建议。请补充更具体的目标岗位、简历或岗位描述。"
 
     def _compact_text(self, content: str) -> str:
         compact = re.sub(r"\s+", " ", content).strip()

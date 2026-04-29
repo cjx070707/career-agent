@@ -95,6 +95,29 @@ class LLMClient:
         except (RuntimeError, ValidationError, ValueError, httpx.HTTPError) as exc:
             if isinstance(exc, httpx.TimeoutException):
                 self.last_plan_timed_out = True
+                self.last_plan_source = "fallback"
+                timeout_fallback = self._fallback_plan(
+                    message,
+                    memory_context,
+                    profile,
+                    available_tools,
+                    normalized_user_state,
+                )
+                timeout_fallback.update(
+                    {
+                        "task_type": "fallback",
+                        "reason": "planner timeout fallback",
+                        "steps": [],
+                        "needs_more_context": False,
+                        "missing_context": [],
+                        "follow_up_question": None,
+                    }
+                )
+                return self._validated_plan(
+                    timeout_fallback,
+                    planner_source="fallback",
+                    available_tools=available_tools,
+                )
             self.last_plan_source = "fallback"
             return self._validated_plan(
                 self._fallback_plan(
@@ -266,17 +289,21 @@ class LLMClient:
         state: Dict[str, Any],
         last_observation: Optional[Dict[str, Any]],
         available_tools: List[str],
+        executor_whitelist: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Decide next bounded ReAct action.
+        """Decide next bounded-strategy executor action.
 
-        Returns:
-          {"action": "tool"|"finish", "tool_name": str|None, "reason": str, "observation_summary": str}
+        Actions may include Phase 4B: switch_tool | replan_strategy (see sanitization).
         """
+        whitelist = executor_whitelist if executor_whitelist is not None else available_tools
+
         if not self.is_configured():
-            return self.react_decider.fallback_react_action(
-                state=state,
+            return self._fallback_executor_action(
+                task_type=task_type,
+                last_observation=last_observation,
                 available_tools=available_tools,
                 reason="llm_not_configured",
+                executor_whitelist=whitelist,
             )
 
         request = self._build_react_action_request(
@@ -285,6 +312,7 @@ class LLMClient:
             state=state,
             last_observation=last_observation,
             available_tools=available_tools,
+            executor_whitelist=whitelist,
         )
         try:
             payload = self._post_responses(
@@ -295,15 +323,18 @@ class LLMClient:
             )
             raw = self._extract_chat_completion_text(payload).strip()
             parsed = json.loads(raw) if raw else {}
-            return self.react_decider.sanitize_react_action(
+            return self._sanitize_executor_action(
                 parsed=parsed,
-                available_tools=available_tools,
+                remaining_tools=list(available_tools),
+                whitelist_executor_tools=list(whitelist),
             )
         except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
-            return self.react_decider.fallback_react_action(
-                state=state,
+            return self._fallback_executor_action(
+                task_type=task_type,
+                last_observation=last_observation,
                 available_tools=available_tools,
                 reason="react_fallback_after_error",
+                executor_whitelist=whitelist,
             )
 
     def _generate_plan_with_model(
@@ -798,18 +829,28 @@ class LLMClient:
         state: Dict[str, Any],
         last_observation: Optional[Dict[str, Any]],
         available_tools: List[str],
+        executor_whitelist: List[str],
     ) -> Dict[str, Any]:
         schema = {
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "action": {"type": "string", "enum": ["tool", "finish"]},
-                "tool_name": {"type": ["string", "null"]},
-                "tool_input_hint": {"type": "object", "additionalProperties": True},
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "continue",
+                        "ask_for_context",
+                        "finish",
+                        "switch_tool",
+                        "replan_strategy",
+                    ],
+                },
                 "reason": {"type": "string"},
                 "observation_summary": {"type": "string"},
+                "tool_name": {"type": "string"},
+                "planned_tools": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["action", "tool_name", "tool_input_hint", "reason", "observation_summary"],
+            "required": ["action", "reason", "observation_summary", "tool_name", "planned_tools"],
         }
         request = {
             "model": self._planner_model(),
@@ -817,8 +858,15 @@ class LLMClient:
                 {
                     "role": "system",
                     "content": (
-                        "You are a bounded ReAct controller for a career agent. "
-                        "Choose exactly one next action: call one tool or finish. "
+                        "You control a bounded career-agent executor inside one task."
+                        " Choose exactly one action. "
+                        "continue: follow queued tools. ask_for_context: missing evidence. "
+                        "finish: stop safely. "
+                        "switch_tool: reorder to a different NEXT tool among remaining queued tools "
+                        "(set tool_name). "
+                        "replan_strategy: replace the remainder with a SHORT valid tool subset "
+                        "for THIS task using planned_tools (ToolResolver-aligned). "
+                        "Never invent tools; only use identifiers from executor_tools_whitelist. "
                         "Never output chain-of-thought."
                     ),
                 },
@@ -830,7 +878,8 @@ class LLMClient:
                             "message": message,
                             "state": state,
                             "last_observation": last_observation,
-                            "available_tools": available_tools,
+                            "remaining_queued_tools": available_tools,
+                            "executor_tools_whitelist": executor_whitelist,
                         },
                         ensure_ascii=False,
                     ),
@@ -848,6 +897,108 @@ class LLMClient:
         if settings.planner_disable_thinking:
             self._disable_thinking(request)
         return request
+
+    def _sanitize_executor_action(
+        self,
+        *,
+        parsed: Dict[str, Any],
+        remaining_tools: List[str],
+        whitelist_executor_tools: List[str],
+    ) -> Dict[str, Any]:
+        remaining_set = set(remaining_tools)
+        whitelist_set = set(whitelist_executor_tools)
+        allowed = remaining_set & whitelist_set
+
+        action = str(parsed.get("action") or "continue").strip().lower()
+        tool_name_raw = parsed.get("tool_name")
+        tool_name = str(tool_name_raw).strip() if isinstance(tool_name_raw, str) else ""
+        planned = parsed.get("planned_tools") if isinstance(parsed.get("planned_tools"), list) else []
+
+        legacy_consume_budget = False
+        # Backward compatibility for older prompts/clients.
+        if action == "tool":
+            action = "continue"
+        elif action == "stop":
+            action = "finish"
+        elif action == "replan":
+            action = "continue"
+            legacy_consume_budget = True
+        elif action == "finish":
+            pass
+        elif action == "switch_tool":
+            if tool_name not in allowed or tool_name not in whitelist_set:
+                action = "continue"
+                tool_name = ""
+        elif action == "replan_strategy":
+            if not planned:
+                action = "continue"
+        elif action not in {
+            "continue",
+            "ask_for_context",
+            "finish",
+            "switch_tool",
+            "replan_strategy",
+        }:
+            action = "continue"
+
+        payload: Dict[str, Any] = {
+            "action": action,
+            "reason": str(parsed.get("reason") or "").strip(),
+            "observation_summary": str(parsed.get("observation_summary") or "").strip(),
+            "tool_name": tool_name if action == "switch_tool" else "",
+            "planned_tools": [
+                str(t).strip() for t in planned if isinstance(t, str) and str(t).strip()
+            ]
+            if action == "replan_strategy"
+            else [],
+        }
+        if legacy_consume_budget:
+            payload["consume_budget"] = True
+        return payload
+
+    def _fallback_executor_action(
+        self,
+        *,
+        task_type: str,
+        last_observation: Optional[Dict[str, Any]],
+        available_tools: List[str],
+        reason: str,
+        executor_whitelist: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        _ = executor_whitelist
+        fallback = self.react_decider.fallback_observe_decision(
+            task_type=task_type,
+            current_step=str((last_observation or {}).get("step") or ""),
+            tool_result=(last_observation or {}).get("result"),
+            remaining_steps=available_tools,
+        )
+        decision = str(fallback.get("decision") or "continue").strip().lower()
+        if decision == "stop":
+            action = "finish"
+            return {
+                "action": action,
+                "reason": str(fallback.get("reason") or reason).strip() or reason,
+                "observation_summary": "",
+                "tool_name": "",
+                "planned_tools": [],
+            }
+        # Legacy observer "replan" does not reorder the executor queue — it gates budget only.
+        if decision == "replan":
+            return {
+                "action": "continue",
+                "reason": str(fallback.get("reason") or reason).strip() or reason,
+                "observation_summary": "",
+                "tool_name": "",
+                "planned_tools": [],
+                "consume_budget": True,
+            }
+        return {
+            "action": "continue",
+            "reason": str(fallback.get("reason") or reason).strip() or reason,
+            "observation_summary": "",
+            "tool_name": "",
+            "planned_tools": [],
+        }
 
     def _sanitize_react_action(
         self,

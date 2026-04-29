@@ -87,7 +87,7 @@ class TimeoutFallbackPlanLLMClient(FakeLLMClient):
         self.last_plan_source = "fallback"
         return {
             "task_type": "fallback",
-            "reason": "planner timeout fallback",
+            "reason": "planner unavailable_or_timeout: use deterministic local fallback.",
             "steps": [],
             "needs_more_context": False,
             "missing_context": [],
@@ -115,6 +115,33 @@ def test_agent_service_uses_router_first_for_obvious_job_search(isolated_runtime
         "job_search_summary_source": "model",
         "generate_source": "not_used",
     }
+
+
+def test_agent_service_handles_oral_job_fit_phrase_without_fallback(
+    isolated_runtime,
+) -> None:
+    fake_llm = FakeLLMClient()
+    candidate = CandidateService().create_candidate(
+        name="Oral Fit User",
+        user_id="oral-fit-user",
+    )
+    ResumeService().create_resume(
+        candidate_id=int(candidate["id"]),
+        title="Data Resume",
+        content="Data analyst, SQL, Python, dashboard projects",
+        version="v1",
+    )
+    JobService().create_job(title="Junior Data Analyst")
+    service = AgentService(llm_client=fake_llm)
+
+    result = service.respond("oral-fit-user", "有什么适合我的岗位啊")
+
+    assert fake_llm.called is False
+    assert result.plan is not None
+    assert result.plan.task_type in {"job_match", "job_match_planning", "job_search"}
+    assert result.plan.planner_source == "router"
+    assert result.plan.task_type != "fallback"
+    assert "match_resume_to_jobs" in result.tool_trace
 
 
 def test_agent_service_handles_nihao_via_router_fastpath(isolated_runtime) -> None:
@@ -179,16 +206,12 @@ def test_agent_service_uses_llm_layer_for_gray_query(isolated_runtime) -> None:
 
     result = service.respond("planner-user", "你觉得最近市场怎么样")
 
-    assert fake_llm.called is True
+    # Router miss -> IntentGateway: career-domain uncertain should clarify first.
+    assert fake_llm.called is False
     assert result.plan is not None
-    assert result.plan.task_type == "job_search"
-    assert result.plan.reason == "planned by fake llm"
-    assert result.tool_trace == ["search_jobs"]
-    assert result.llm_trace.model_dump() == {
-        "planner_source": "model",
-        "job_search_summary_source": "model",
-        "generate_source": "not_used",
-    }
+    assert result.plan.task_type == "job_match"
+    assert result.stage == "fallback"
+    assert result.tool_trace == []
 
 
 def test_agent_service_planner_timeout_falls_back_without_long_wait(
@@ -198,15 +221,92 @@ def test_agent_service_planner_timeout_falls_back_without_long_wait(
     service = AgentService(llm_client=timeout_llm)
 
     started = time.perf_counter()
-    result = service.respond("planner-timeout-user", "最近市场怎么看")
+    result = service.respond("planner-timeout-user", "有 Atlassian 的 grad program 吗")
     elapsed = time.perf_counter() - started
 
     assert timeout_llm.called is True
     assert elapsed < 1.0
     assert result.plan is not None
-    assert result.plan.planner_source == "fallback"
     assert result.stage == "fallback"
     assert result.tool_trace == []
+    # Planner failed, so we should recover locally via IntentGateway system fallback.
+    assert any(
+        item.get("resolver") == "intent_gateway" and item.get("fallback_type") == "system"
+        for item in (result.plan.resolver_trace or [])
+    )
+    assert "规划超时" in result.answer or "超时" in result.answer
+
+
+def test_agent_service_router_miss_application_diag_clarify_not_true_fallback(
+    isolated_runtime,
+) -> None:
+    fake_llm = FakeLLMClient()
+    service = AgentService(llm_client=fake_llm)
+
+    # Router miss: "没回音" does not match router's application history
+    # branch (which expects "最近/记录/进展/状态").
+    result = service.respond("gateway-appdiag-user", "我投递没回音")
+
+    assert fake_llm.called is False
+    assert result.plan is not None
+    # Router miss + gateway clarify => recoverable fallback.
+    assert any(
+        item.get("resolver") == "intent_gateway" and item.get("fallback_type") == "recoverable"
+        for item in (result.plan.resolver_trace or [])
+    )
+    assert result.plan.needs_more_context is True
+    assert result.tool_trace == []
+
+
+def test_agent_service_router_miss_job_fit_gateway_route_skips_planner(
+    isolated_runtime,
+) -> None:
+    # Seed candidate + resume so gateway can locally route.
+    candidate = CandidateService().create_candidate(name="Gateway Fit User", user_id="gw-fit-user")
+    ResumeService().create_resume(
+        candidate_id=int(candidate["id"]),
+        title="Backend Resume",
+        content="Python FastAPI SQL backend APIs",
+        version="v1",
+    )
+    JobService().create_job(title="Backend Engineer")
+
+    fake_llm = FakeLLMClient()
+    service = AgentService(llm_client=fake_llm)
+
+    # Ensure router truly misses; gateway should handle the route.
+    from app.routing.intent_router import IntentRouter
+
+    router = IntentRouter()
+    router_plan = router.route(
+        message="该岗位是否值得我投？JD：FastAPI 后端",
+        memory_context=[],
+        profile={},
+        available_tools=[],
+        user_state={"has_candidate": True, "has_resume": True, "has_job_detail": True},
+    )
+    assert router_plan is None
+
+    result = service.respond("gw-fit-user", "该岗位是否值得我投？JD：FastAPI 后端")
+
+    assert fake_llm.called is False
+    assert result.plan is not None
+    assert any(
+        item.get("resolver") == "intent_gateway" and item.get("gateway_action") == "route"
+        for item in (result.plan.resolver_trace or [])
+    )
+
+
+def test_agent_service_appends_runtime_timing_trace(isolated_runtime) -> None:
+    service = AgentService(llm_client=FakeLLMClient())
+    result = service.respond("timing-trace-user", "你好")
+    assert result.plan is not None
+    timing_items = [
+        item for item in result.plan.resolver_trace if item.get("resolver") == "runtime_timing"
+    ]
+    assert timing_items
+    assert "execution_elapsed_ms" in timing_items[-1]
+    assert "total_elapsed_ms" in timing_items[-1]
 
 
 def test_agent_routes_career_direction_to_career_insights(isolated_runtime) -> None:
@@ -279,7 +379,10 @@ def test_agent_service_executes_tool_chain_when_plan_steps_conflict(
     JobService().create_job(title="Python FastAPI Backend Engineer")
     service = AgentService(llm_client=fake_llm)
 
-    result = service.respond("conflicting-steps-user", "你觉得最近市场怎么样")
+    result = service.respond(
+        "conflicting-steps-user",
+        "帮我权衡先改简历还是继续投递，并给两周计划",
+    )
 
     assert fake_llm.called is True
     assert result.plan is not None
@@ -309,7 +412,10 @@ def test_agent_service_executes_tool_chain_when_plan_steps_empty(
     JobService().create_job(title="Data Analyst Intern")
     service = AgentService(llm_client=fake_llm)
 
-    result = service.respond("empty-steps-tool-chain-user", "你觉得最近市场怎么样")
+    result = service.respond(
+        "empty-steps-tool-chain-user",
+        "帮我权衡先改简历还是继续投递，并给两周计划",
+    )
 
     assert fake_llm.called is True
     assert result.plan is not None
@@ -338,7 +444,10 @@ def test_agent_service_keeps_legacy_no_tool_path_when_steps_and_tool_chain_empty
     fake_llm = EmptyStepsNoToolChainLLM()
     service = AgentService(llm_client=fake_llm)
 
-    result = service.respond("legacy-no-tool-user", "你觉得最近市场怎么样")
+    result = service.respond(
+        "legacy-no-tool-user",
+        "帮我权衡先改简历还是继续投递，并给两周计划",
+    )
 
     assert fake_llm.called is True
     assert result.plan is not None
@@ -441,9 +550,12 @@ def test_agent_service_degrades_gracefully_when_plan_step_prerequisites_missing(
 
     result = service.respond("brand-new-user", "随便问一句")
 
-    assert fake_llm.called is True
+    # Router miss -> IntentGateway: message is too unclear for career domain,
+    # so it should return true-fallback without planner escalation.
+    assert fake_llm.called is False
     assert result.plan is not None
-    assert result.plan.task_type == "candidate_profile"
+    assert result.plan.task_type == "fallback"
+    assert result.stage == "fallback"
     assert result.tool_trace == []
     assert isinstance(result.answer, str) and result.answer
 
@@ -590,7 +702,8 @@ def test_agent_job_match_planning_can_replan_loop_steps(isolated_runtime) -> Non
     assert "match_resume_to_jobs" in result.tool_trace
     assert fake_llm.observe_calls, "observe loop should run for job_match_planning"
     assert result.loop_trace
-    assert any(item.get("decision") == "replan" for item in result.loop_trace)
+    assert any(item.get("decider_action") == "continue" for item in result.loop_trace)
+    assert any("skip candidate step" in str(item.get("decider_reason", "")) for item in result.loop_trace)
 
 
 def test_agent_can_disable_observe_loop_via_settings(isolated_runtime) -> None:

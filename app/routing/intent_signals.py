@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from app.routing.message_normalizer import NormalizedMessage, normalize_message
 
 _JOB_SEARCH_ACTION_KEYWORDS_ZH = ("找", "搜", "推荐", "看看有没有")
 _JOB_SEARCH_OBJECT_KEYWORDS_ZH = ("岗位", "职位", "招聘", "实习", "岗")
@@ -34,6 +35,17 @@ _JOB_FIT_MARKERS = (
     "这个岗位",
     "compare this job with my resume",
     "match my resume",
+)
+_JOB_DISCOVERY_FOR_ME_MARKERS = (
+    "有什么适合我的岗位",
+    "有什么适合我的职位",
+    "有什么我能投的岗位",
+    "有什么我能投的职位",
+    "有哪些适合我的岗位",
+    "有哪些适合我的职位",
+    "what jobs fit me",
+    "what roles fit me",
+    "what jobs are suitable for me",
 )
 _CAREER_DIAGNOSIS_MARKERS = (
     "求职画像",
@@ -118,7 +130,10 @@ class IntentSignals:
 
 
 def collect_intent_signals(message: str, lowered_message: str, stripped_message: str) -> IntentSignals:
-    normalized_stripped = stripped_message.lower().replace(" ", "")
+    normalized: NormalizedMessage = normalize_message(message)
+    normalized_stripped = normalized.collapsed
+    lowered_message = normalized.lowered
+    stripped_message = normalized.stripped
     has_job_search_zh = any(kw in message for kw in _JOB_SEARCH_ACTION_KEYWORDS_ZH) and any(
         kw in message for kw in _JOB_SEARCH_OBJECT_KEYWORDS_ZH
     )
@@ -164,6 +179,10 @@ def collect_intent_signals(message: str, lowered_message: str, stripped_message:
             _has_any(message, lowered_message, _INTERVIEW_FEEDBACK_MARKERS) and has_interview_history_signal
         ),
         has_profile_query=_has_any(message, lowered_message, ("资料", "画像", "我是谁")),
-        has_simple_job_match=_has_any(message, lowered_message, ("适合投", "适合哪些岗位")),
+        has_simple_job_match=_has_any(
+            message,
+            lowered_message,
+            ("适合投", "适合哪些岗位", *_JOB_DISCOVERY_FOR_ME_MARKERS),
+        ),
         has_recommend_match=_has_any(message, lowered_message, ("结合我的情况", "推荐适合投", "推荐适合")),
     )

@@ -1,8 +1,11 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from app.resolvers.context_requirement_resolver import ContextRequirementResolution
 from app.schemas.chat import ChatPlan
+
+# Upper bound on executor-visible replanned chains (align with planner/tool chain caps).
+EXECUTOR_MAX_REPLANNED_STEPS = 6
 
 
 @dataclass
@@ -130,6 +133,61 @@ class ToolResolver:
             return ["get_career_insights"], {"get_career_insights"}
 
         return [], set()
+
+    def executor_allowed_tool_order(
+        self,
+        *,
+        plan: Union[ChatPlan, Dict[str, Any]],
+        available_tools: List[str],
+    ) -> List[str]:
+        """Canonically ordered tool names permitted for bounded switch/replan in the executor."""
+        plan_data = self._plan_data(plan)
+        task_type = str(plan_data.get("task_type") or "")
+        domain = str(plan_data.get("domain") or "")
+        action = str(plan_data.get("action") or "")
+        desired, _critical = self._desired_tools(task_type, domain, action)
+        available_set = set(available_tools)
+        return [name for name in desired if name in available_set]
+
+    def normalize_executor_replan_chain(
+        self,
+        *,
+        plan: Union[ChatPlan, Dict[str, Any]],
+        proposed_tools: Sequence[str],
+        available_tools: List[str],
+        executed_trace: List[str],
+    ) -> Tuple[List[str], str]:
+        """Validate + sort `replan_strategy.planned_tools` within current task semantics.
+
+        Returns `(replanned_chain, guardrail_decision)` where guardrail_decision is
+        `accepted` | `rejected`.
+        """
+        allowed_order = self.executor_allowed_tool_order(plan=plan, available_tools=available_tools)
+        if not allowed_order:
+            return [], "rejected"
+        idx = {tool: position for position, tool in enumerate(allowed_order)}
+        allowed_set = set(idx)
+
+        uniq: List[str] = []
+        seen: Set[str] = set()
+        for raw in proposed_tools:
+            if not isinstance(raw, str):
+                continue
+            step = raw.strip()
+            if not step or step not in allowed_set or step in seen:
+                continue
+            seen.add(step)
+            uniq.append(step)
+        uniq.sort(key=lambda tool: idx[tool])
+
+        uniq = uniq[:EXECUTOR_MAX_REPLANNED_STEPS]
+        executed = set(executed_trace)
+
+        remainder = [tool for tool in uniq if tool not in executed]
+
+        if not remainder:
+            return [], "rejected"
+        return remainder, "accepted"
 
     def _trace(self, decision: str, tool_name: Optional[str], reason: str) -> Dict[str, Any]:
         return {
