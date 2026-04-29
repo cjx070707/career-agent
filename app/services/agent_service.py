@@ -6,7 +6,7 @@ from app.llm.client import LLMClient
 from app.env import settings
 from app.resolvers.context_requirement_resolver import ContextRequirementResolver
 from app.resolvers.tool_resolver import ToolResolver
-from app.routing.intent_router import IntentRouter
+from app.routing.llm_intent_classifier import LLMIntentClassifier
 from app.schemas.chat import ChatPlan, ChatSource, LLMTrace
 from app.services.candidate_service import CandidateService
 from app.services.career_event_service import CareerEventService
@@ -19,7 +19,6 @@ from app.services.response_formatter import ToolResponseFormatter
 from app.services.resume_service import ResumeService
 from app.services.tool_payload_builder import ToolPayloadBuilder
 from app.tools.registry import ToolRegistry, build_default_tool_registry
-from app.routing.intent_gateway import IntentGateway
 
 
 @dataclass
@@ -48,13 +47,12 @@ class AgentService:
         retrieval_service: Optional[RetrievalService] = None,
         llm_client: Optional[LLMClient] = None,
         tool_registry: Optional[ToolRegistry] = None,
-        intent_router: Optional[IntentRouter] = None,
     ) -> None:
         self.memory_service = memory_service or MemoryService()
         self.retrieval_service = retrieval_service or RetrievalService()
         self.llm_client = llm_client or LLMClient()
         self.tool_registry = tool_registry or build_default_tool_registry()
-        self.intent_router = intent_router or IntentRouter()
+        self.intent_classifier = LLMIntentClassifier(llm_client=self.llm_client)
         self.context_requirement_resolver = ContextRequirementResolver()
         self.tool_resolver = ToolResolver()
         self.candidate_service = CandidateService()
@@ -72,7 +70,6 @@ class AgentService:
             max_loop_steps=self.MAX_LOOP_STEPS,
             max_step_repeat=self.MAX_STEP_REPEAT,
         )
-        self.intent_gateway = IntentGateway()
         self.career_event_service = CareerEventService(
             retrieval_service=self.retrieval_service,
             llm_client=self.llm_client,
@@ -97,6 +94,10 @@ class AgentService:
             memory_context=[turn.content for turn in recent_turns],
         )
         self._apply_context_resolution(plan, context_resolution)
+        if plan.task_type == "interview_prep" and not self._message_has_role_hint(message):
+            plan.needs_more_context = True
+            plan.missing_context = ["target_role"]
+            plan.follow_up_question = "你想准备哪个目标岗位的面试？请告诉我岗位名称或方向。"
         self._apply_diagnostic_plan(
             plan=plan,
             message=message,
@@ -132,16 +133,7 @@ class AgentService:
         self._apply_tool_resolution(plan, tool_resolution)
 
         if plan.task_type == "fallback" and not plan.steps:
-            fallback_type = None
-            for item in plan.resolver_trace or []:
-                if item.get("resolver") == "intent_gateway":
-                    fallback_type = item.get("fallback_type")
-                    break
-            if fallback_type == "system":
-                answer = plan.follow_up_question or "我目前遇到系统规划超时，先做一个安全下一步：请告诉我你的目标岗位/简历内容，以便继续。"
-            elif fallback_type == "recoverable":
-                answer = plan.follow_up_question or "我还需要更多信息才能继续。请补充目标岗位/简历/岗位 JD 等关键内容。"
-            elif plan.plan_type == "third_party_advice":
+            if plan.plan_type == "third_party_advice" or self._is_third_party_advice_message(message):
                 # Third-party questions (e.g. "my friend wants to become a PM")
                 # need a substantive LLM answer, not a generic capability listing.
                 answer = self.llm_client.generate(
@@ -313,6 +305,12 @@ class AgentService:
             memory_context=[turn.content for turn in recent_turns],
             evidence=[result.title for result in retrieval_results],
         )
+        if plan.task_type in {"resume_analysis", "interview_prep"}:
+            answer = (
+                f"【结论】\n{answer[:120]}\n\n"
+                "【证据】\n当前回答基于用户当轮输入与可检索到的上下文信息生成。\n\n"
+                "【行动建议】\n1. 补充目标岗位与关键要求。\n2. 提供可量化项目结果以便给出更精确建议。"
+            )
 
         self.memory_service.save_turn(user_id, message, answer)
         self._append_runtime_timing_trace(
@@ -384,142 +382,59 @@ class AgentService:
         ]
         available_tools = self.tool_registry.list_tool_names()
         user_state = self._build_user_state(user_id=user_id, message=message)
-        planner_used = False
-        router_started = time.perf_counter()
-        plan_payload = self.intent_router.route(
-            message=message,
-            memory_context=memory_context,
-            profile=profile,
-            available_tools=available_tools,
-            user_state=user_state,
-        )
-        router_elapsed_ms = (time.perf_counter() - router_started) * 1000
-        gateway_decision = None
-        gateway_event = {
-            "resolver": "intent_gateway",
-            "router_hit": plan_payload is not None,
-            "router_reason": "router_hit" if plan_payload is not None else "router_miss",
-            "gateway_domain": None,
-            "gateway_intent": None,
-            "gateway_action": None,
-            "gateway_confidence": None,
-            "planner_called": False,
-            "planner_source": None,
-            "fallback_type": "none",
-        }
-        if plan_payload is None:
-            # Router miss: hand over to IntentGateway.
-            gateway_decision = self.intent_gateway.resolve_after_router_miss(
+
+        fastpath = self._build_fastpath_plan(message=message)
+        if fastpath is not None:
+            plan_payload = fastpath
+        else:
+            plan_payload = self.intent_classifier.classify(
                 message=message,
-                profile=profile,
+                recent_turns=memory_context,
                 user_state=user_state,
-                memory_context=memory_context,
                 available_tools=available_tools,
             )
-            gateway_event.update(
-                {
-                    "gateway_domain": gateway_decision.domain,
-                    "gateway_intent": gateway_decision.intent_cluster,
-                    "gateway_action": gateway_decision.action,
-                    "gateway_confidence": float(gateway_decision.confidence),
-                    "fallback_type": gateway_decision.fallback_type,
-                }
-            )
 
-            if gateway_decision.action in {"route", "clarify", "true_fallback"}:
-                plan_payload = gateway_decision.local_plan_payload or {}
-                plan_payload["planner_source"] = "gateway"
-            elif gateway_decision.action == "escalate_to_planner":
-                planner_used = True
-                gateway_event["planner_called"] = True
-                plan_payload = self.llm_client.generate_plan(
-                    message=message,
-                    memory_context=memory_context,
-                    profile=profile,
-                    available_tools=available_tools,
-                    user_state=user_state,
-                )
-                gateway_event["planner_source"] = getattr(self.llm_client, "last_plan_source", None)
-                # Planner timeout/error should never become true-fallback
-                # inside career domain; recover locally.
-                if (
-                    gateway_decision.domain == "career"
-                    and (
-                        bool(getattr(self.llm_client, "last_plan_timed_out", False))
-                        or getattr(self.llm_client, "last_plan_source", None) == "fallback"
-                    )
-                ):
-                    gateway_event["fallback_type"] = "system"
-                    plan_payload = self._build_system_fallback_plan_for_gateway(
-                        message=message,
-                        intent_cluster=gateway_decision.intent_cluster,
-                    )
-                    plan_payload["planner_source"] = "gateway"
-            else:
-                # Safety: unknown action => keep system safe behavior.
-                plan_payload = self.intent_gateway._build_true_fallback_plan()
-                plan_payload["planner_source"] = "gateway"
-                gateway_event["fallback_type"] = "true"
-        # Ensure `planner_source` is always populated so the /chat contract is
-        # stable even when the payload comes from an older fallback path.
         if not plan_payload.get("planner_source"):
             plan_payload["planner_source"] = self.llm_client.last_plan_source
-        runtime_trace = {
-            "resolver": "planner_runtime",
-            "router_hit": not planner_used,
-            "planner_used": planner_used,
-            "planner_source": plan_payload.get("planner_source"),
-            "planner_elapsed_ms": round(float(getattr(self.llm_client, "last_plan_elapsed_ms", 0.0)), 2),
-            "planner_timeout": bool(getattr(self.llm_client, "last_plan_timed_out", False)),
-            "router_elapsed_ms": round(router_elapsed_ms, 2),
-        }
+        if not plan_payload.get("reason"):
+            plan_payload["reason"] = "classified by llm intent classifier"
         existing_trace = plan_payload.get("resolver_trace", [])
         if not isinstance(existing_trace, list):
             existing_trace = []
-        plan_payload["resolver_trace"] = list(existing_trace) + [gateway_event, runtime_trace]
+        plan_payload["resolver_trace"] = list(existing_trace) + [
+            {
+                "resolver": "intent_classifier",
+                "source": plan_payload.get("planner_source"),
+                "reasoning": getattr(self.intent_classifier, "last_reasoning", ""),
+            }
+        ]
         return ChatPlan.model_validate(plan_payload)
 
-    def _build_system_fallback_plan_for_gateway(
-        self,
-        *,
-        message: str,
-        intent_cluster: str,
-    ) -> Dict[str, Any]:
-        _ = message
-        # System fallback should be executable next-step guidance.
-        if intent_cluster in {"job_match", "job_recommend"}:
-            follow_up = "我这边的规划超时了。为了继续做岗位匹配/推荐，请补充：目标岗位 JD/链接 + 你的简历（或简历内容）。"
-        elif intent_cluster == "resume_analysis":
-            follow_up = "我这边的规划超时了。为了继续做简历分析，请上传或粘贴你的简历内容。"
-        elif intent_cluster == "application_diag":
-            follow_up = "我这边的规划超时了。为了继续投递诊断，请告诉我你的目标岗位方向，以及最近的大致投递/反馈情况（不需要完整列表）。"
-        elif intent_cluster == "interview_prep":
-            follow_up = "我这边的规划超时了。为了继续面试准备，请告诉我目标岗位名称/方向，以及是否已有面试轮次或反馈。"
-        else:
-            follow_up = "我这边的规划超时了。请告诉我你想完成的求职目标：岗位匹配 / 投递诊断 / 面试准备，并补充目标岗位信息。"
+    def _build_fastpath_plan(self, *, message: str) -> Optional[Dict[str, Any]]:
+        stripped = message.strip().lower()
+        if stripped in {"你好", "您好", "hi", "hello", "hey", "nihao"}:
+            return {
+                "task_type": "fallback",
+                "reason": "greeting fastpath",
+                "steps": [],
+                "needs_more_context": False,
+                "missing_context": [],
+                "follow_up_question": None,
+                "planner_source": "router",
+            }
 
-        return {
-            "task_type": "fallback",
-            "reason": "system_fallback: planner_timeout_overridden_by_gateway",
-            "steps": [],
-            "needs_more_context": False,
-            "missing_context": [],
-            "follow_up_question": follow_up,
-            "domain": "conversation",
-            "action": "system_fallback",
-            "planner_source": "gateway",
-            "confidence": 0.6,
-            "plan_type": "direct",
-            "evidence_policy": "system_local_recovery",
-            "stop_criteria": ["system fallback returned"],
-            # Key for AgentService fallback answer branching.
-            "resolver_trace": [
-                {
-                    "resolver": "intent_gateway",
-                    "fallback_type": "system",
-                }
-            ],
-        }
+        capability_markers = ("你会什么", "能做什么", "what can you do", "有什么用")
+        if any(marker in stripped for marker in capability_markers):
+            return {
+                "task_type": "fallback",
+                "reason": "capability help fastpath",
+                "steps": [],
+                "needs_more_context": False,
+                "missing_context": [],
+                "follow_up_question": None,
+                "planner_source": "router",
+            }
+        return None
 
     def _build_user_state(self, *, user_id: str, message: str) -> Dict[str, Any]:
         return {
@@ -533,6 +448,20 @@ class AgentService:
         return any(
             marker in lowered
             for marker in ("jd", "job description", "requirements", "招聘链接", "岗位描述", "职责", "要求")
+        )
+
+    def _message_has_role_hint(self, message: str) -> bool:
+        lowered = message.lower()
+        return any(
+            marker in lowered
+            for marker in ("后端", "前端", "数据", "产品", "backend", "frontend", "data", "pm", "product")
+        )
+
+    def _is_third_party_advice_message(self, message: str) -> bool:
+        lowered = message.lower()
+        return any(
+            marker in message or marker in lowered
+            for marker in ("我朋友", "我同学", "朋友想", "他想", "她想", "my friend", "friend wants")
         )
 
     def _apply_context_resolution(self, plan: ChatPlan, resolution: Any) -> None:
@@ -762,11 +691,12 @@ class AgentService:
 
         strengths_line = "、".join(strengths) if strengths else "你已有的项目经历"
         return (
-            f"面试准备计划（{role}）：\n"
-            f"1. 先用 {strengths_line} 组织一段 90 秒自我介绍，重点讲 1 个最有代表性的项目（背景-动作-结果）。\n"
-            "2. 技术准备分三块：岗位核心知识（按目标岗位 JD）、项目追问（为什么这么做/如何取舍）、"
-            "行为题（协作与复盘）。\n"
-            "3. 本周执行：每天 1 轮模拟问答（30 分钟）+ 1 次复盘，记录薄弱点并在下一轮针对性补齐。"
+            f"【结论】\n你可以按 {role} 面试准备节奏推进，先明确自我介绍主线，再做高频问答演练。\n\n"
+            f"【证据】\n可直接利用你现有的 {strengths_line} 作为回答素材，覆盖项目深挖与行为题场景。\n\n"
+            "【行动建议】\n"
+            "1. 先用现有经历组织 90 秒自我介绍（背景-动作-结果）。\n"
+            "2. 技术准备分三块：岗位核心知识、项目追问、行为题复盘。\n"
+            "3. 本周每天 1 轮 30 分钟模拟问答并记录薄弱点。"
         )
 
     def _extract_sources(self, tool_name: str, tool_result: Any) -> List[ChatSource]:

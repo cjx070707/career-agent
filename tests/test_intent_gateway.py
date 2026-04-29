@@ -1,84 +1,80 @@
-from app.routing.intent_gateway import IntentGateway
+import json
+
+from app.routing.llm_intent_classifier import LLMIntentClassifier
 
 
-def test_gateway_route_resume_analysis() -> None:
-    gateway = IntentGateway()
-    decision = gateway.resolve_after_router_miss(
-        message="总结一下我的简历",
-        profile={},
-        user_state={"has_resume": True, "has_job_detail": False, "has_candidate": True},
-        memory_context=[],
+class FakeClassifierLLM:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def is_configured(self):
+        return True
+
+    def _planner_base_url(self):
+        return "https://example.test"
+
+    def _planner_api_key(self):
+        return "k"
+
+    def _planner_model(self):
+        return "gpt-test"
+
+    def _disable_thinking(self, request):
+        request["thinking"] = {"type": "disabled"}
+
+    def _post_responses(self, *_args, **_kwargs):
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(self.payload, ensure_ascii=False),
+                    }
+                }
+            ]
+        }
+
+    def _extract_chat_completion_text(self, payload):
+        return payload["choices"][0]["message"]["content"]
+
+
+def test_classifier_schema_failure_degrades_to_fallback() -> None:
+    llm = FakeClassifierLLM(
+        {
+            "task_type": "career_insights",
+            # missing required keys triggers schema failure
+        }
+    )
+    classifier = LLMIntentClassifier(llm_client=llm)
+    plan = classifier.classify(
+        message="我该如何提升",
+        recent_turns=[],
+        user_state={"has_resume": True, "has_candidate": True, "has_job_detail": False},
         available_tools=[],
     )
 
-    assert decision.domain == "career"
-    assert decision.intent_cluster == "resume_analysis"
-    assert decision.action == "route"
-    assert decision.fallback_type != "true"
-    assert decision.local_plan_payload is not None
-    assert decision.local_plan_payload["task_type"] == "resume_analysis"
+    assert plan["task_type"] == "fallback"
+    assert plan["planner_source"] == "fallback"
 
 
-def test_gateway_clarify_job_match_missing_job_detail() -> None:
-    gateway = IntentGateway()
-    decision = gateway.resolve_after_router_miss(
-        message="这个岗位适合我吗",
-        profile={},
-        user_state={"has_resume": True, "has_job_detail": False, "has_candidate": True},
-        memory_context=[],
+def test_classifier_non_career_fallback_plan_type_empty() -> None:
+    llm = FakeClassifierLLM(
+        {
+            "task_type": "fallback",
+            "steps": [],
+            "needs_more_context": False,
+            "missing_context": [],
+            "follow_up_question": None,
+            "plan_type": "",
+            "reasoning": "non career",
+        }
+    )
+    classifier = LLMIntentClassifier(llm_client=llm)
+    plan = classifier.classify(
+        message="今天天气怎么样",
+        recent_turns=[],
+        user_state={"has_resume": True, "has_candidate": True, "has_job_detail": False},
         available_tools=[],
     )
 
-    assert decision.domain == "career"
-    assert decision.intent_cluster == "job_match"
-    assert decision.action == "clarify"
-    assert decision.fallback_type == "recoverable"
-
-
-def test_gateway_application_diag_not_true_fallback() -> None:
-    gateway = IntentGateway()
-    decision = gateway.resolve_after_router_miss(
-        message="我投递没进展怎么办",
-        profile={},
-        user_state={"has_resume": False, "has_job_detail": False, "has_candidate": True},
-        memory_context=[],
-        available_tools=[],
-    )
-
-    assert decision.domain == "career"
-    assert decision.intent_cluster == "application_diag"
-    assert decision.action in {"route", "clarify"}
-    assert decision.fallback_type != "true"
-
-
-def test_gateway_route_interview_prep() -> None:
-    gateway = IntentGateway()
-    decision = gateway.resolve_after_router_miss(
-        message="准备数据分析岗面试你要看返回 plan",
-        profile={},
-        user_state={"has_resume": False, "has_job_detail": False, "has_candidate": True},
-        memory_context=[],
-        available_tools=[],
-    )
-
-    assert decision.domain == "career"
-    assert decision.intent_cluster == "interview_prep"
-    assert decision.action == "route"
-    assert decision.local_plan_payload is not None
-    assert decision.local_plan_payload["task_type"] == "interview_prep"
-
-
-def test_gateway_true_fallback_non_career() -> None:
-    gateway = IntentGateway()
-    decision = gateway.resolve_after_router_miss(
-        message="天气怎么样",
-        profile={},
-        user_state={"has_resume": False, "has_job_detail": False, "has_candidate": True},
-        memory_context=[],
-        available_tools=[],
-    )
-
-    assert decision.domain == "non_career"
-    assert decision.action == "true_fallback"
-    assert decision.fallback_type == "true"
-
+    assert plan["task_type"] == "fallback"
+    assert plan["plan_type"] == ""

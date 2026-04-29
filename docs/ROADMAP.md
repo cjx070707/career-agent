@@ -27,7 +27,7 @@
 
 ---
 
-## Phase A｜LLM Intent Classifier（P0，优先级最高）
+## Phase A｜LLM Intent Classifier ✅ 已完成（2026-04-29）
 
 **目标**：用一次 LLM 结构化输出调用替代 IntentRouter + IntentGateway + LLM Planner 三层规则树。
 
@@ -61,7 +61,7 @@
 - [ ] "我该如何提升" → task_type=career_insights，不超时
 - [ ] 所有 38 条 intent_router 单元测试改写为 Classifier 测试，通过率 ≥ 95%
 
-**估计工程量**：3-4 天
+**验收结果**：7/7 multi-turn eval passed，6 个核心 case 行为符合预期。
 
 ---
 
