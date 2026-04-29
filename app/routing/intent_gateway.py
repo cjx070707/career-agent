@@ -27,7 +27,7 @@ _APPLICATION_DIAG_STAGNATION_MARKERS = (
 
 _JOB_DISCOVERY_MARKERS = ("grad", "grad program", "program", "实习", "internship", "岗位", "职位", "招聘", "job", "jobs", "role")
 
-_RESUME_IMPROVE_MARKERS = ("优化", "改进", "修改", "润色", "提升", "完善", "tailor", "optimize")
+_RESUME_IMPROVE_MARKERS = ("优化", "改进", "修改", "润色", "提升", "完善", "tailor", "optimize", "更强", "加强", "strengthen", "improve")
 _RESUME_DIAG_MARKERS = ("问题", "缺点", "不足", "哪里不好", "怎么改", "不匹配", "不合适", "diagnose", "weakness")
 _RESUME_SUMMARY_MARKERS = ("总结", "概括", "亮点", "summary", "summarize", "highlight", "总结一下", "summary my resume")
 
@@ -533,6 +533,16 @@ class IntentGateway:
         return has_resume and (has_summary or has_diag or has_improve)
 
     def _looks_like_job_fit(self, message: str, lowered: str) -> bool:
+        # Job-discovery queries ("有什么岗位适合我?") look like fit but are
+        # actually recommendation requests — they should NOT be treated as
+        # fit-compare (which requires a specific JD). Exclude them.
+        is_discovery_query = any(
+            marker in message
+            for marker in ("有什么岗位", "有哪些岗位", "有什么职位", "有哪些职位",
+                           "什么岗位适合", "哪些岗位适合", "什么职位适合", "哪些职位适合")
+        )
+        if is_discovery_query:
+            return False
         return (
             ("岗位" in message or "职位" in message or "jd" in lowered or "岗位描述" in message)
             and any(mk in lowered for mk in ("适合", "匹配", "能投", "值得投", "值得我投", "compare", "不匹配", "值不值得"))

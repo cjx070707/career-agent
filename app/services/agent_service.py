@@ -141,6 +141,14 @@ class AgentService:
                 answer = plan.follow_up_question or "我目前遇到系统规划超时，先做一个安全下一步：请告诉我你的目标岗位/简历内容，以便继续。"
             elif fallback_type == "recoverable":
                 answer = plan.follow_up_question or "我还需要更多信息才能继续。请补充目标岗位/简历/岗位 JD 等关键内容。"
+            elif plan.plan_type == "third_party_advice":
+                # Third-party questions (e.g. "my friend wants to become a PM")
+                # need a substantive LLM answer, not a generic capability listing.
+                answer = self.llm_client.generate(
+                    message=message,
+                    memory_context=[turn.content for turn in recent_turns],
+                    evidence=[],
+                )
             else:
                 answer = self._format_router_fallback_answer(message)
             self.memory_service.save_turn(user_id, message, answer)

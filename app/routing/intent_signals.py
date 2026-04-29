@@ -21,6 +21,19 @@ _RESUME_REVIEW_MARKERS = (
     "how is my resume",
     "review my cv",
 )
+_RESUME_IMPROVE_SIGNAL_MARKERS = (
+    # Improvement / strengthening intent combined with resume
+    "怎么更强",
+    "如何更强",
+    "更有竞争力",
+    "更强一点",
+    "怎么加强",
+    "如何加强",
+    "make my resume stronger",
+    "strengthen my resume",
+    "improve my resume",
+    "make my resume better",
+)
 _JOB_FIT_MARKERS = (
     "适不适合我",
     "适合我吗",
@@ -37,12 +50,23 @@ _JOB_FIT_MARKERS = (
     "match my resume",
 )
 _JOB_DISCOVERY_FOR_ME_MARKERS = (
+    # Standard word order
     "有什么适合我的岗位",
     "有什么适合我的职位",
     "有什么我能投的岗位",
     "有什么我能投的职位",
     "有哪些适合我的岗位",
     "有哪些适合我的职位",
+    # Reversed word order: 岗位/职位 before 适合我
+    "有什么岗位适合我",
+    "有哪些岗位适合我",
+    "哪些岗位适合我",
+    "什么岗位适合我",
+    "有什么职位适合我",
+    "有哪些职位适合我",
+    "哪些职位适合我",
+    "什么职位适合我",
+    # English
     "what jobs fit me",
     "what roles fit me",
     "what jobs are suitable for me",
@@ -58,6 +82,10 @@ _RECOMMEND_MATCH_MARKERS = (
     "推荐我投",
     "based on my background",
     "best jobs for me",
+    # Follow-up confirmation: "just match with current platform"
+    "匹配当前",
+    "匹配现有",
+    "匹配平台",
 )
 _CAREER_DIAGNOSIS_MARKERS = (
     "求职画像",
@@ -85,6 +113,15 @@ _NEXT_STEP_MARKERS = (
     "计划",
     "一周计划",
     "两周计划",
+    # Improvement / growth intent
+    "如何提升",
+    "怎么提升",
+    "如何改进",
+    "怎么改进",
+    "如何进步",
+    "怎么进步",
+    "how to improve",
+    "how to get better",
 )
 _CAREER_CONTEXT_MARKERS = (
     "投递",
@@ -163,6 +200,7 @@ def collect_intent_signals(message: str, lowered_message: str, stripped_message:
     has_resume_signal = _has_any(message, lowered_message, _RESUME_MARKERS)
     has_summary_signal = _has_any(message, lowered_message, _RESUME_SUMMARY_MARKERS)
     has_review_signal = _has_any(message, lowered_message, _RESUME_REVIEW_MARKERS)
+    has_improve_signal = _has_any(message, lowered_message, _RESUME_IMPROVE_SIGNAL_MARKERS)
     has_interview_signal = _has_any(message, lowered_message, _INTERVIEW_MARKERS)
     has_interview_history_signal = _has_any(message, lowered_message, _INTERVIEW_HISTORY_MARKERS)
     has_strategy_signal = _has_any(message, lowered_message, _STRATEGY_MARKERS)
@@ -180,7 +218,7 @@ def collect_intent_signals(message: str, lowered_message: str, stripped_message:
         has_capability_help=_has_any(message, lowered_message, _CAPABILITY_HELP_MARKERS),
         is_third_party=_has_any(message, lowered_message, _THIRD_PARTY_MARKERS),
         has_resume_presence_query=_has_any(message, lowered_message, _RESUME_PRESENCE_MARKERS),
-        has_resume_summary=has_resume_signal and (has_summary_signal or has_review_signal),
+        has_resume_summary=has_resume_signal and (has_summary_signal or has_review_signal or has_improve_signal),
         has_job_search=has_job_search,
         has_compound_match=_has_any(message, lowered_message, _COMPOUND_MATCH_MARKERS),
         has_job_fit=_has_any(message, lowered_message, _JOB_FIT_MARKERS),

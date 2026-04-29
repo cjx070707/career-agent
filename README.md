@@ -15,12 +15,16 @@ Completed phases:
 - **Phase 1.5**: aligned `IntentRouter` output with the structured plan fields used by the agent pipeline.
 - **Phase 2A**: added `ContextRequirementResolver` and `ToolResolver`, with minimal `AgentService` integration.
 - **Phase 3A**: added a deterministic rule-based `CareerDiagnosisEngine` behind `get_career_insights`.
+- **Phase 4 (executor machinery)**: `PlanExecutor.execute_react_loop` enforces `MAX_REPLANS` and supports `switch_tool` / `replan_strategy` / `ask_for_context`, with full per-iteration `loop_trace` (`decider_action`, `action_before`/`action_after`, `replan_reason`, `candidate_tools`, `selected_tool`, `replanned_chain`, `guardrail_decision`, `strategy_replans_used`, `budget_remaining`) and `terminated_by` covering `plan_exhausted` / `finish` / `ask_for_context` / `budget_exhausted` / `max_repeat_guard`.
+
+Partially implemented:
+
+- **Phase 3B (LLM-assisted diagnostic planner)**: `CareerDiagnosticPlanner` produces hypotheses + `evidence_to_collect` and is wired into the `career_insights` path via a `diagnostic_plan` trace; dynamic hypothesis re-prioritization on observations is not yet done.
+- **Phase 4 (task-type adoption)**: machinery is in place, but whether each `task_type` actually exercises strategy-level replan (vs. a single-tool chain) is verified case-by-case — see `docs/superpowers/plans/2026-04-29-multi-turn-eval-probe.md`.
 
 Not yet implemented:
 
-- Phase 3B LLM-assisted diagnostic planner
-- Phase 4 ReAct planning upgrades
-- Phase 5 structured reports and frontend cards
+- Phase 5 structured reports and unified `结论/证据/行动` output across all task types (today only `resume_analysis.improve` and `interview_prep` have specialized formatters).
 
 ## Run
 

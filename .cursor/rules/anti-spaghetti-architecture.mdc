@@ -1,0 +1,23 @@
+---
+description: Keep codebase modular and prevent spaghetti growth
+alwaysApply: true
+---
+
+# Anti-Spaghetti Guardrails
+
+Always enforce these defaults unless the user explicitly overrides:
+
+- Keep module boundaries clear: `routing` for intent/plan, `services` for business orchestration, `llm` for model I/O and validation, `tools` for tool adapters.
+- Avoid god files: when a file grows beyond ~400 lines or mixes 3+ responsibilities, split it before adding more logic.
+- Prefer extraction over duplication: if logic is repeated in two places, create a shared helper/module and replace both call sites.
+- Preserve execution chain clarity: `API -> Router/Planner -> Executor -> Tools -> Response`.
+- Do not add compatibility shims unless user asks; migrate imports to canonical modules directly.
+- Before adding a new file, check if an existing focused module can own the change.
+- For every substantial refactor, run full tests and keep behavior stable unless user explicitly allows contract changes.
+
+## Refactor Checklist
+
+- [ ] No new cross-layer imports that violate boundaries
+- [ ] No repeated fallback/branch logic left in parallel modules
+- [ ] Tests cover changed behavior and still pass
+- [ ] Docs updated only when behavior/contract changes

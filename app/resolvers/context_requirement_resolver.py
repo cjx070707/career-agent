@@ -159,7 +159,10 @@ class ContextRequirementResolver:
         memory_context: List[str],
     ) -> bool:
         if item == "resume":
-            return bool(user_state.get("has_resume"))
+            # Prefer the DB flag; fall back to detecting inline resume text in
+            # the current message so that users who paste resume content directly
+            # are not repeatedly asked to upload a file.
+            return bool(user_state.get("has_resume")) or self._message_has_inline_resume(message)
         if item == "job_detail":
             return bool(user_state.get("has_job_detail")) or self._message_has_job_detail(message)
         if item == "job_query":
@@ -171,6 +174,36 @@ class ContextRequirementResolver:
         if item == "location":
             return self._has_location(message, profile)
         return bool(user_state.get(f"has_{item}") or profile.get(item))
+
+    def _message_has_inline_resume(self, message: str) -> bool:
+        """True when the user appears to have pasted resume content inline.
+
+        Two signals, either is sufficient:
+        1. Explicit introduction phrase — high-confidence handoff markers.
+        2. Long message (≥80 chars) with ≥2 structural resume keywords — catches
+           paste-dumps that skip the intro phrase.
+        """
+        lowered = message.lower()
+        intro_phrases = (
+            "这是我的简历",
+            "以下是我的简历",
+            "我的简历如下",
+            "简历内容如下",
+            "my resume:",
+            "here is my resume",
+            "here's my resume",
+        )
+        if any(phrase in message or phrase in lowered for phrase in intro_phrases):
+            return True
+        if len(message) >= 80:
+            structural_keywords = (
+                "技能", "经历", "项目", "实习", "教育", "工作",
+                "skills", "experience", "project", "intern", "education",
+            )
+            hits = sum(1 for kw in structural_keywords if kw in message or kw in lowered)
+            if hits >= 2:
+                return True
+        return False
 
     def _message_has_job_detail(self, message: str) -> bool:
         lowered = message.lower()
