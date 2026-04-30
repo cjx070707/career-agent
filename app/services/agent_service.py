@@ -93,10 +93,6 @@ class AgentService:
             memory_context=[turn.content for turn in recent_turns],
         )
         self._apply_context_resolution(plan, context_resolution)
-        if plan.task_type == "interview_prep" and not self._message_has_role_hint(message):
-            plan.needs_more_context = True
-            plan.missing_context = ["target_role"]
-            plan.follow_up_question = "你想准备哪个目标岗位的面试？请告诉我岗位名称或方向。"
         if plan.needs_more_context:
             answer = plan.follow_up_question or "我还需要更多信息，才能继续。"
             self.memory_service.save_turn(user_id, message, answer)
@@ -125,16 +121,11 @@ class AgentService:
         self._apply_tool_resolution(plan, tool_resolution)
 
         if plan.task_type == "fallback" and not plan.steps:
-            if plan.plan_type == "third_party_advice" or self._is_third_party_advice_message(message):
-                # Third-party questions (e.g. "my friend wants to become a PM")
-                # need a substantive LLM answer, not a generic capability listing.
-                answer = self.llm_client.generate(
-                    message=message,
-                    memory_context=[turn.content for turn in recent_turns],
-                    evidence=[],
-                )
-            else:
-                answer = self._format_router_fallback_answer(message)
+            answer = self.llm_client.generate(
+                message=message,
+                memory_context=self._build_generation_memory_context(recent_turns),
+                evidence=[],
+            )
             self.memory_service.save_turn(user_id, message, answer)
             self._append_runtime_timing_trace(
                 plan=plan,
@@ -249,27 +240,12 @@ class AgentService:
             )
 
         if tool_trace:
-            if (
-                plan.task_type == "resume_analysis"
-                and final_tool_name == "get_resume_by_id"
-                and self._is_resume_optimization_request(message)
-            ):
-                answer = self.response_formatter.format_resume_optimization_answer(final_result, message)
-            elif plan.task_type == "interview_prep":
-                answer = self._format_interview_prep_answer(
-                    message=message,
-                    profile=profile,
-                    execution_state=execution_state,
-                )
-            elif final_tool_name == "search_jobs":
-                jobs = final_result if isinstance(final_result, list) else []
-                answer = self.llm_client.summarize_job_search(
-                    message=message,
-                    memory_context=[turn.content for turn in recent_turns],
-                    jobs=jobs,
-                )
-            else:
-                answer = self.response_formatter.format_tool_answer(final_tool_name, final_result)
+            evidence = self.response_formatter.build_tool_evidence(final_tool_name, final_result)
+            answer = self.llm_client.generate(
+                message=message,
+                memory_context=self._build_generation_memory_context(recent_turns),
+                evidence=evidence,
+            )
             sources = self.response_formatter.extract_sources(final_tool_name, final_result)
             self.memory_service.save_turn(user_id, message, answer)
             self._append_runtime_timing_trace(
@@ -294,15 +270,9 @@ class AgentService:
             retrieval_results = self.retrieval_service.search(message)
         answer = self.llm_client.generate(
             message=message,
-            memory_context=[turn.content for turn in recent_turns],
+            memory_context=self._build_generation_memory_context(recent_turns),
             evidence=[result.title for result in retrieval_results],
         )
-        if plan.task_type in {"resume_analysis", "interview_prep"}:
-            answer = (
-                f"【结论】\n{answer[:120]}\n\n"
-                "【证据】\n当前回答基于用户当轮输入与可检索到的上下文信息生成。\n\n"
-                "【行动建议】\n1. 补充目标岗位与关键要求。\n2. 提供可量化项目结果以便给出更精确建议。"
-            )
 
         self.memory_service.save_turn(user_id, message, answer)
         self._append_runtime_timing_trace(
@@ -428,6 +398,24 @@ class AgentService:
             }
         return None
 
+    def _build_generation_memory_context(self, recent_turns: List[Any]) -> List[str]:
+        # Keep role order explicit for chat-completion style multi-turn prompts.
+        context: List[str] = []
+        first_role = ""
+        for turn in recent_turns:
+            role = str(getattr(turn, "role", "")).strip().lower()
+            content = str(getattr(turn, "content", "")).strip()
+            if not content:
+                continue
+            if not first_role and role in {"user", "assistant"}:
+                first_role = role
+            context.append(content)
+        # If truncation cut the conversation at an assistant turn, drop it so
+        # odd/even role restoration in LLM client starts from a user turn.
+        if context and first_role == "assistant":
+            context = context[1:]
+        return context
+
     def _build_user_state(self, *, user_id: str, message: str) -> Dict[str, Any]:
         return {
             "has_candidate": self.candidate_service.has_candidate(user_id),
@@ -440,20 +428,6 @@ class AgentService:
         return any(
             marker in lowered
             for marker in ("jd", "job description", "requirements", "招聘链接", "岗位描述", "职责", "要求")
-        )
-
-    def _message_has_role_hint(self, message: str) -> bool:
-        lowered = message.lower()
-        return any(
-            marker in lowered
-            for marker in ("后端", "前端", "数据", "产品", "backend", "frontend", "data", "pm", "product")
-        )
-
-    def _is_third_party_advice_message(self, message: str) -> bool:
-        lowered = message.lower()
-        return any(
-            marker in message or marker in lowered
-            for marker in ("我朋友", "我同学", "朋友想", "他想", "她想", "my friend", "friend wants")
         )
 
     def _apply_context_resolution(self, plan: ChatPlan, resolution: Any) -> None:
@@ -635,61 +609,3 @@ class AgentService:
             tool_name=tool_name,
             state=state,
         )
-
-    def _format_tool_answer(self, tool_name: str, tool_result: Any) -> str:
-        return self.response_formatter.format_tool_answer(tool_name, tool_result)
-
-    def _is_resume_optimization_request(self, message: str) -> bool:
-        lowered = message.lower()
-        markers = ("优化简历", "改简历", "润色简历", "简历怎么改", "简历优化", "optimize resume", "improve resume")
-        return any(marker in message or marker in lowered for marker in markers)
-
-    def _format_interview_prep_answer(
-        self,
-        *,
-        message: str,
-        profile: Dict[str, Any],
-        execution_state: Dict[str, Any],
-    ) -> str:
-        resume_data = execution_state.get("get_resume_by_id")
-        resume_text = ""
-        if isinstance(resume_data, dict):
-            resume_text = str(resume_data.get("content", "")).lower()
-
-        role = str(profile.get("target_role_preference") or "").strip()
-        if not role:
-            lowered = message.lower()
-            if "数据分析" in message or "data analyst" in lowered:
-                role = "数据分析"
-            elif "后端" in message or "backend" in lowered:
-                role = "后端开发"
-            elif "前端" in message or "frontend" in lowered:
-                role = "前端开发"
-            else:
-                role = "目标岗位"
-
-        strengths: List[str] = []
-        if "sql" in resume_text:
-            strengths.append("SQL")
-        if "python" in resume_text:
-            strengths.append("Python")
-        if "fastapi" in resume_text:
-            strengths.append("FastAPI")
-        if "tableau" in resume_text:
-            strengths.append("Tableau")
-        if "机器学习" in resume_text or "machine learning" in resume_text:
-            strengths.append("机器学习基础")
-        strengths = strengths[:3]
-
-        strengths_line = "、".join(strengths) if strengths else "你已有的项目经历"
-        return (
-            f"【结论】\n你可以按 {role} 面试准备节奏推进，先明确自我介绍主线，再做高频问答演练。\n\n"
-            f"【证据】\n可直接利用你现有的 {strengths_line} 作为回答素材，覆盖项目深挖与行为题场景。\n\n"
-            "【行动建议】\n"
-            "1. 先用现有经历组织 90 秒自我介绍（背景-动作-结果）。\n"
-            "2. 技术准备分三块：岗位核心知识、项目追问、行为题复盘。\n"
-            "3. 本周每天 1 轮 30 分钟模拟问答并记录薄弱点。"
-        )
-
-    def _extract_sources(self, tool_name: str, tool_result: Any) -> List[ChatSource]:
-        return self.response_formatter.extract_sources(tool_name, tool_result)

@@ -14,169 +14,59 @@ class ToolResponseFormatter:
         "job_targeting": "岗位定位偏差",
     }
 
-    def format_tool_answer(self, tool_name: str, tool_result: Any) -> str:
-        if tool_name == "get_candidate_profile":
-            return f"我查到了你的候选人资料，当前姓名是 {tool_result['name']}。"
-
-        if tool_name == "search_jobs":
-            if not tool_result:
-                return "我暂时没有找到相关岗位。"
-            titles = ", ".join(result["title"] for result in tool_result[:3])
-            return f"我找到了这些相关岗位：{titles}。"
-
-        if tool_name == "match_resume_to_jobs":
-            matches = tool_result.get("matches", [])
-            if not matches:
-                return "我暂时没有找到和这份简历高度匹配的岗位。"
-            top_match = matches[0]
-            answer_parts = [
-                f"基于你的简历，优先推荐 {top_match['job_title']}，"
-                f"匹配分数约为 {top_match['match_score']}。"
-            ]
-            rationale = str(top_match.get("rationale", "")).strip()
-            if rationale:
-                answer_parts.append(f"匹配理由：{rationale}。")
-            if len(matches) > 1:
-                follow_ups = "、".join(match["job_title"] for match in matches[1:3])
-                answer_parts.append(f"也可以继续关注 {follow_ups}。")
-            return "".join(answer_parts)
-
-        if tool_name == "get_resume_by_id":
-            resume = tool_result if isinstance(tool_result, dict) else {}
-            content = str(resume.get("content", "")).strip()
-            if not content:
-                return "我没有读取到可总结的简历内容，请上传或粘贴简历。"
-
-            raw_title = str(resume.get("title", "")).strip()
-            title = raw_title or "未命名简历"
-            if "resume parsed from image" in title.lower():
-                title = "已上传简历"
-            normalized = self._normalize_resume_text(content)
-            compact = self._compact_text(normalized)
-            role_hint = self._infer_role_hint(compact)
-            keywords = self._extract_resume_keywords(compact)
-            highlights = self._extract_highlights(normalized)
-            risks = self._extract_resume_risks(compact)
-            actions = self._next_actions_from_risks(risks)
-
-            summary_line = self._resume_summary_line(normalized)
-            if not summary_line:
-                summary_line = "已读取到简历文本，建议补充更完整的经历与成果描述。"
-
-            answer_parts = [
-                f"简历总结：{summary_line}",
-                f"整体定位：{role_hint}",
-                "核心技能/关键词：" + ("、".join(keywords) if keywords else "暂未识别出明确技能关键词"),
-                "经历或项目亮点：" + ("；".join(highlights) if highlights else "当前文本中可提取亮点较少"),
-                "风险/缺口：" + ("；".join(risks) if risks else "未发现明显结构性缺口"),
-                "下一步优化建议：" + ("；".join(actions) if actions else "保持当前结构，补充量化成果即可"),
-                f"（基于简历：{title}）",
-            ]
-            return "\n".join(answer_parts)
-
-        if tool_name == "get_applications":
-            rows = tool_result if isinstance(tool_result, list) else []
-            if not rows:
-                return "你最近还没有投递记录。"
-            summary = []
-            for row in rows[:3]:
-                company = str(row.get("company", "")).strip()
-                title = str(row.get("job_title", "")).strip()
-                status = str(row.get("status", "")).strip()
-                summary.append(f"{company} - {title}（{status}）")
-            return "你最近的投递包括：" + "；".join(summary) + "。"
-
-        if tool_name == "get_interview_feedback":
-            rows = tool_result if isinstance(tool_result, list) else []
-            if not rows:
-                return "你最近还没有面试反馈记录。"
-            summary = []
-            for row in rows[:3]:
-                company = str(row.get("company", "")).strip()
-                title = str(row.get("job_title", "")).strip()
-                round_name = str(row.get("interview_round", "")).strip()
-                result = str(row.get("result", "")).strip()
-                summary.append(f"{company} - {title}（{round_name}/{result}）")
-            return "你最近的面试反馈包括：" + "；".join(summary) + "。"
-
-        if tool_name == "get_career_insights":
-            data = tool_result if isinstance(tool_result, dict) else {}
-            profile = data.get("profile", {})
-            applications = data.get("application_summary", {})
-            interviews = data.get("interview_summary", {})
-            strengths = data.get("strengths", [])
-            risk_areas = data.get("risk_areas", [])
-            next_actions = data.get("next_actions", data.get("suggestions", []))
-            diagnosis = data.get("diagnosis", {}) if isinstance(data.get("diagnosis", {}), dict) else {}
-
-            role = str(profile.get("target_role_preference", "")).strip() or "暂未明确"
-            app_total = int(applications.get("total", 0) or 0)
-            interview_total = int(interviews.get("total", 0) or 0)
-            answer_parts = [
-                f"当前状态：目标方向是 {role}，",
-                f"最近有 {app_total} 条投递记录、{interview_total} 条面试反馈。",
-            ]
-            if strengths:
-                answer_parts.append("已有优势：" + "；".join(str(item) for item in strengths[:2]) + "。")
-            if risk_areas:
-                answer_parts.append("主要风险：" + "；".join(str(item) for item in risk_areas[:2]) + "。")
-            feedback_highlights = interviews.get("feedback_highlights", [])
-            if feedback_highlights:
-                answer_parts.append("面试反馈里最需要关注的是：" + "；".join(feedback_highlights[:2]) + "。")
-            diagnosis_type = str(diagnosis.get("bottleneck_type", "")).strip()
-            diagnosis_summary = str(diagnosis.get("diagnosis_summary", "")).strip()
-            if diagnosis_type and diagnosis_summary:
-                diagnosis_label = self.DIAGNOSIS_LABELS.get(diagnosis_type, diagnosis_type)
-                answer_parts.append(
-                    f"初步诊断：当前主要瓶颈可能是 {diagnosis_label}，原因是 {diagnosis_summary}。"
+    def build_tool_evidence(self, tool_name: str, tool_result: Any) -> List[str]:
+        evidence: List[str] = [f"tool={tool_name}"]
+        if tool_name == "search_jobs" and isinstance(tool_result, list):
+            for row in tool_result[:5]:
+                evidence.append(
+                    "job: {title} | company={company} | location={location} | snippet={snippet}".format(
+                        title=str(row.get("title") or ""),
+                        company=str(row.get("company") or ""),
+                        location=str(row.get("location") or ""),
+                        snippet=str(row.get("reason") or row.get("snippet") or ""),
+                    )
                 )
-            if next_actions:
-                answer_parts.append("推荐行动（下一步）：" + "；".join(str(item) for item in next_actions[:2]) + "。")
-            elif not app_total and not interview_total:
-                answer_parts.append("推荐行动（下一步）：先补充投递记录和面试反馈。")
-            return "".join(answer_parts)
+            return evidence
+        if tool_name == "match_resume_to_jobs" and isinstance(tool_result, dict):
+            for row in (tool_result.get("matches") or [])[:5]:
+                evidence.append(
+                    "match: {title} | score={score} | rationale={rationale}".format(
+                        title=str(row.get("job_title") or ""),
+                        score=str(row.get("match_score") or ""),
+                        rationale=str(row.get("rationale") or ""),
+                    )
+                )
+            return evidence
+        if tool_name == "get_career_insights" and isinstance(tool_result, dict):
+            profile = tool_result.get("profile") or {}
+            app = tool_result.get("application_summary") or {}
+            interview = tool_result.get("interview_summary") or {}
+            evidence.append(f"target_role={profile.get('target_role_preference') or ''}")
+            evidence.append(f"applications_total={app.get('total') or 0}")
+            evidence.append(f"interviews_total={interview.get('total') or 0}")
+            for item in (tool_result.get('next_actions') or tool_result.get('suggestions') or [])[:3]:
+                evidence.append(f"suggestion={item}")
+            return evidence
+        if isinstance(tool_result, list):
+            for item in tool_result[:5]:
+                evidence.append(str(item))
+            return evidence
+        if isinstance(tool_result, dict):
+            for k, v in list(tool_result.items())[:12]:
+                evidence.append(f"{k}={v}")
+            return evidence
+        evidence.append(str(tool_result))
+        return evidence
 
-        return "我已执行相关工具，但当前结果不足以直接给出建议。请补充更具体的目标岗位、简历或岗位描述。"
-
-    def format_resume_optimization_answer(self, tool_result: Any, message: str) -> str:
-        resume = tool_result if isinstance(tool_result, dict) else {}
-        content = str(resume.get("content", "")).strip()
-        if not content:
-            return "我没有读取到可优化的简历内容，请上传或粘贴简历。"
-
-        normalized = self._normalize_resume_text(content)
-        compact = self._compact_text(normalized)
-        role_hint = self._infer_role_hint(compact)
-        keywords = self._extract_resume_keywords(compact)
-        risks = self._extract_resume_risks(compact)
-
-        top_risks = risks[:3]
-        if not top_risks:
-            top_risks = ["经历描述还可以更聚焦目标岗位，建议补充量化成果和项目影响"]
-
-        rewrite_suggestions: List[str] = []
-        if any("量化成果" in item for item in top_risks):
-            rewrite_suggestions.append("将“负责接口开发”改为“负责 8 个核心接口开发，查询耗时下降 35%”。")
-        if any("项目信息不足" in item for item in top_risks):
-            rewrite_suggestions.append("每个项目用“问题-动作-结果”三行写法，至少写出一个业务结果。")
-        if any("经历描述偏少" in item for item in top_risks):
-            rewrite_suggestions.append("补 1 段与目标岗位最相关的实习/实践经历，并写清技术栈和成果。")
-        if not rewrite_suggestions:
-            rewrite_suggestions.append("把最相关的项目放在最前面，并补充可量化结果（效率、规模、转化等）。")
-
-        keyword_line = "、".join(keywords[:5]) if keywords else "建议补充目标岗位核心关键词（如 Python/SQL/业务指标）"
-        _ = message
+    def _format_three_section(self, conclusion: str, evidence: str, actions: List[str]) -> str:
+        clean_actions = [str(item).strip() for item in actions if str(item).strip()][:3]
+        if not clean_actions:
+            clean_actions = ["补充关键上下文后，我会给出更具体的下一步建议。"]
+        action_lines = [f"{idx}. {item}" for idx, item in enumerate(clean_actions, start=1)]
         return (
-            f"优化方向：先按 {role_hint} 岗位标准优化。\n"
-            "优先优化 3 项：\n"
-            f"1) {top_risks[0]}\n"
-            f"2) {top_risks[1] if len(top_risks) > 1 else '项目亮点需要更聚焦目标岗位'}\n"
-            f"3) {top_risks[2] if len(top_risks) > 2 else '关键词需要更贴近目标岗位 JD'}\n"
-            "改写示例：\n"
-            f"- {rewrite_suggestions[0]}\n"
-            f"- {rewrite_suggestions[1] if len(rewrite_suggestions) > 1 else '每段经历保留“场景-动作-结果”结构'}\n"
-            f"关键词建议：{keyword_line}\n"
-            "下一步：先改完最相关的 2 段经历，再发我，我帮你做第二轮精修。"
+            f"【结论】\n{conclusion.strip()}\n\n"
+            f"【证据】\n{evidence.strip()}\n\n"
+            "【行动建议】\n" + "\n".join(action_lines)
         )
 
     def _compact_text(self, content: str) -> str:

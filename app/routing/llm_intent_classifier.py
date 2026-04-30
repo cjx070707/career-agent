@@ -152,15 +152,6 @@ class LLMIntentClassifier:
             payload_out["domain"] = "job_match"
             payload_out["action"] = "compare"
             payload_out["required_context"] = ["resume", "job_detail"]
-        if task_type == "interview_prep":
-            has_role_hint = any(
-                marker in lowered
-                for marker in ("后端", "前端", "数据", "backend", "frontend", "data analyst", "pm", "产品")
-            )
-            if not has_role_hint:
-                payload_out["needs_more_context"] = True
-                payload_out["missing_context"] = ["target_role"]
-                payload_out["follow_up_question"] = "你想准备哪个目标岗位的面试？请告诉我岗位名称或方向。"
         return payload_out
 
     def _fallback_output(self, reason: str) -> Dict[str, Any]:
@@ -185,7 +176,7 @@ class LLMIntentClassifier:
     ) -> Dict[str, Any]:
         schema = ClassifierOutput.model_json_schema()
         request = {
-            "model": self.llm_client._planner_model(),
+            "model": self.llm_client._classifier_model(),
             "messages": [
                 {"role": "system", "content": CLASSIFIER_SYSTEM_PROMPT},
                 {

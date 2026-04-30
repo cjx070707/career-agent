@@ -66,6 +66,18 @@ class LLMClient:
     def _planner_model(self) -> str:
         return settings.planner_model
 
+    def _classifier_model(self) -> str:
+        return settings.classifier_model or self._planner_model()
+
+    def _react_decision_model(self) -> str:
+        return settings.react_decision_model or self._planner_model()
+
+    def _generator_model(self) -> str:
+        return settings.generator_model or self._planner_model()
+
+    def _diagnostic_model(self) -> str:
+        return settings.diagnostic_model or self._classifier_model()
+
     def generate_plan(
         self,
         message: str,
@@ -241,18 +253,39 @@ class LLMClient:
         if not self._career_event_extractor_is_configured():
             return []
         try:
-            request = self._build_career_event_extract_request(
+            # Build the /responses-format request to reuse schema and prompts,
+            # then convert it to /chat/completions format.
+            # (DashScope's /responses endpoint may hang instead of returning 404,
+            # causing a 5s timeout on every career-event extraction call.)
+            responses_req = self._build_career_event_extract_request(
                 user_id=user_id,
                 message=message,
             )
+            chat_request = {
+                "model": responses_req["model"],
+                "messages": [
+                    {"role": turn["role"], "content": turn["content"]}
+                    for turn in responses_req["input"]
+                ],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": responses_req["text"]["format"]["name"],
+                        "strict": True,
+                        "schema": responses_req["text"]["format"]["schema"],
+                    },
+                },
+            }
+            if settings.planner_disable_thinking:
+                self._disable_thinking(chat_request)
             response_payload = self._post_responses(
-                f"{self._planner_base_url().rstrip('/')}/responses",
+                f"{self._planner_base_url().rstrip('/')}/chat/completions",
                 api_key=self._planner_api_key(),
-                payload=request,
+                payload=chat_request,
                 timeout=self.CAREER_EVENT_EXTRACTION_TIMEOUT_SECONDS,
             )
-            text = self._extract_responses_text(response_payload)
-            return self.career_event_extractor.normalize(json.loads(text))
+            text = self._extract_chat_completion_text(response_payload)
+            return self.career_event_extractor.normalize(json.loads(text)) if text else []
         except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
             return []
 
@@ -394,25 +427,8 @@ class LLMClient:
         if not self._planner_api_key():
             raise RuntimeError("Diagnostic planner not configured")
 
-        request = self._build_diagnostic_plan_request(
-            message=message,
-            plan_semantics=plan_semantics,
-            profile=profile,
-            context_resolution=context_resolution,
-            memory_context=memory_context,
-        )
-        try:
-            response_payload = self._post_responses(
-                f"{self._planner_base_url().rstrip('/')}/responses",
-                api_key=self._planner_api_key(),
-                payload=request,
-                timeout=self.DIAGNOSTIC_PLANNER_TIMEOUT_SECONDS,
-            )
-            return self._extract_diagnostic_plan_payload(response_payload)
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code != 404:
-                raise
-
+        # Go directly to /chat/completions — avoids the /responses endpoint which
+        # may hang on DashScope (producing a 12s timeout instead of a fast 404).
         chat_request = self._build_chat_completions_diagnostic_plan_request(
             message=message,
             plan_semantics=plan_semantics,
@@ -477,29 +493,26 @@ class LLMClient:
         memory_context: List[str],
         evidence: List[str],
     ) -> Dict[str, Any]:
-        request = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a concise career assistant. Use provided memory and evidence "
-                        "to answer the user directly. If evidence is empty, answer with practical next steps."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "message": message,
-                            "memory_context": memory_context,
-                            "evidence": evidence,
-                        },
-                        ensure_ascii=False,
-                    ),
-                },
-            ],
-        }
+        messages: List[Dict[str, str]] = [
+            {
+                "role": "system",
+                "content": (
+                    "你是一个专业的求职辅导 agent。根据完整对话历史和当前用户消息，"
+                    "给出有针对性的回答。如果用户在追问或换话题，直接回应当前意图，"
+                    "不要重复上一轮的内容。"
+                ),
+            }
+        ]
+        for i, turn in enumerate(memory_context):
+            role = "user" if i % 2 == 0 else "assistant"
+            messages.append({"role": role, "content": str(turn)})
+
+        user_content = message
+        if evidence:
+            user_content += "\n\n参考数据：" + "\n".join(evidence)
+        messages.append({"role": "user", "content": user_content})
+
+        request = {"model": self._generator_model(), "messages": messages}
         self._disable_thinking(request)
         return request
 
@@ -513,7 +526,7 @@ class LLMClient:
         memory_context: List[str],
     ) -> Dict[str, Any]:
         request = {
-            "model": self._planner_model(),
+            "model": self._diagnostic_model(),
             "input": [
                 {"role": "system", "content": DIAGNOSTIC_PLANNER_SYSTEM_PROMPT},
                 {
@@ -552,7 +565,7 @@ class LLMClient:
         user_state: Dict[str, Any],
     ) -> Dict[str, Any]:
         request = {
-            "model": self._planner_model(),
+            "model": self._generator_model(),
             "messages": [
                 {
                     "role": "system",
@@ -595,7 +608,7 @@ class LLMClient:
         memory_context: List[str],
     ) -> Dict[str, Any]:
         request = {
-            "model": self._planner_model(),
+            "model": self._diagnostic_model(),
             "messages": [
                 {"role": "system", "content": DIAGNOSTIC_PLANNER_SYSTEM_PROMPT},
                 {
@@ -749,7 +762,7 @@ class LLMClient:
         message: str,
     ) -> Dict[str, Any]:
         request = self.career_event_extractor.build_request(
-            planner_model=self._planner_model(),
+            planner_model=self._diagnostic_model(),
             user_id=user_id,
             message=message,
         )
@@ -853,17 +866,18 @@ class LLMClient:
             "required": ["action", "reason", "observation_summary", "tool_name", "planned_tools"],
         }
         request = {
-            "model": self._planner_model(),
+            "model": self._react_decision_model(),
             "messages": [
                 {
                     "role": "system",
                     "content": (
                         "You control a bounded career-agent executor inside one task."
                         " Choose exactly one action. "
-                        "continue: follow queued tools. ask_for_context: missing evidence. "
+                        "continue: proceed to next tool in queue, or do nothing if queue is empty. "
+                        "ask_for_context: missing evidence. "
                         "finish: stop safely. "
-                        "switch_tool: reorder to a different NEXT tool among remaining queued tools "
-                        "(set tool_name). "
+                        "switch_tool: call a specific tool next (set tool_name to any tool "
+                        "in executor_tools_whitelist). "
                         "replan_strategy: replace the remainder with a SHORT valid tool subset "
                         "for THIS task using planned_tools (ToolResolver-aligned). "
                         "Never invent tools; only use identifiers from executor_tools_whitelist. "
@@ -879,6 +893,7 @@ class LLMClient:
                             "state": state,
                             "last_observation": last_observation,
                             "remaining_queued_tools": available_tools,
+                            "all_available_tools": executor_whitelist,
                             "executor_tools_whitelist": executor_whitelist,
                         },
                         ensure_ascii=False,
