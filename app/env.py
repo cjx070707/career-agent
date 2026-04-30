@@ -42,6 +42,22 @@ class Settings(BaseModel):
     planner_api_key: str = get_setting("PLANNER_API_KEY", get_setting("OPENAI_API_KEY", ""))
     planner_base_url: str = get_setting("PLANNER_BASE_URL", get_setting("OPENAI_BASE_URL", "https://api.openai.com/v1"))
     planner_model: str = get_setting("PLANNER_MODEL", get_setting("DEFAULT_MODEL", "gpt-4.1-mini"))
+    classifier_model: str = get_setting(
+        "CLASSIFIER_MODEL",
+        get_setting("PLANNER_MODEL", get_setting("DEFAULT_MODEL", "gpt-4.1-mini")),
+    )
+    react_decision_model: str = get_setting(
+        "REACT_DECISION_MODEL",
+        get_setting("PLANNER_MODEL", get_setting("DEFAULT_MODEL", "gpt-4.1-mini")),
+    )
+    generator_model: str = get_setting(
+        "GENERATOR_MODEL",
+        get_setting("PLANNER_MODEL", get_setting("DEFAULT_MODEL", "gpt-4.1-mini")),
+    )
+    diagnostic_model: str = get_setting(
+        "DIAGNOSTIC_MODEL",
+        get_setting("CLASSIFIER_MODEL", get_setting("PLANNER_MODEL", get_setting("DEFAULT_MODEL", "gpt-4.1-mini"))),
+    )
     planner_disable_thinking: bool = get_bool_setting("PLANNER_DISABLE_THINKING", False)
     agent_enable_observe_loop: bool = get_bool_setting("AGENT_ENABLE_OBSERVE_LOOP", True)
     vision_api_key: str = get_setting(

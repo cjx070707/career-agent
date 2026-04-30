@@ -9,8 +9,6 @@ from app.resolvers.tool_resolver import ToolResolver
 from app.routing.llm_intent_classifier import LLMIntentClassifier
 from app.schemas.chat import ChatPlan, ChatSource, LLMTrace
 from app.services.candidate_service import CandidateService
-from app.services.career_event_service import CareerEventService
-from app.services.career_diagnostic_planner import CareerDiagnosticPlanner
 from app.services.memory_service import MemoryService
 from app.services.plan_executor import PlanExecutor
 from app.services.profile_service import ProfileService
@@ -36,7 +34,19 @@ class AgentResult:
 
 class AgentService:
     """Minimal Agent orchestration for message -> memory -> retrieval -> answer."""
-    LOOP_ENABLED_TASK_TYPES = {"job_match_planning", "career_insights", "interview_prep"}
+    # React loop is only useful for open-ended multi-step reasoning where the LLM
+    # needs to decide dynamically what to do next. For fixed sequential pipelines
+    # like job_match_planning (profile → search → match), the loop adds 3 × ~3s
+    # of LLM decision overhead with almost always a "continue" result. That 10s+
+    # overhead is not worth it and causes frontend timeouts on slow DashScope calls.
+    # React loop only makes sense for open-ended tasks where the LLM genuinely
+    # needs to decide the next step dynamically. Fixed pipelines (interview_prep,
+    # job_match_planning) pay the LLM decision cost on every step for no benefit.
+    LOOP_ENABLED_TASK_TYPES = {
+        "job_match_planning",
+        "interview_prep",
+        "career_insights",
+    }
     MAX_LOOP_STEPS = 8
     MAX_REPLANS = 2
     MAX_STEP_REPEAT = 2
@@ -69,13 +79,6 @@ class AgentService:
             llm_client=self.llm_client,
             max_loop_steps=self.MAX_LOOP_STEPS,
             max_step_repeat=self.MAX_STEP_REPEAT,
-        )
-        self.career_event_service = CareerEventService(
-            retrieval_service=self.retrieval_service,
-            llm_client=self.llm_client,
-        )
-        self.career_diagnostic_planner = CareerDiagnosticPlanner(
-            llm_client=self.llm_client,
         )
 
     def respond(self, user_id: str, message: str) -> AgentResult:
@@ -121,11 +124,23 @@ class AgentService:
         self._apply_tool_resolution(plan, tool_resolution)
 
         if plan.task_type == "fallback" and not plan.steps:
-            answer = self.llm_client.generate(
-                message=message,
-                memory_context=self._build_generation_memory_context(recent_turns),
-                evidence=[],
-            )
+            # Router fastpaths (greeting / capability) return a static reply —
+            # no need to burn a generate() call for "你好".
+            if plan.planner_source == "router":
+                reason = str(plan.reason or "").lower()
+                if "greeting" in reason:
+                    answer = (
+                        "你好！我是你的求职辅导 Agent，可以帮你找岗位、优化简历、"
+                        "准备面试，以及诊断求职问题。有什么我可以帮你的？"
+                    )
+                else:
+                    answer = self._format_router_fallback_answer(message)
+            else:
+                answer = self.llm_client.generate(
+                    message=message,
+                    memory_context=self._build_generation_memory_context(recent_turns),
+                    evidence=[],
+                )
             self.memory_service.save_turn(user_id, message, answer)
             self._append_runtime_timing_trace(
                 plan=plan,
@@ -345,16 +360,12 @@ class AgentService:
         available_tools = self.tool_registry.list_tool_names()
         user_state = self._build_user_state(user_id=user_id, message=message)
 
-        fastpath = self._build_fastpath_plan(message=message)
-        if fastpath is not None:
-            plan_payload = fastpath
-        else:
-            plan_payload = self.intent_classifier.classify(
-                message=message,
-                recent_turns=memory_context,
-                user_state=user_state,
-                available_tools=available_tools,
-            )
+        plan_payload = self.intent_classifier.classify(
+            message=message,
+            recent_turns=memory_context,
+            user_state=user_state,
+            available_tools=available_tools,
+        )
 
         if not plan_payload.get("planner_source"):
             plan_payload["planner_source"] = self.llm_client.last_plan_source
@@ -372,48 +383,26 @@ class AgentService:
         ]
         return ChatPlan.model_validate(plan_payload)
 
-    def _build_fastpath_plan(self, *, message: str) -> Optional[Dict[str, Any]]:
-        stripped = message.strip().lower()
-        if stripped in {"你好", "您好", "hi", "hello", "hey", "nihao"}:
-            return {
-                "task_type": "fallback",
-                "reason": "greeting fastpath",
-                "steps": [],
-                "needs_more_context": False,
-                "missing_context": [],
-                "follow_up_question": None,
-                "planner_source": "router",
-            }
 
-        capability_markers = ("你会什么", "能做什么", "what can you do", "有什么用")
-        if any(marker in stripped for marker in capability_markers):
-            return {
-                "task_type": "fallback",
-                "reason": "capability help fastpath",
-                "steps": [],
-                "needs_more_context": False,
-                "missing_context": [],
-                "follow_up_question": None,
-                "planner_source": "router",
-            }
-        return None
 
-    def _build_generation_memory_context(self, recent_turns: List[Any]) -> List[str]:
-        # Keep role order explicit for chat-completion style multi-turn prompts.
-        context: List[str] = []
-        first_role = ""
+    def _build_generation_memory_context(self, recent_turns: List[Any]) -> List[Dict[str, str]]:
+        # Return explicit role+content dicts so LLM client can build a valid
+        # multi-turn messages array. Guard against consecutive same-role turns
+        # (can happen when a request crashes mid-save) which DashScope rejects.
+        context: List[Dict[str, str]] = []
+        last_role = ""
         for turn in recent_turns:
             role = str(getattr(turn, "role", "")).strip().lower()
             content = str(getattr(turn, "content", "")).strip()
             if not content:
                 continue
-            if not first_role and role in {"user", "assistant"}:
-                first_role = role
-            context.append(content)
-        # If truncation cut the conversation at an assistant turn, drop it so
-        # odd/even role restoration in LLM client starts from a user turn.
-        if context and first_role == "assistant":
-            context = context[1:]
+            if role not in {"user", "assistant"}:
+                role = "user"
+            if role == last_role:
+                # Skip duplicate consecutive role to maintain alternation.
+                continue
+            last_role = role
+            context.append({"role": role, "content": content})
         return context
 
     def _build_user_state(self, *, user_id: str, message: str) -> Dict[str, Any]:
@@ -450,83 +439,6 @@ class AgentService:
                     "reason": resolution.blocking_reason,
                 }
             )
-
-    def _should_apply_diagnostic_planner(self, plan: ChatPlan) -> bool:
-        task_type = str(plan.task_type or "").strip().lower()
-        domain = str(plan.domain or "").strip().lower()
-        action = str(plan.action or "").strip().lower()
-        if task_type == "career_insights":
-            return True
-        return domain == "career_strategy" and action == "diagnose"
-
-    def _is_fallback_diagnostic_output(self, plan: ChatPlan) -> bool:
-        diagnostic_plan = plan.diagnostic_plan
-        if diagnostic_plan is None:
-            return False
-        hypotheses = list(diagnostic_plan.diagnostic_hypotheses or [])
-        if not hypotheses:
-            return False
-        first = hypotheses[0]
-        return (
-            first.bottleneck_type == "insufficient_evidence"
-            and float(diagnostic_plan.confidence) <= 0.4
-            and "enough evidence collected" in list(diagnostic_plan.stop_criteria or [])
-        )
-
-    def _apply_diagnostic_plan(
-        self,
-        *,
-        plan: ChatPlan,
-        message: str,
-        profile: Dict[str, Any],
-        context_resolution: Any,
-        memory_context: List[str],
-    ) -> None:
-        if plan.needs_more_context:
-            plan.diagnostic_plan = None
-            plan.resolver_trace = list(plan.resolver_trace) + [
-                {
-                    "resolver": "diagnostic_planner",
-                    "status": "skipped",
-                    "reason": "context_missing",
-                }
-            ]
-            return
-
-        if not self._should_apply_diagnostic_planner(plan):
-            plan.diagnostic_plan = None
-            plan.resolver_trace = list(plan.resolver_trace) + [
-                {
-                    "resolver": "diagnostic_planner",
-                    "status": "skipped",
-                    "reason": "not_applicable",
-                }
-            ]
-            return
-
-        resolution_payload = (
-            context_resolution.model_dump()
-            if hasattr(context_resolution, "model_dump")
-            else dict(context_resolution or {})
-        )
-        plan_payload = plan.model_dump()
-        diagnostic_output = self.career_diagnostic_planner.plan(
-            message=message,
-            plan_semantics=plan_payload,
-            profile=profile,
-            context_resolution=resolution_payload,
-            memory_context=memory_context,
-        )
-        plan.diagnostic_plan = diagnostic_output
-        status = "fallback" if self._is_fallback_diagnostic_output(plan) else "applied"
-        plan.resolver_trace = list(plan.resolver_trace) + [
-            {
-                "resolver": "diagnostic_planner",
-                "status": status,
-                "reason": "career_diagnosis_task",
-                "confidence": float(diagnostic_output.confidence),
-            }
-        ]
 
     def _tool_chain_to_steps(self, tool_chain: List[Dict[str, Any]]) -> List[str]:
         return [

@@ -35,9 +35,10 @@ class LLMClient:
     # hallucinated tool loop and falls back to the deterministic plan.
     MAX_PLAN_STEPS = 6
     PLANNER_TIMEOUT_SECONDS = 8.0
-    JOB_SEARCH_SUMMARY_TIMEOUT_SECONDS = 12.0
+    
+    JOB_SEARCH_SUMMARY_TIMEOUT_SECONDS = 20.0
     CAREER_EVENT_EXTRACTION_TIMEOUT_SECONDS = 5.0
-    OBSERVE_DECISION_TIMEOUT_SECONDS = 10.0
+    OBSERVE_DECISION_TIMEOUT_SECONDS = 5.0
     DIAGNOSTIC_PLANNER_TIMEOUT_SECONDS = 12.0
 
     def __init__(self) -> None:
@@ -177,8 +178,8 @@ class LLMClient:
     def generate(
         self,
         message: str,
-        memory_context: list[str],
-        evidence: list[str],
+        memory_context: List[Dict[str, str]],
+        evidence: List[str],
     ) -> str:
         if self.is_configured():
             try:
@@ -201,17 +202,8 @@ class LLMClient:
                 pass
 
         self.last_generate_source = "fallback"
-        if evidence:
-            titles = ", ".join(evidence)
-            return f"Fallback response for '{message}'. Relevant evidence: {titles}."
-
-        if memory_context:
-            return (
-                f"Fallback response for '{message}'. "
-                "I also used your recent conversation context."
-            )
-
-        return f"Fallback response for '{message}'."
+        # Return a user-friendly apology instead of dumping raw evidence/internals.
+        return "抱歉，我暂时无法生成回答，请稍后再试。"
 
     def summarize_job_search(
         self,
@@ -490,22 +482,28 @@ class LLMClient:
         self,
         *,
         message: str,
-        memory_context: List[str],
+        memory_context: List[Dict[str, str]],
         evidence: List[str],
     ) -> Dict[str, Any]:
         messages: List[Dict[str, str]] = [
             {
                 "role": "system",
                 "content": (
-                    "你是一个专业的求职辅导 agent。根据完整对话历史和当前用户消息，"
-                    "给出有针对性的回答。如果用户在追问或换话题，直接回应当前意图，"
-                    "不要重复上一轮的内容。"
+                    "你是一个专业的求职辅导 agent。根据对话历史和参考数据，给出有针对性的回答。\n"
+                    "回答要求：\n"
+                    "- 聚焦用户当前问题，不要发散或重复上一轮内容\n"
+                    "- 控制在 300 字以内，除非用户明确要求详细展开\n"
+                    "- 给出结论和 1-3 个具体行动建议，不要长篇铺垫\n"
+                    "- 如果信息不足，直接问最关键的一个问题"
                 ),
             }
         ]
-        for i, turn in enumerate(memory_context):
-            role = "user" if i % 2 == 0 else "assistant"
-            messages.append({"role": role, "content": str(turn)})
+        # memory_context carries role explicitly — no guessing with i % 2
+        for turn in memory_context:
+            role = str(turn.get("role", "user"))
+            content = str(turn.get("content", ""))
+            if content:
+                messages.append({"role": role, "content": content})
 
         user_content = message
         if evidence:
@@ -754,7 +752,8 @@ class LLMClient:
         return request
 
     def _disable_thinking(self, request: Dict[str, Any]) -> None:
-        request["thinking"] = {"type": "disabled"}
+        # DashScope qwen3 API parameter to disable thinking/reasoning mode.
+        request["enable_thinking"] = False
 
     def _build_career_event_extract_request(
         self,

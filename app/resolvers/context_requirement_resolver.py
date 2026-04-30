@@ -74,7 +74,7 @@ class ContextRequirementResolver:
 
         if self._is_interview_prep(task_type, domain, action):
             inferred_required.append("target_role")
-            trace.append(self._trace("require", "target_role", "interview prep needs a target role"))
+            trace.append(self._trace("require", "target_role", "interview prep needs target role"))
 
         if self._is_career_strategy(task_type, domain, action):
             inferred_required.append("profile")
@@ -220,10 +220,19 @@ class ContextRequirementResolver:
     ) -> bool:
         if str(profile.get("target_role_preference") or "").strip():
             return True
+        # If the agent previously asked for the target role and the user replied
+        # with any non-trivial message, treat the reply as the role being provided.
+        role_ask_markers = ("哪个目标岗位", "目标岗位的面试", "岗位名称或方向", "想准备哪个")
+        if any(marker in turn for marker in role_ask_markers for turn in memory_context):
+            if len(message.strip()) >= 2:
+                return True
         text = " ".join([message] + list(memory_context)).lower()
-        if any(role in text for role in ("backend", "frontend", "full stack", "full-stack", "data analyst", "devops")):
-            return True
-        return bool(re.search(r"(后端|前端|全栈|数据|机器学习|算法|产品|设计)", text))
+        role_keywords = (
+            "backend", "frontend", "full stack", "full-stack", "data analyst", "devops",
+            "后端", "前端", "全栈", "数据", "机器学习", "算法", "产品", "设计",
+            "金融", "投研", "量化", "分析师", "运营", "市场", "销售", "研究员",
+        )
+        return any(role in text for role in role_keywords)
 
     def _has_location(self, message: str, profile: Dict[str, Any]) -> bool:
         if profile.get("location") or profile.get("preferred_location"):

@@ -304,6 +304,7 @@ def _run_case(base_url: str, case: Dict[str, Any]) -> Dict[str, Any]:
         body = resp["json"]
         plan = body.get("plan") or {}
         checks = _check_expectations(body, turn.get("expect") or {})
+        total_elapsed_ms = _extract_total_elapsed_ms(plan)
 
         failed_checks = [c["name"] for c in checks if not c["ok"]]
         status_str = "PASS" if not failed_checks else f"FAIL [{', '.join(failed_checks)}]"
@@ -318,6 +319,7 @@ def _run_case(base_url: str, case: Dict[str, Any]) -> Dict[str, Any]:
                 "needs_more_context": plan.get("needs_more_context"),
                 "follow_up_question": plan.get("follow_up_question"),
                 "answer_excerpt": (body.get("answer") or "")[:200],
+                "total_elapsed_ms": total_elapsed_ms,
             },
         })
 
@@ -411,6 +413,106 @@ def _write_json(path: Path, results: List[Dict[str, Any]]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _extract_total_elapsed_ms(plan: Dict[str, Any]) -> Optional[float]:
+    resolver_trace = plan.get("resolver_trace") if isinstance(plan, dict) else None
+    if not isinstance(resolver_trace, list):
+        return None
+    for item in resolver_trace:
+        if not isinstance(item, dict):
+            continue
+        if item.get("resolver") == "runtime_timing":
+            value = item.get("total_elapsed_ms")
+            if isinstance(value, (int, float)):
+                return float(value)
+    return None
+
+
+def _percent(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return (numerator / denominator) * 100.0
+
+
+def _compute_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    total_cases = len(results)
+    passed_cases = sum(1 for r in results if r.get("passed"))
+
+    route_correct = 0
+    route_total = 0
+    nmc_correct = 0
+    nmc_total = 0
+    latency_values: List[float] = []
+
+    for case in results:
+        for turn in case.get("turns", []):
+            for check in turn.get("checks", []):
+                name = str(check.get("name") or "")
+                if name == "plan_task_type":
+                    route_total += 1
+                    if bool(check.get("ok")):
+                        route_correct += 1
+                if name == "plan_needs_more_context":
+                    nmc_total += 1
+                    if bool(check.get("ok")):
+                        nmc_correct += 1
+            timing = turn.get("resp_summary", {}).get("total_elapsed_ms")
+            if isinstance(timing, (int, float)):
+                latency_values.append(float(timing))
+
+    avg_latency = (sum(latency_values) / len(latency_values)) if latency_values else None
+    return {
+        "total_cases": total_cases,
+        "passed_cases": passed_cases,
+        "route_correct": route_correct,
+        "route_total": route_total,
+        "nmc_correct": nmc_correct,
+        "nmc_total": nmc_total,
+        "avg_latency_ms": avg_latency,
+        "multi_turn_pass_rate_pct": _percent(passed_cases, total_cases),
+        "route_accuracy_pct": _percent(route_correct, route_total),
+        "nmc_accuracy_pct": _percent(nmc_correct, nmc_total),
+    }
+
+
+def _write_metrics_summary(path: Path, metrics: Dict[str, Any]) -> None:
+    generated_at = _dt.datetime.now().isoformat(timespec="seconds")
+    latency = metrics.get("avg_latency_ms")
+    latency_line = (
+        f"- 平均响应延迟（可用样本）：{latency:.2f} ms"
+        if isinstance(latency, (int, float))
+        else "- 平均响应延迟：无可用 timing 字段，已跳过"
+    )
+    lines = [
+        "# Eval Metrics Summary",
+        f"generated_at: {generated_at}",
+        "",
+        "## 核心指标",
+        "| 指标 | 数值 |",
+        "|---|---|",
+        (
+            "| multi-turn eval 通过率 | "
+            f"{metrics['passed_cases']}/{metrics['total_cases']} "
+            f"({metrics['multi_turn_pass_rate_pct']:.2f}%) |"
+        ),
+        (
+            "| 路由准确率（task_type 命中率） | "
+            f"{metrics['route_correct']}/{metrics['route_total']} "
+            f"({metrics['route_accuracy_pct']:.2f}%) |"
+        ),
+        (
+            "| needs_more_context 准确率 | "
+            f"{metrics['nmc_correct']}/{metrics['nmc_total']} "
+            f"({metrics['nmc_accuracy_pct']:.2f}%) |"
+        ),
+        "",
+        "## 说明",
+        "- 数据来源：evals/dataset.multi_turn.jsonl（7 条双轮用例）",
+        "- 运行环境：LLM Intent Classifier（Phase A）+ 统一输出协议（Phase B）+ LLM-driven ReAct（Phase C）",
+        latency_line,
+    ]
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -453,9 +555,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     json_path = out_dir / "multi_turn_latest.json"
     md_path = out_dir / "multi_turn_latest.md"
+    metrics_path = out_dir / "metrics_summary.md"
     _write_json(json_path, results)
     _write_md(md_path, results)
+    metrics = _compute_metrics(results)
+    _write_metrics_summary(metrics_path, metrics)
     print(f"[mt-eval] report → {md_path}")
+    print(f"[mt-eval] metrics → {metrics_path}")
 
     # Diagnostic probe — always exit 0.
     return 0

@@ -16,6 +16,15 @@ class ToolResponseFormatter:
 
     def build_tool_evidence(self, tool_name: str, tool_result: Any) -> List[str]:
         evidence: List[str] = [f"tool={tool_name}"]
+        if tool_name in ("get_resume_by_id", "get_resume_summary") and isinstance(tool_result, dict):
+            content = str(tool_result.get("content") or tool_result.get("summary") or "")
+            title = str(tool_result.get("title") or "")
+            if title:
+                evidence.append(f"resume_title={title}")
+            # Truncate resume content to avoid token overload and thinking-mode slowdowns.
+            if content:
+                evidence.append("resume_content=" + content[:3000])
+            return evidence
         if tool_name == "search_jobs" and isinstance(tool_result, list):
             for row in tool_result[:5]:
                 evidence.append(

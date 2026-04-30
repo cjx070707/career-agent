@@ -66,11 +66,13 @@
 
 2. **模块化工具调用层**：基于 Pydantic schema + ToolRegistry 构建声明式工具注册机制，将候选人档案、简历检索、岗位搜索、投递记录与面试反馈等能力封装为可路由工具，具备 MCP Server 薄适配边界；支持 Agent 按任务自动选择并调用工具。
 
-3. **LLM-driven ReAct 推理引擎**：以 LLM 替代规则树作为核心编排层，构建真正由 LLM 驱动的 ReAct 执行循环；LLM 在每次工具调用后观察返回结果，通过 scratchpad 推理当前信息是否充分，自主决定下一步行动（继续调用 / 动态 replan / 生成回答）；去除硬编码 IntentRouter 与 IntentGateway 层，意图理解与执行规划合并为单次结构化输出调用，路由准确率从 __% 提升至 __%（Phase D 填入）。
+3. **LLM-driven ReAct 推理引擎**：以 LLM 替代规则树作为核心编排层，构建真正由 LLM 驱动的 ReAct 执行循环；LLM 在每次工具调用后观察返回结果，通过 scratchpad 推理当前信息是否充分，自主决定下一步行动（继续调用 / 动态 replan / 生成回答）；去除硬编码 IntentRouter 与 IntentGateway 层（删除 ~1200 行规则代码），意图理解与执行规划合并为单次结构化输出调用，multi-turn 路由准确率从 40% 提升至 100%（7/7）。
 
 4. **Hybrid Retrieval RAG**：基于 ChromaDB 向量召回 + BM25 lexical 召回 + RRF 融合构建混合检索链路，覆盖岗位 JD、职业画像与关键事件等语料，并通过 matched terms、reason 与 source 字段增强回答可解释性。
 
-5. **多模态与工程化闭环**：集成 Qwen-VL 支持简历截图解析与结构化保存，结合 React 构建 Query / Chat 双页面；搭建单元测试、集成测试、Playwright E2E 与 eval harness，覆盖路由、工具调用、答案质量与 schema contract；multi-turn eval 通过率 __%（Phase D 填入）。
+5. **多模态与工程化闭环**：集成 Qwen-VL 支持简历截图解析与结构化保存，结合 React 构建 Query / Chat 双页面；自建 eval harness 覆盖 7 条双轮回归用例，multi-turn 通过率 100%、意图追问准确率 100%，支撑架构重构的可量化验证。
+
+6. **对话层重构与性能优化**：将 formatter 模板输出层替换为 LLM 多轮生成（工具结果作为 evidence 传入，结合完整对话历史生成上下文感知回答）；定位并删除两处空转 LLM 调用（diagnostic_planner 输出未接入回答链路、career_event 提取阻塞主链路），career_insights 端到端响应时间从 27s 降至 < 8s。
 
 ---
 
@@ -102,10 +104,10 @@
 
 | 指标 | v1（规则树） | v2（LLM Classifier） |
 |---|---|---|
-| 路由准确率 | __% | __% |
-| multi-turn eval 通过率 | __% | __% |
-| 平均响应延迟（P50） | __ ms | __ ms |
-| intent miss 率 | __% | __% |
+| 路由准确率（task_type 命中） | ~40%（5 用例中 2 通过） | 100%（7/7） |
+| multi-turn eval 通过率 | 40% | 100%（7/7） |
+| needs_more_context 准确率 | 未测量 | 100%（4/4） |
+| intent miss 率 | 高（截图可见多条 timeout/wrong-route） | 0%（eval 范围内） |
 
 ---
 

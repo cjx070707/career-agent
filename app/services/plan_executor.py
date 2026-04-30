@@ -81,7 +81,43 @@ class PlanExecutor:
                 return [], "rejected"
             return validate_replan_chain(proposed, exec_trace)
 
-        while queue and len(trace) < self.max_loop_steps:
+        while len(trace) < self.max_loop_steps:
+            if not queue:
+                react_action = self._decide_react_action(
+                    task_type=task_type,
+                    message=message,
+                    state=state,
+                    last_observation=state.get("last_observation"),
+                    remaining_steps=[],
+                    whitelist_executor_tools=list(whitelist),
+                )
+                action = str(react_action.get("action") or "finish").strip().lower()
+                if action == "replan_strategy":
+                    planned = react_action.get("planned_tools") or []
+                    valid = [t for t in planned if t in registry_names and t in whitelist]
+                    if valid and strategy_replans_used < replan_budget:
+                        queue.extend(valid)
+                        strategy_replans_used += 1
+                        continue
+                if action == "switch_tool":
+                    next_tool = str(react_action.get("tool_name") or "").strip()
+                    if next_tool in registry_names and next_tool in whitelist:
+                        queue.append(next_tool)
+                        continue
+                terminated_by = "finish"
+                loop_trace.append(
+                    {
+                        "iteration": len(trace) + 1,
+                        "current_step": "queue_exhausted_decision",
+                        "decider_action": action,
+                        "decider_reason": str(react_action.get("reason") or "queue_exhausted"),
+                        "strategy_replans_used": strategy_replans_used,
+                        "budget_remaining": max(replan_budget - strategy_replans_used, 0),
+                        "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
+                    }
+                )
+                break
+
             iteration = len(trace) + 1
             step = queue.pop(0)
             if step == last_step:
@@ -162,22 +198,6 @@ class PlanExecutor:
                         "tool_result_summary": observation_summary,
                         "decider_action": "finish",
                         "decider_reason": "no_progress",
-                        "strategy_replans_used": strategy_replans_used,
-                        "budget_remaining": max(replan_budget - strategy_replans_used, 0),
-                        "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
-                    }
-                )
-                break
-
-            if not queue:
-                terminated_by = "finish"
-                loop_trace.append(
-                    {
-                        "iteration": iteration,
-                        "current_step": step,
-                        "tool_result_summary": observation_summary,
-                        "decider_action": "finish",
-                        "decider_reason": "plan_exhausted",
                         "strategy_replans_used": strategy_replans_used,
                         "budget_remaining": max(replan_budget - strategy_replans_used, 0),
                         "elapsed_ms": round((time.perf_counter() - loop_started) * 1000, 2),
@@ -441,7 +461,7 @@ class PlanExecutor:
                 message=message,
                 state=state,
                 last_observation=last_observation,
-                available_tools=remaining_steps or self.tool_registry.list_tool_names(),
+                available_tools=self.tool_registry.list_tool_names(),
                 executor_whitelist=whitelist_executor_tools,
             )
             return result

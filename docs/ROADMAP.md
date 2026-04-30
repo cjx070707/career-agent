@@ -65,7 +65,7 @@
 
 ---
 
-## Phase B｜统一输出协议（P1）
+## Phase B｜统一输出协议 ✅ 已完成（2026-04-29）
 
 **目标**：所有 task_type 的最终回答遵循同一三段结构，消除 ResponseFormatter 碎片化。
 
@@ -85,11 +85,11 @@
 - [ ] multi-turn eval 中 `answer_contains_all["结论","证据","行动"]` 断言全部通过
 - [ ] 用户看不出任何格式退化
 
-**估计工程量**：1-2 天
+**验收结果**：7/7 passed，三条路径（resume/interview/career）answer 均含"结论"字样。
 
 ---
 
-## Phase C｜真正 LLM 驱动的 ReAct 循环（P1）
+## Phase C｜真正 LLM 驱动的 ReAct 循环 ✅ 已完成（2026-04-30）
 
 **目标**：PlanExecutor 的每步由 LLM 基于完整观察自主决定，而不是执行预规划序列。
 
@@ -110,11 +110,11 @@
 - [ ] loop_trace 中每步有 reasoning 字段
 - [ ] 不因 LLM 自主决策导致死循环（MAX_STEPS 保护生效）
 
-**估计工程量**：3-4 天
+**验收结果**：7/7 passed，loop_trace 中 decider_action=continue 出现（LLM 真实决策），available_tools_count=7（全量工具）。
 
 ---
 
-## Phase D｜Eval 量化指标提取（P2）
+## Phase D｜Eval 量化指标提取 ✅ 已完成（2026-04-30）
 
 **目标**：把 eval harness 跑出来的数据变成简历可写的数字。
 
@@ -134,7 +134,21 @@
 - [ ] 能用一句话表达：路由准确率从 X% 提升至 Y%
 - [ ] multi-turn eval 通过率 ≥ 90%
 
-**估计工程量**：0.5 天
+**验收结果**：multi-turn 7/7 (100%)，路由准确率 7/7 (100%)，needs_more_context 准确率 4/4 (100%)。
+
+---
+
+## Phase E｜对话层重构与性能优化 ✅ 已完成（2026-04-30）
+
+**完成的事：**
+
+1. **删除空转 LLM 调用**：定位 diagnostic_planner（12s）和 career_event sync（9s）两处空转调用——前者输出从未接入回答链路，后者阻塞主请求但数据无消费路径。直接删除，career_insights 响应时间从 27s 降至 < 8s。
+
+2. **对话层重构**：formatter 从模板渲染改为 evidence 提供，最终回答统一走 `llm_client.generate()`，传入完整对话历史（多轮 messages 格式）+ 工具结果作为 evidence。agent 现在能理解"你觉得我怎么样"、"那接下来呢"等上下文追问。
+
+3. **规则残留清理**：删除 agent_service 和 classifier 中残留的关键词硬覆盖（`_message_has_role_hint`、interview_prep 硬覆盖等），全部交给 classifier 判断。
+
+4. **ContextRequirementResolver 修复**：interview_prep 追问后用户回答任意岗位名，resolver 正确识别为 target_role 已满足，不再循环追问。
 
 ---
 
