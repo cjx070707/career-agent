@@ -83,7 +83,6 @@ class AgentService:
         self._reset_llm_trace_markers()
         recent_turns = self.memory_service.load_recent_messages(user_id)
         profile = self.profile_service.update_from_message(user_id, message)
-        self.career_event_service.sync_from_message(user_id, message)
         plan = self._build_plan(user_id, message, bool(recent_turns), profile)
         user_state = self._build_user_state(user_id=user_id, message=message)
         context_resolution = self.context_requirement_resolver.resolve(
@@ -98,13 +97,6 @@ class AgentService:
             plan.needs_more_context = True
             plan.missing_context = ["target_role"]
             plan.follow_up_question = "你想准备哪个目标岗位的面试？请告诉我岗位名称或方向。"
-        self._apply_diagnostic_plan(
-            plan=plan,
-            message=message,
-            profile=profile,
-            context_resolution=context_resolution,
-            memory_context=[turn.content for turn in recent_turns],
-        )
         if plan.needs_more_context:
             answer = plan.follow_up_question or "我还需要更多信息，才能继续。"
             self.memory_service.save_turn(user_id, message, answer)
