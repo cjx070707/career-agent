@@ -116,7 +116,8 @@ const queryStarters = [
 async function sendChat(
   userId: string,
   message: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onStatus?: (text: string) => void,
 ): Promise<ChatResponse> {
   const response = await fetch("/chat", {
     method: "POST",
@@ -130,7 +131,57 @@ async function sendChat(
     throw new Error(body || `Request failed with ${response.status}`);
   }
 
-  return response.json();
+  // Parse SSE stream: each event is "data: {...}\n\n"
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let answerEvent: Record<string, unknown> | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // Split on newlines; keep last (potentially incomplete) chunk in buffer
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const raw = line.slice(6).trim();
+      if (!raw) continue;
+      let event: Record<string, unknown>;
+      try {
+        event = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (event.type === "status") {
+        onStatus?.(String(event.text ?? ""));
+      } else if (event.type === "answer") {
+        answerEvent = event;
+      } else if (event.type === "error") {
+        throw new Error(String(event.text ?? "Server error"));
+      }
+    }
+  }
+
+  if (!answerEvent) {
+    throw new Error("No answer received from server");
+  }
+
+  return {
+    contract_version: "chat.v1",
+    answer: String(answerEvent.text ?? ""),
+    stage: String(answerEvent.stage ?? "direct"),
+    memory_used: Boolean(answerEvent.memory_used),
+    tool_used: (answerEvent.tool_used as string | null) ?? null,
+    sources: (answerEvent.sources as ChatSource[]) ?? [],
+    plan: null,
+    tool_trace: [],
+    loop_trace: [],
+    llm_trace: {} as LLMTrace,
+  };
 }
 
 async function parseResumeImage(file: File): Promise<ResumeImageParseResponse> {
@@ -205,8 +256,13 @@ function App() {
     try {
       const controller = new AbortController();
       chatAbortRef.current = controller;
-      const timeoutId = window.setTimeout(() => controller.abort(), 20000);
-      const response = await sendChat(userId.trim() || "demo-user", trimmed, controller.signal);
+      const timeoutId = window.setTimeout(() => controller.abort(), 120000);
+      const response = await sendChat(
+        userId.trim() || "demo-user",
+        trimmed,
+        controller.signal,
+        (text) => setStatusLabel(text),
+      );
       window.clearTimeout(timeoutId);
       setMessages((current) => [
         ...current,
@@ -244,8 +300,13 @@ function App() {
     try {
       const controller = new AbortController();
       chatAbortRef.current = controller;
-      const timeoutId = window.setTimeout(() => controller.abort(), 20000);
-      const response = await sendChat(userId.trim() || "demo-user", trimmed, controller.signal);
+      const timeoutId = window.setTimeout(() => controller.abort(), 120000);
+      const response = await sendChat(
+        userId.trim() || "demo-user",
+        trimmed,
+        controller.signal,
+        (text) => setStatusLabel(text),
+      );
       window.clearTimeout(timeoutId);
       setQueryResult(response);
       if (response.stage === "tool") {
