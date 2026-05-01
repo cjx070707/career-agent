@@ -72,10 +72,23 @@ class Settings(BaseModel):
         ),
     )
     vision_model: str = get_setting("VISION_MODEL", "qwen3-vl-flash-2026-01-22")
+    # Embedding — uses DashScope text-embedding-v3 when EMBEDDING_API_KEY is set,
+    # falls back to local token embedding if key is missing (dev/test only).
+    embedding_api_key: str = get_setting(
+        "EMBEDDING_API_KEY",
+        get_setting("OPENAI_API_KEY", ""),
+    ).strip()   # strip trailing whitespace from .env copy-paste
+    embedding_base_url: str = get_setting(
+        "EMBEDDING_BASE_URL",
+        get_setting("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+    )
+    embedding_model: str = get_setting("EMBEDDING_MODEL", "text-embedding-v3")
+    embedding_dimensions: int = 1024
     db_path: str = get_setting("DB_PATH", "data/career_agent.db")
     job_postings_file: str = get_setting("JOB_POSTINGS_FILE", "data/job_postings.json")
     chroma_persist_directory: str = get_setting("CHROMA_PERSIST_DIRECTORY", "data/chroma")
-    chroma_collection_name: str = get_setting("CHROMA_COLLECTION_NAME", "job_postings_v2")
+    # v3 — collection name bumped so the old 256-dim MD5 collection is not reused
+    chroma_collection_name: str = get_setting("CHROMA_COLLECTION_NAME", "job_postings_v3")
 
 
 settings = Settings()

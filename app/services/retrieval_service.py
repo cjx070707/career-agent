@@ -7,13 +7,60 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 import chromadb
+import httpx
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 
 from app.env import settings
 
 
+class DashScopeEmbeddingFunction(EmbeddingFunction[Documents]):
+    """Semantic embedding via DashScope text-embedding-v3 (OpenAI-compatible endpoint).
+
+    Falls back gracefully to LocalTokenEmbeddingFunction if the API call fails,
+    so local development without a network connection still works.
+    """
+
+    def __init__(self, api_key: str, base_url: str, model: str, dimensions: int = 1024) -> None:
+        self._api_key = api_key.strip()
+        self._base_url = base_url.rstrip("/")
+        self._model = model
+        self._dimensions = dimensions
+        self._fallback = LocalTokenEmbeddingFunction()
+
+    def __call__(self, input: Documents) -> Embeddings:
+        texts = list(input)
+        if not texts:
+            return []
+        try:
+            response = httpx.post(
+                f"{self._base_url}/embeddings",
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self._model,
+                    "input": texts,
+                    "encoding_format": "float",
+                    "dimensions": self._dimensions,
+                },
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            items = sorted(response.json()["data"], key=lambda x: x["index"])
+            return [item["embedding"] for item in items]
+        except Exception:
+            # Network unavailable or API error — fall back to local embedding
+            # so the service stays operational.
+            return self._fallback(input)
+
+
 class LocalTokenEmbeddingFunction(EmbeddingFunction[Documents]):
-    """Deterministic local embedding to avoid external model dependencies."""
+    """Deterministic local embedding — fallback only, not for production use.
+
+    Uses MD5-hashed token buckets (256-dim).  Preserved here so the service
+    can start without a network connection during development.
+    """
 
     def __init__(self) -> None:
         pass
@@ -161,11 +208,40 @@ class RetrievalService:
         self._persist_directory = persist_directory or self._resolve_default_persist_directory()
         self._persist_directory.mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=str(self._persist_directory))
-        self._collection = self._client.get_or_create_collection(
-            name=collection_name or settings.chroma_collection_name,
-            embedding_function=LocalTokenEmbeddingFunction(),
-        )
+        self._embedding_fn = self._build_embedding_function()
+        coll_name = collection_name or settings.chroma_collection_name
+        self._collection = self._get_or_recreate_collection(coll_name)
         self._seed_collection()
+
+    def _build_embedding_function(self) -> EmbeddingFunction:
+        """Return DashScope embedding if API key is configured, else local fallback."""
+        if settings.embedding_api_key:
+            return DashScopeEmbeddingFunction(
+                api_key=settings.embedding_api_key,
+                base_url=settings.embedding_base_url,
+                model=settings.embedding_model,
+                dimensions=settings.embedding_dimensions,
+            )
+        return LocalTokenEmbeddingFunction()
+
+    def _get_or_recreate_collection(self, name: str):
+        """Get the collection, recreating it if the embedding schema is incompatible."""
+        try:
+            return self._client.get_or_create_collection(
+                name=name,
+                embedding_function=self._embedding_fn,
+            )
+        except Exception:
+            # Dimension or metadata mismatch with an existing collection —
+            # delete and start fresh.  Data is re-seeded from the JSON corpus.
+            try:
+                self._client.delete_collection(name)
+            except Exception:
+                pass
+            return self._client.create_collection(
+                name=name,
+                embedding_function=self._embedding_fn,
+            )
 
     def search(self, query: str) -> list[RetrievalResult]:
         return self._search_ranked(query)
