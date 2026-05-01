@@ -12,6 +12,7 @@ from app.llm.client import LLMClient
 from app.schemas.chat import ChatSource
 from app.services.goal_service import GoalService
 from app.services.memory_service import MemoryService
+from app.services.user_profile_service import SummaryService, UserProfileService
 from app.tools.registry import ToolRegistry, build_default_tool_registry
 
 
@@ -51,6 +52,8 @@ class AutonomousAgentService:
         self.tools = tool_registry or build_default_tool_registry()
         self.memory = memory_service or MemoryService()
         self.goals = goal_service or GoalService()
+        self.profiler = UserProfileService(llm_client=self.llm, memory_service=self.memory)
+        self.summarizer = SummaryService(llm_client=self.llm, memory_service=self.memory)
 
     def respond(
         self,
@@ -73,9 +76,11 @@ class AutonomousAgentService:
         # ── 1. Context ───────────────────────────────────────────────
         goals = self.goals.get_active_goals(user_id)
         history = self.memory.load_recent_messages(user_id)
+        summary = self.memory.load_summary(user_id)
+        user_profile = self.memory.load_user_profile(user_id)
 
         # ── 2. System prompt with goal state ────────────────────────
-        system_prompt = self._build_system_prompt(user_id, goals)
+        system_prompt = self._build_system_prompt(user_id, goals, summary, user_profile)
 
         # ── 3. Conversation messages ─────────────────────────────────
         messages: List[Dict[str, Any]] = self._build_messages(history, message)
@@ -147,6 +152,19 @@ class AutonomousAgentService:
         # ── 6. Persist to memory ─────────────────────────────────────
         self.memory.save_turn(user_id, message, answer)
 
+        # ── 7. Post-turn background tasks ────────────────────────────
+        # Extract user preferences from this exchange (best-effort, never crash)
+        try:
+            self.profiler.update_profile(user_id, message, answer)
+        except Exception:
+            pass
+
+        # Compress old turns into running summary if threshold exceeded
+        try:
+            self.summarizer.maybe_compress(user_id)
+        except Exception:
+            pass
+
         stage = "tool" if tool_trace else "direct"
         return AutonomousAgentResult(
             answer=answer,
@@ -158,7 +176,13 @@ class AutonomousAgentService:
 
     # ── Helpers ──────────────────────────────────────────────────────
 
-    def _build_system_prompt(self, user_id: str, goals: List[Dict[str, Any]]) -> str:
+    def _build_system_prompt(
+        self,
+        user_id: str,
+        goals: List[Dict[str, Any]],
+        summary: str = "",
+        user_profile: str = "",
+    ) -> str:
         base = (
             "你是一个专业的求职辅导 Agent，可以自主决定调用哪些工具来帮助用户。\n\n"
             f"当前用户的 user_id 为：{user_id}（调用任何需要 user_id 的工具时必须使用此值）\n\n"
@@ -169,6 +193,24 @@ class AutonomousAgentService:
             "- 给出结论和 1-3 个具体行动建议，避免空泛铺垫\n"
         )
 
+        # Inject long-term user preferences
+        if user_profile and user_profile != "{}":
+            try:
+                import json
+                prefs = json.loads(user_profile)
+                pref_lines = [
+                    f"  {k}: {v}" for k, v in prefs.items() if v is not None
+                ]
+                if pref_lines:
+                    base += "\n\n【用户已知偏好（跨会话记忆）】\n" + "\n".join(pref_lines)
+            except Exception:
+                pass
+
+        # Inject running summary of older conversations
+        if summary:
+            base += f"\n\n【历史对话摘要】\n{summary}"
+
+        # Inject current goals
         if goals:
             lines = []
             for g in goals:
@@ -178,9 +220,9 @@ class AutonomousAgentService:
                 if g.get("recent_progress"):
                     latest = g["recent_progress"][0]["note"]
                     line += f"\n  最新进展：{latest}"
-                lines.append(line)  # fix: was outside the loop — only last goal was ever added
+                lines.append(line)
             base += (
-                "\n\n用户当前求职目标：\n"
+                "\n\n【用户当前求职目标】\n"
                 + "\n".join(lines)
                 + "\n\n如果用户上次说要做某件事，可以主动询问进展并用 log_progress 记录。"
             )

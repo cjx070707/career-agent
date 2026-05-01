@@ -114,6 +114,18 @@ def init_db(db_path: Optional[str] = None) -> None:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(goal_id) REFERENCES goals(id)
             );
+
+            CREATE TABLE IF NOT EXISTS conversation_summaries (
+                user_id TEXT PRIMARY KEY,
+                summary TEXT NOT NULL DEFAULT '',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id TEXT PRIMARY KEY,
+                preferences TEXT NOT NULL DEFAULT '{}',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
             """
         )
         candidate_columns = {
