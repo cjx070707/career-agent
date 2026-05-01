@@ -5,6 +5,7 @@ ReAct loop where the LLM sees all available tools and autonomously decides
 what to do at each step.
 """
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -14,6 +15,7 @@ from app.services.goal_service import GoalService
 from app.services.memory_service import MemoryService
 from app.services.user_profile_service import SummaryService, UserProfileService
 from app.tools.registry import ToolRegistry, build_default_tool_registry
+from app.utils.trace_logger import tracer
 
 
 @dataclass
@@ -91,10 +93,14 @@ class AutonomousAgentService:
         # ── 5. True ReAct loop ───────────────────────────────────────
         tool_trace: List[str] = []
         answer = ""
+        turn_start = time.monotonic()
+        iterations_used = 0
 
         for iteration in range(self.MAX_ITERATIONS):
+            iterations_used = iteration + 1
             emit("🤔 正在思考..." if iteration == 0 else "🔄 继续分析...")
 
+            llm_start = time.monotonic()
             try:
                 response_msg = self.llm.chat_with_tools(
                     system_prompt=system_prompt,
@@ -102,11 +108,27 @@ class AutonomousAgentService:
                     tools=tool_schemas,
                     timeout=self.TOOL_TIMEOUT,
                 )
+                llm_ms = int((time.monotonic() - llm_start) * 1000)
+                tool_calls = response_msg.get("tool_calls")
+                tracer.log_llm_call(
+                    user_id=user_id,
+                    iteration=iteration,
+                    latency_ms=llm_ms,
+                    had_tool_calls=bool(tool_calls),
+                    n_messages=len(messages),
+                )
             except Exception as exc:
+                llm_ms = int((time.monotonic() - llm_start) * 1000)
+                tracer.log_llm_call(
+                    user_id=user_id,
+                    iteration=iteration,
+                    latency_ms=llm_ms,
+                    had_tool_calls=False,
+                    n_messages=len(messages),
+                    error=str(exc),
+                )
                 answer = f"抱歉，暂时无法回答：{exc}"
                 break
-
-            tool_calls = response_msg.get("tool_calls")
 
             if not tool_calls:
                 # LLM produced a final text answer — exit loop
@@ -136,7 +158,29 @@ class AutonomousAgentService:
                 except (json.JSONDecodeError, TypeError):
                     args = {}
 
-                result = self.tools.run(tool_name, args)
+                tool_start = time.monotonic()
+                try:
+                    result = self.tools.run(tool_name, args)
+                    tool_ms = int((time.monotonic() - tool_start) * 1000)
+                    tracer.log_tool_call(
+                        user_id=user_id,
+                        tool_name=tool_name,
+                        args=args,
+                        latency_ms=tool_ms,
+                        ok=True,
+                    )
+                except Exception as exc:
+                    tool_ms = int((time.monotonic() - tool_start) * 1000)
+                    tracer.log_tool_call(
+                        user_id=user_id,
+                        tool_name=tool_name,
+                        args=args,
+                        latency_ms=tool_ms,
+                        ok=False,
+                        error=str(exc),
+                    )
+                    result = {"error": str(exc)}
+
                 tool_trace.append(tool_name)
 
                 messages.append({
@@ -152,6 +196,17 @@ class AutonomousAgentService:
         # ── 6. Persist to memory ─────────────────────────────────────
         self.memory.save_turn(user_id, message, answer)
 
+        # Log the completed turn
+        total_ms = int((time.monotonic() - turn_start) * 1000)
+        stage = "tool" if tool_trace else "direct"
+        tracer.log_agent_turn(
+            user_id=user_id,
+            total_latency_ms=total_ms,
+            tool_trace=tool_trace,
+            stage=stage,
+            iterations=iterations_used,
+        )
+
         # ── 7. Post-turn background tasks ────────────────────────────
         # Extract user preferences from this exchange (best-effort, never crash)
         try:
@@ -165,7 +220,6 @@ class AutonomousAgentService:
         except Exception:
             pass
 
-        stage = "tool" if tool_trace else "direct"
         return AutonomousAgentResult(
             answer=answer,
             stage=stage,
