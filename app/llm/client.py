@@ -281,6 +281,37 @@ class LLMClient:
         except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
             return []
 
+    def chat_with_tools(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        timeout: float = 30.0,
+    ) -> Dict[str, Any]:
+        """Call /chat/completions with function-calling tool schemas.
+
+        Returns the raw assistant message dict:
+        - If LLM wants to call tools: {"role": "assistant", "tool_calls": [...]}
+        - If LLM produces a final answer: {"role": "assistant", "content": "..."}
+        """
+        request: Dict[str, Any] = {
+            "model": self._generator_model(),
+            "messages": [{"role": "system", "content": system_prompt}] + messages,
+            "tools": tools,
+            "tool_choice": "auto",
+        }
+        self._disable_thinking(request)
+        payload = self._post_responses(
+            f"{self._planner_base_url().rstrip('/')}/chat/completions",
+            api_key=self._planner_api_key(),
+            payload=request,
+            timeout=timeout,
+        )
+        choices = payload.get("choices", [])
+        if not choices:
+            raise ValueError("chat_with_tools: no choices in response")
+        return choices[0].get("message", {})
+
     def decide_next_action(
         self,
         *,
