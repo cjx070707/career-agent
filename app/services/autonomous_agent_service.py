@@ -75,7 +75,7 @@ class AutonomousAgentService:
         history = self.memory.load_recent_messages(user_id)
 
         # ── 2. System prompt with goal state ────────────────────────
-        system_prompt = self._build_system_prompt(goals)
+        system_prompt = self._build_system_prompt(user_id, goals)
 
         # ── 3. Conversation messages ─────────────────────────────────
         messages: List[Dict[str, Any]] = self._build_messages(history, message)
@@ -142,7 +142,7 @@ class AutonomousAgentService:
         else:
             # Exceeded MAX_ITERATIONS without a final answer
             if not answer:
-                answer = "抱歉，这个问题需要更多信息，请换一种方式描述。"
+                answer = "抱歉，这个问题的处理步骤超出了预期，请稍后重试或把问题拆分得更具体一些。"
 
         # ── 6. Persist to memory ─────────────────────────────────────
         self.memory.save_turn(user_id, message, answer)
@@ -158,15 +158,15 @@ class AutonomousAgentService:
 
     # ── Helpers ──────────────────────────────────────────────────────
 
-    def _build_system_prompt(self, goals: List[Dict[str, Any]]) -> str:
+    def _build_system_prompt(self, user_id: str, goals: List[Dict[str, Any]]) -> str:
         base = (
             "你是一个专业的求职辅导 Agent，可以自主决定调用哪些工具来帮助用户。\n\n"
+            f"当前用户的 user_id 为：{user_id}（调用任何需要 user_id 的工具时必须使用此值）\n\n"
             "行为准则：\n"
             "- 简单问候或闲聊：直接回答，不需要调用工具\n"
             "- 求职相关问题：主动使用合适的工具获取信息后再回答\n"
             "- 回答控制在 300 字以内，除非用户明确要求详细展开\n"
             "- 给出结论和 1-3 个具体行动建议，避免空泛铺垫\n"
-            "- 每次对话开始时先调用 get_goals 了解用户是否有进行中的目标需要跟进\n"
         )
 
         if goals:
@@ -178,7 +178,7 @@ class AutonomousAgentService:
                 if g.get("recent_progress"):
                     latest = g["recent_progress"][0]["note"]
                     line += f"\n  最新进展：{latest}"
-            lines.append(line)
+                lines.append(line)  # fix: was outside the loop — only last goal was ever added
             base += (
                 "\n\n用户当前求职目标：\n"
                 + "\n".join(lines)
