@@ -281,6 +281,29 @@ class LLMClient:
         except (RuntimeError, ValueError, TypeError, json.JSONDecodeError, httpx.HTTPError):
             return []
 
+    def simple_chat(
+        self,
+        system_prompt: str,
+        user_content: str,
+        timeout: float = 30.0,
+    ) -> str:
+        """Minimal single-turn chat completion. Returns the assistant text content."""
+        request: Dict[str, Any] = {
+            "model": self._generator_model(),
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+        }
+        self._disable_thinking(request)
+        payload = self._post_responses(
+            f"{self._planner_base_url().rstrip('/')}/chat/completions",
+            api_key=self._planner_api_key(),
+            payload=request,
+            timeout=timeout,
+        )
+        return self._extract_chat_completion_text(payload).strip()
+
     def chat_with_tools(
         self,
         system_prompt: str,
