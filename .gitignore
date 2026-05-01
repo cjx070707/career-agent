@@ -11,3 +11,6 @@ evals/reports/*/
 web/dist/
 web/node_modules/
 web/tsconfig.tsbuildinfo
+
+.venv/
+scripts/add_resume.json
