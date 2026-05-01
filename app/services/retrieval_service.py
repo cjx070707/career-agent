@@ -25,13 +25,16 @@ class DashScopeEmbeddingFunction(EmbeddingFunction[Documents]):
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._dimensions = dimensions
-        self._fallback = LocalTokenEmbeddingFunction()
+
+    _BATCH_SIZE = 10  # DashScope text-embedding-v3 max texts per request
 
     def __call__(self, input: Documents) -> Embeddings:
         texts = list(input)
         if not texts:
             return []
-        try:
+        all_embeddings: Embeddings = []
+        for i in range(0, len(texts), self._BATCH_SIZE):
+            batch = texts[i : i + self._BATCH_SIZE]
             response = httpx.post(
                 f"{self._base_url}/embeddings",
                 headers={
@@ -40,7 +43,7 @@ class DashScopeEmbeddingFunction(EmbeddingFunction[Documents]):
                 },
                 json={
                     "model": self._model,
-                    "input": texts,
+                    "input": batch,
                     "encoding_format": "float",
                     "dimensions": self._dimensions,
                 },
@@ -48,11 +51,8 @@ class DashScopeEmbeddingFunction(EmbeddingFunction[Documents]):
             )
             response.raise_for_status()
             items = sorted(response.json()["data"], key=lambda x: x["index"])
-            return [item["embedding"] for item in items]
-        except Exception:
-            # Network unavailable or API error — fall back to local embedding
-            # so the service stays operational.
-            return self._fallback(input)
+            all_embeddings.extend(item["embedding"] for item in items)
+        return all_embeddings
 
 
 class LocalTokenEmbeddingFunction(EmbeddingFunction[Documents]):
@@ -211,7 +211,7 @@ class RetrievalService:
         self._embedding_fn = self._build_embedding_function()
         coll_name = collection_name or settings.chroma_collection_name
         self._collection = self._get_or_recreate_collection(coll_name)
-        self._seed_collection()
+        self._seed_collection_safe(coll_name)
 
     def _build_embedding_function(self) -> EmbeddingFunction:
         """Return DashScope embedding if API key is configured, else local fallback."""
@@ -419,6 +419,35 @@ class RetrievalService:
                 }
             ],
         )
+
+    def _seed_collection_safe(self, coll_name: str) -> None:
+        """Seed the collection only when empty, auto-recovering from dimension mismatches.
+
+        ChromaDB validates embedding dimensions at upsert time (not at
+        get_or_create_collection time), so a stale collection with the wrong
+        dimension will only fail here.  When that happens we delete the
+        collection, recreate it with the current embedding function, and
+        re-seed from scratch.
+        """
+        if self._collection.count() > 0:
+            # Already seeded — skip to avoid re-embedding on every request.
+            return
+        try:
+            self._seed_collection()
+        except Exception as exc:
+            if "dimension" in str(exc).lower():
+                # Stale collection has wrong embedding dimensions — wipe and rebuild.
+                try:
+                    self._client.delete_collection(coll_name)
+                except Exception:
+                    pass
+                self._collection = self._client.create_collection(
+                    name=coll_name,
+                    embedding_function=self._embedding_fn,
+                )
+                self._seed_collection()
+            else:
+                raise
 
     def _seed_collection(self) -> None:
         self._collection.upsert(
