@@ -1,6 +1,6 @@
 # 下一阶段计划｜从 Chatbot 到真正的 Agent
 
-> 写作时间：2026-05-01  
+> 写作时间：2026-05-01 | 最后更新：2026-05-01  
 > 背景：项目投递 AI 开发岗位，需要对当前项目做诚实评估，并规划真正有含金量的演进路径。
 
 ---
@@ -17,7 +17,9 @@
 用户消息 → 意图分类（LLM）→ 固定工具链 → LLM 生成回答
 ```
 
-React loop 虽然存在，但工具链是预定义的，LLM 在每步几乎总是输出 "continue" 或 "finish"，没有真正改变过执行路径。面试官如果问"你的 React loop 在哪个场景下真正改变了执行路径"，目前很难给出具体例子。
+ReAct loop 的**结构**存在，但决策是假的。意图分类器已经提前决定好了走哪条工具链，LLM 在 loop 里只是沿着预定义路径确认"continue"或"finish"，从未真正改变过执行路径。
+
+区别在于：**谁在真正做决定**。现在是意图分类器在决定，LLM 只是执行。真正的 agent 是 LLM 看到所有可用工具后自主决定调哪个、调几次、什么顺序。
 
 ### 为什么不是 Agent
 
@@ -72,132 +74,106 @@ Agent 需要自主完成：
 
 ---
 
-## 三、当前版本完善计划（main 分支）
+## 三、main 分支完成情况
 
-**目标**：把当前版本做成一个工程上诚实、技术栈没有假东西的完整 demo。
+### ✅ Phase F-1｜SSE 流式输出
+`/chat` 端点改为 `StreamingResponse`，`run_in_executor` 保证事件循环不阻塞，三条 SSE 事件（status / answer / done）正常工作。`/chat/sync` 保留供 eval 使用。
 
-### Phase F-1｜Streaming（最优先）
+### ✅ Phase F-2｜真实 Embedding
+接入 DashScope `text-embedding-v3`（1024 维），替换原来的 MD5 hash 假向量。实现了分批调用（每批 10 条避免超限）和维度不匹配时自动重建 collection 的逻辑。
 
-**为什么是第一个**：所有生产级 AI 产品的标配，缺了就是 toy 的最直观感受来源。做完之后可以立刻看到效果，有正反馈。
+### ⏭ Phase F-3｜PDF 简历解析（暂缓）
+vision_client 已接好，用户可直接上传图片。PDF 解析本质是"PDF → 图片 → vision"，工程价值有限，等 agent 分支稳定后按需补。
 
-要做的事：
-- `/chat` 端点改为 `StreamingResponse`（FastAPI SSE）
-- `AgentService.respond()` 改为 generator，每完成一步 yield 一条状态
-- 前端适配 EventSource 读流
+### ⏭ Phase F-4｜Gap Analysis（并入 agent 分支）
+不作为独立 pipeline 实现。在 agent 架构里作为一个工具（tool）实现，由 LLM 自主决定何时调用，比固定 pipeline 含金量更高。
 
-格式设计：
-```
-data: {"type": "status", "text": "🔍 分析意图..."}
-data: {"type": "status", "text": "📋 读取简历..."}
-data: {"type": "status", "text": "🔎 搜索匹配岗位..."}
-data: {"type": "answer", "delta": "根据你的简历，"}
-data: {"type": "answer", "delta": "我找到了 3 个匹配岗位..."}
-data: {"type": "done"}
-```
-
-验收标准：
-- [ ] 用户发消息后 < 1s 看到第一条状态
-- [ ] 回答文字流式出现，不是一次性弹出
-- [ ] 超时问题从根本上消失
-
-### Phase F-2｜真实 Embedding（替换假的）
-
-**为什么重要**：当前 `LocalTokenEmbeddingFunction` 用 MD5 hash 做向量，这是字符串哈希不是语义搜索。面试官问"你的 RAG 怎么做的"，现在的答案经不起追问。
-
-要做的事：
-- 接入 DashScope `text-embedding-v3` API（一行调用）
-- 替换 `LocalTokenEmbeddingFunction`
-- 重建 ChromaDB collection（embedding 维度变了需要重建）
-- 跑 retrieval 对比实验：旧 embedding vs. 新 embedding，top-5 准确率对比
-
-验收标准：
-- [ ] 能说出"语义检索用的是 text-embedding-v3，维度 1024"
-- [ ] top-5 岗位召回率有可量化提升（写进 README）
-
-### Phase F-3｜PDF 简历解析
-
-**为什么重要**：现在简历只能手动输入文本，vision_client 已经接好了，差最后一步。做完之后用户体验闭环，面试可以现场 demo 上传 PDF。
-
-要做的事：
-- `/resumes/upload` 端点接收 PDF 文件
-- 调用 `vision_client` 解析图片 → 结构化文本
-- 存入 resumes 表，触发 ChromaDB upsert
-
-验收标准：
-- [ ] 上传一份 PDF 简历，系统自动解析并可用于后续分析
-
-### Phase F-4｜简历-JD Gap Analysis
-
-**为什么重要**：这是一个在真实求职场景里有价值的功能，技术上涉及结构化提取 + 对比推理，面试时能讲出"为什么这样设计"。
-
-设计：
-```
-输入：用户简历 + 目标 JD
-步骤：
-  1. LLM 结构化提取 JD 要求（必须项 / 加分项 / 文化要求）
-  2. LLM 结构化提取简历技能（已有技能 + 项目经历）
-  3. 对比：逐条判断满足/部分满足/缺失
-  4. 输出：匹配度评分 + 具体 gap + 可行补充建议
-```
-
-验收标准：
-- [ ] 给定简历和 JD，输出结构化 gap 分析（不只是打分）
-- [ ] 每条 gap 有具体补充建议（"缺 Kubernetes 经验，建议做一个 deployment 项目"）
-
-### Phase F-5｜Eval 量化数字
-
-**为什么重要**：能说出数字的候选人比只能说"效果不错"的候选人有说服力得多。
-
-要做的事：
-- 跑完上面改动后重新跑 eval
-- 记录：streaming P50/P99 响应时间、embedding 替换后检索准确率对比、Gap Analysis 结构化输出准确率
-- 写进 README 和简历
+### ⏭ Phase F-5｜Eval 量化数字（agent 分支完成后统一跑）
 
 ---
 
-## 四、真正 Agent 版本计划（新分支 `feature/autonomous-agent`）
+## 四、真正 Agent 版本（分支 `feature/autonomous-agent`）
 
-**目标**：实现一个真正需要 Agent 才能做的功能——"求职目标追踪与动态计划调整"。
+### 核心架构：工具调用驱动，不是意图分类驱动
 
-### 核心设计
+**当前假 agent 路径：**
+```
+意图分类（LLM）→ 预定义 tool chain → LLM 生成回答
+```
+LLM 在 ReAct loop 里走的是意图分类器已经决定好的路，从未真正自主。
 
-用户设定一个目标：
-> "我想在 8 周内拿到数据分析实习 offer"
+**新 agent 路径：**
+```
+加载上下文（目标 + 历史）
+    ↓
+LLM 看到：所有工具描述 + 当前目标状态 + 对话历史 + 用户消息
+    ↓
+LLM 自主决定：调哪个工具 / 调几次 / 什么顺序 / 还是直接回答
+    ↓
+执行工具 → 结果返回 LLM → LLM 再次决策（真 ReAct）
+    ↓
+最终回答
+```
 
-Agent 在后续多次对话中：
-1. 记住这个目标（跨会话持久目标存储）
-2. 第一次：制定分阶段行动计划
-3. 每次用户来对话：先检查目标状态，再决定当前对话做什么
-4. 主动追问："上次说本周要投 5 家，投了吗？"
-5. 根据进展动态调整计划："你面试通过率偏低，我们这周重点做面试准备"
+### Agent 工具列表（LLM 从中自主选择）
 
-### 技术上需要解决的新问题
+| 工具 | 功能 |
+|---|---|
+| `search_jobs` | 语义搜索匹配岗位 |
+| `get_resume` | 读取用户简历 |
+| `analyze_gap` | 简历 vs JD gap 分析 |
+| `get_goals` | 查询当前求职目标和计划 |
+| `set_goal` | 设定或更新求职目标 |
+| `log_progress` | 记录本周进展（投了几家、面试结果等）|
 
-- **持久目标存储**：goal 表，记录目标 + 当前阶段 + 历史进展
-- **主动追踪逻辑**：每次对话开始前，Agent 先查目标状态，决定是否主动提起
-- **计划动态调整**：根据用户反馈（投了几家、面试结果）重新生成计划
-- **跨会话推理**：不只是记住说过什么，而是推理"上次的行动有没有执行"
+### 目标持久化（新增 DB 表）
 
-### 为什么这个才叫 Agent
+```sql
+goals (
+  id, user_id, goal_text, deadline,
+  status, plan_json, created_at, updated_at
+)
+goal_progress (
+  id, goal_id, note, created_at
+)
+```
 
-这个功能用 chatbot 做不了，原因是：
-- Chatbot 没有持久目标，每次对话独立
-- Chatbot 不能主动追问（它只被动响应）
-- Chatbot 不能根据外部事实（用户真实进展）更新内部计划
+每次对话开始前，agent 先查 `goals` 表，把目标状态注入 system prompt。这是跨会话记忆的核心。
 
-这是真正的 **goal-directed autonomous behavior**，面试官问"你的 agent 和 chatbot 有什么区别"，这个功能就是答案。
+### 典型 agent 行为
+
+**第一次对话：**
+> 用户：我想三个月内拿到 fintech 后端实习
+> Agent：自主调用 `set_goal` → `get_resume` → `search_jobs` → `analyze_gap` → 输出分阶段计划
+
+**第三次对话：**
+> 用户：最近有点迷茫
+> Agent：查 `get_goals`（目标存在，第二周应投3家）→ 主动问"上周计划投3家，实际怎么样了？" → 根据回答调 `log_progress` 或调整计划
+
+这是 chatbot 做不到的：chatbot 没有持久目标，不能主动追问，不能根据真实进展更新计划。
+
+### 实施阶段
+
+**A-1**：`goals` / `goal_progress` 表 + `GoalService`  
+**A-2**：工具注册表 + 真正的 function calling 循环（替换意图分类路径）  
+**A-3**：跨会话目标感知（每次对话注入目标状态到 system prompt）  
+**A-4**：`analyze_gap` 工具实现  
+**A-5**：多轮 eval + 量化数字写入 README
+
+现有 `RetrievalService`、`ResumeService`、`MemoryService` 全部保留作数据层，新 agent 直接调用，不重写。
 
 ---
 
-## 五、执行顺序
+## 五、执行顺序（更新后）
 
 ```
-当前（main）:
-  F-1 Streaming → F-2 真实 Embedding → F-3 PDF 解析 → F-4 Gap Analysis → F-5 Eval 数字
+main 分支（已完成）:
+  ✅ F-1 Streaming  ✅ F-2 真实 Embedding
 
-稳定后新开分支:
-  feature/autonomous-agent
-  → 目标存储设计 → 主动追踪逻辑 → 动态计划调整 → 多轮 eval 验证
+feature/autonomous-agent 分支:
+  A-1 Goal 持久化 → A-2 真 Function Calling 循环
+  → A-3 跨会话目标感知 → A-4 Gap Analysis tool
+  → A-5 Eval 数字
 ```
 
 ---
@@ -244,11 +220,11 @@ Agent 在后续多次对话中：
 **改进前能说的**：
 > "用 FastAPI + LLM 构建了一个求职辅导 chatbot，集成了 RAG 检索和工具调用。"
 
-**完成 main 分支改进后能说的**：
-> "构建了一个求职辅导 AI 系统，实现了 SSE 流式输出、基于 text-embedding-v3 的语义检索（top-5 准确率 X%）、PDF 简历解析、和简历-JD Gap Analysis。系统有完整的 eval 框架，multi-turn 通过率 100%，P99 响应时间 < Xs。"
+**main 分支（当前可说的）**：
+> "构建了一个求职辅导 AI 系统，实现了 SSE 流式输出、基于 DashScope text-embedding-v3 的语义检索（1024 维，hybrid BM25 + 向量 RRF 融合排序）。系统有完整 eval 框架，multi-turn 通过率 100%。"
 
 **完成 agent 分支后能说的**：
-> "在此基础上实现了跨会话目标追踪的自主 Agent：用户设定求职目标后，Agent 制定分阶段计划，跨会话追踪执行情况，根据真实进展动态调整策略。这是 chatbot 无法实现的能力，因为它需要持久目标状态和跨轮次主动推理。"
+> "在此基础上实现了基于 function calling 的真正自主 Agent：LLM 自主决定调用哪些工具（岗位搜索、简历分析、gap 分析、目标管理），跨会话追踪求职目标，根据真实进展动态调整计划。这是 chatbot 无法实现的能力——它需要持久目标状态、跨轮次主动推理、和真正的 LLM 自主决策。"
 
 ---
 
