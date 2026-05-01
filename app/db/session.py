@@ -95,6 +95,25 @@ def init_db(db_path: Optional[str] = None) -> None:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(user_id, event_type, source_type, source_id)
             );
+
+            CREATE TABLE IF NOT EXISTS goals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                goal_text TEXT NOT NULL,
+                deadline TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                plan_json TEXT NOT NULL DEFAULT '{}',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS goal_progress (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                goal_id INTEGER NOT NULL,
+                note TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(goal_id) REFERENCES goals(id)
+            );
             """
         )
         candidate_columns = {

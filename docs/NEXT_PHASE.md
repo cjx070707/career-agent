@@ -152,15 +152,24 @@ goal_progress (
 
 这是 chatbot 做不到的：chatbot 没有持久目标，不能主动追问，不能根据真实进展更新计划。
 
+### 已有基础（无需重建）
+
+- `app/tools/registry.py` — 工具注册表已有，`search_jobs`、`resume_tools`、`match_tools` 等已注册
+- `web/` — React 前端已有，SSE 已接入
+- `demo/` — 独立 HTML demo 已有
+- `RetrievalService`、`ResumeService`、`MemoryService` — 数据层完整，直接复用
+
 ### 实施阶段
 
-**A-1**：`goals` / `goal_progress` 表 + `GoalService`  
-**A-2**：工具注册表 + 真正的 function calling 循环（替换意图分类路径）  
-**A-3**：跨会话目标感知（每次对话注入目标状态到 system prompt）  
-**A-4**：`analyze_gap` 工具实现  
-**A-5**：多轮 eval + 量化数字写入 README
+**A-1**：`goals` / `goal_progress` 表 + `GoalService` + 注册 goal 工具（`get_goals`、`set_goal`、`log_progress`）到现有 `ToolRegistry`
 
-现有 `RetrievalService`、`ResumeService`、`MemoryService` 全部保留作数据层，新 agent 直接调用，不重写。
+**A-2**：改造 `AgentService` 决策路径——把工具 schema 交给 LLM，用 function calling 自主决定调哪个工具，替换掉意图分类器 → 固定工具链的路径；同时工具调用过程实时 yield SSE 状态事件
+
+**A-3**：跨会话目标感知——每次对话开始前查 `goals` 表，把目标状态注入 system prompt；无目标时引导用户设定目标
+
+**A-4**：`analyze_gap` 工具——简历 vs JD 结构化 gap 分析，注册进 `ToolRegistry`
+
+**A-5**：多轮 eval + 量化数字写入 README
 
 ---
 
@@ -170,9 +179,11 @@ goal_progress (
 main 分支（已完成）:
   ✅ F-1 Streaming  ✅ F-2 真实 Embedding
 
-feature/autonomous-agent 分支:
-  A-1 Goal 持久化 → A-2 真 Function Calling 循环
-  → A-3 跨会话目标感知 → A-4 Gap Analysis tool
+feature/autonomous-agent 分支（基于 main，前端/工具注册表/数据层全部继承）:
+  A-1 Goal 持久化 + goal 工具注册
+  → A-2 真 Function Calling 循环（含工具调用实时 SSE）
+  → A-3 跨会话目标感知（含首次使用引导）
+  → A-4 Gap Analysis tool
   → A-5 Eval 数字
 ```
 
