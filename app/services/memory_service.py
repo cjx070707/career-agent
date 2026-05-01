@@ -7,10 +7,10 @@ from typing import List, Optional, Tuple
 
 from app.db.session import get_connection
 
-# How many raw turns to keep verbatim in context
-WINDOW_SIZE = 6
+# How many raw turns to keep verbatim in context (12 turns = 6 user/agent exchanges)
+WINDOW_SIZE = 12
 # When total stored turns exceed this, compress the oldest batch
-ARCHIVE_THRESHOLD = 14
+ARCHIVE_THRESHOLD = 24
 
 
 @dataclass
