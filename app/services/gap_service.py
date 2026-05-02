@@ -3,40 +3,26 @@
 Fetches the user's latest resume, then calls the LLM to produce a structured
 gap analysis: matched skills, missing skills, match score, and concrete suggestions.
 """
+import json
 from typing import Any, Dict
 
 from app.llm.client import LLMClient
 from app.services.resume_service import ResumeService
 
 _SYSTEM_PROMPT = """\
-你是一名专业的求职辅导专家。你的任务是对比候选人的简历和目标岗位的 JD，给出结构化的 gap 分析。
+你是一名专业的求职辅导专家。对比候选人简历和目标 JD，输出以下 JSON，不要输出任何其他内容：
 
-输出格式（严格按以下结构，用中文回答）：
-
-【匹配度】X/100（整数）
-
-【已匹配技能】
-- 技能1
-- 技能2
-...
-
-【差距/缺失技能】
-- 缺失点1（说明 JD 要求了什么，简历里为何不足）
-- 缺失点2
-...
-
-【优先级建议】
-1. 最重要的行动（具体，可执行）
-2. 第二重要的行动
-3. 第三重要的行动
-
-【总结】
-一句话总结当前匹配情况和最关键的提升方向。
+{
+  "match_score": <0-100 整数，客观评分>,
+  "matched_skills": [<简历中已具备的技能，字符串列表>],
+  "missing_skills": [<JD 要求但简历缺失的技能，字符串列表>],
+  "suggestions": [<3 条具体可执行的提升建议，字符串列表>]
+}
 
 要求：
-- 匹配度评分要客观，不要给虚高分
-- 差距分析要具体，指出 JD 的哪个要求和简历哪里对不上
-- 建议要可落地，不要泛泛而谈
+- match_score 要客观，不要虚高
+- missing_skills 要具体指出 JD 哪个要求对不上
+- suggestions 要可落地，不要泛泛而谈
 """
 
 
@@ -102,8 +88,26 @@ class GapService:
                 "error": "LLM 未返回有效内容，请重试。",
             }
 
-        return {
-            "resume_title": resume.get("title"),
-            "analysis": analysis,
-            "error": None,
-        }
+        # Parse JSON output; fall back to raw text if LLM doesn't comply
+        try:
+            # Strip markdown code fences if present
+            text = analysis.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            structured = json.loads(text)
+            return {
+                "resume_title": resume.get("title"),
+                "match_score": int(structured.get("match_score", 0)),
+                "matched_skills": structured.get("matched_skills", []),
+                "missing_skills": structured.get("missing_skills", []),
+                "suggestions": structured.get("suggestions", []),
+                "error": None,
+            }
+        except (json.JSONDecodeError, ValueError):
+            return {
+                "resume_title": resume.get("title"),
+                "match_score": None,
+                "matched_skills": [],
+                "missing_skills": [],
+                "suggestions": [],
+                "analysis": analysis,
+                "error": None,
+            }
