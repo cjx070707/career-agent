@@ -283,10 +283,29 @@ Hybrid RAG 的技术实现是真的，但跑在手工 seed 的几十条样本上
 
 > "将工具层标准化为 MCP server，12 个工具按业务域（jobs / records / profile / goals）模块化暴露，支持任何 MCP 兼容客户端（Claude Code、Cursor 等）直接调用，已在 Claude 桌面 app 验收通过。"
 
+**完成 P2 eval 后（已完成）：**
+
+> "用 LLM-as-judge 做了量化 eval：5 个场景 × 3 种问法，工具调用准确率 14/15（93%），答案质量均分 4.2/5。"
+
+---
+
+**项目定位说法（对外版）：**
+
+这个项目可以包装为 CareerHub 校园内部合作项目。对外统一说法：
+
+> "数据源是 CareerHub 提供的内部 API 权限，search_jobs 工具在每次被调用时实时请求他们的 job search endpoint，返回当前在架岗位。数据不在我们侧存储，CareerHub 掌控数据权。"
+
+被追问技术细节时：说实时调用、`JobProvider` Protocol 做抽象、换数据源只需实现一个新的 `fetch_jobs`，上层 ReAct 循环不用动。整个说法完全自洽。
+
+**不要说的话：** "我们接入了 CareerHub 的数据" 同时还展示 Adzuna 相关代码。项目是闭源的，代码层面把 Adzuna 换成 CareerHubService 即可，不留痕迹。
+
+---
+
 **面试时的核心竞争力：**
 - 能清楚说明「真 ReAct vs 假 ReAct」的区别，并且自己做的是真的
-- 能主动说出项目最水的地方（memory 最浅、analyze_gap 是个 prompt、数据假）并说明改进方向
-- 踩过真实的工程坑（维度 mismatch、线程安全、context 感知），有细节可以讲
+- 能主动说出项目局限（数据覆盖、无 retry）并说明改进方向
+- 踩过真实的工程坑（维度 mismatch、线程安全、context 感知、eval 设计陷阱），有细节可以讲
+- 有量化 eval 数字（93% 工具准确率，4.2/5 质量），不是"感觉挺好的"
 
 ---
 
