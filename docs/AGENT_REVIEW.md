@@ -17,9 +17,23 @@
 LLM 直接看到所有工具 schema，自主决定调用哪些工具、以什么顺序、传什么参数。这是真 ReAct，不是 intent classifier 预先决定路径再走固定链。硬上限 MAX_ITERATIONS=6 防止死循环。
 
 **Memory**
-两层：Short-term 是 SQLite 滚动存储最近 6 轮对话，每次请求注入 messages 列表。Long-term 是 Goal 持久化，用户设定的求职目标跨 session 保留，并在 system prompt 里注入当前目标状态，agent 会主动跟进进展。
+当前三层结构：
+- **Short-term**：SQLite 滚动存储最近 6 轮对话，每次请求注入 messages 列表
+- **Goal tracking**：用户求职目标跨 session 持久化，注入 system prompt，agent 主动跟进进展
+- **Long-term**：暂无用户偏好持久化
 
-⚠️ **这是整个项目最水的模块。** 6 轮滚动窗口是 LangChain 入门教程第一章的标准实现。对一个定位「长期陪伴求职」的 agent，memory 设计和产品定位是矛盾的——用户说过的偏好、历史行为、隐性信号，全部在第 7 轮之后消失。Goal tracking 是加分项，但本质是 SQLite 里的 to-do list，不是真正的 agent memory。没有 semantic/episodic memory，没有用户偏好建模，没有跨 session 的行为归纳。
+⚠️ **这是整个项目最水的模块，正在改进中。** 6 轮窗口对「长期陪伴求职」的定位太浅——用户说的偏好（不想去外企、只看 Sydney、目标 fintech）在第 7 轮消失，agent 完全不记得。
+
+**计划中的 memory 架构升级（三层注入）：**
+```
+system prompt
+  └── user_profile（长期偏好，跨 session 永久保留）
+  └── goals（当前目标，已实现）
+  └── running summary（中期，超出窗口的对话压缩摘要）
+  └── recent messages（短期，最近 N 轮原文）
+```
+- **running summary**：超出滚动窗口的历史不直接丢弃，而是用 LLM 压缩成摘要保留，解决「聊久了就失忆」的根本问题
+- **user_profile 提取**：每轮对话结束后，LLM 从对话中提取偏好信号（地点、行业、岗位类型、时间线等）写入 user_profile 表，下次对话注入
 
 **Tools**
 Registry 模式，Pydantic 做输入校验，工具返回统一的 `ToolResult` 结构。现有工具：`get_goals / set_goal / log_progress / update_goal_status / search_jobs / get_resume / analyze_gap / get_candidate_profile / get_applications / get_interviews / match_resume_to_jobs`。LLM 读 tool error dict 后会自行解释给用户，不会崩溃。
@@ -229,22 +243,32 @@ Hybrid RAG 的技术实现是真的，但跑在手工 seed 的几十条样本上
 ## 六、执行顺序总览
 
 ```
-现在（已完成）：
+已完成：
   ✅ 真 ReAct function calling 循环
-  ✅ Goal 持久化 + 跨 session 目标感知
-  ✅ analyze_gap 工具（v1，prompt 版）
+  ✅ Goal 持久化 + 跨 session 目标感知（A-1/A-3）
+  ✅ analyze_gap 工具（v1，prompt 版）（A-4）
   ✅ Hybrid RAG（ChromaDB + BM25 + RRF）
-  ✅ SSE 实时状态流
-  ✅ UX bug 修复（前端 SSE 解析、system prompt bug）
+  ✅ SSE 实时状态流 + 前端 SSE 解析修复
+  ✅ UX bug 修复（system prompt bug、超时文案）
+  ✅ README 重写（架构图、工具列表、诚实局限）
+  ✅ MCP server（12 个工具，4 个 domain，Claude 桌面验收通过）
+  ✅ Running Summary — SummaryService，超过 24 turns 自动压缩历史对话
+     存入 conversation_summaries 表，注入 system prompt
+  ✅ user_profile 偏好提取 — UserProfileService，每轮对话后 LLM 提取
+     地点/行业/工作类型/薪资/时间线等偏好，存 user_profiles 表，
+     下次对话注入 system prompt，真正的跨 session 记忆
+  ✅ Structured Logging / Trace — app/utils/trace_logger.py
+     JSONL 写入 logs/agent_trace.jsonl，记录三类事件：
+       llm_call（iteration, latency_ms, had_tool_calls, n_messages）
+       tool_call（tool, args截断, latency_ms, ok, error）
+       agent_turn（stage, iterations, tool_trace, total_latency_ms）
 
-接下来：
-  → P0：README + 清理死代码 → push to GitHub
-  → P1a：ToolRegistry 改造成 MCP server
-  → P1b：MCP 接入真实招聘数据
-  → P2a：Memory 重设计（user profile 提取）
-  → P2b：analyze_gap 结构化输出
-  → P3：工程化（streaming answer / retry / 日志）
-  → P4：合作基础设施（Docker / 认证 / 反馈）
+接下来（按优先级）：
+  → analyze_gap 结构化输出（JSON schema：match_score / matched_skills / missing_skills）
+  → 真实岗位数据（Adzuna API 或其他）
+  → 最小 eval（5 个核心场景）
+  → 工程化（streaming answer / retry）
+  → 合作基础设施（Docker / 认证 / 反馈机制）
 ```
 
 ---
@@ -255,9 +279,9 @@ Hybrid RAG 的技术实现是真的，但跑在手工 seed 的几十条样本上
 
 > "基于 DashScope Qwen + FastAPI + React 构建了一个求职辅导 Agent。核心是真正的 LLM function calling ReAct 循环——LLM 自主决定调用哪些工具（岗位搜索、简历分析、gap 分析、目标管理），不是 intent classifier 预定路径。实现了 Hybrid RAG（ChromaDB 向量 + BM25 + RRF 融合）、跨 session goal 持久化、SSE 实时工具调用状态流。踩过的坑包括 DashScope embedding 维度 mismatch 自动恢复、asyncio 线程安全 SSE 桥、LLM 上下文感知设计。"
 
-**完成 MCP 改造后可以加的：**
+**完成 MCP 改造后（已完成）：**
 
-> "将工具层标准化为 MCP server，接入真实澳洲招聘数据，使 search_jobs 从假数据变为真实市场结果。"
+> "将工具层标准化为 MCP server，12 个工具按业务域（jobs / records / profile / goals）模块化暴露，支持任何 MCP 兼容客户端（Claude Code、Cursor 等）直接调用，已在 Claude 桌面 app 验收通过。"
 
 **面试时的核心竞争力：**
 - 能清楚说明「真 ReAct vs 假 ReAct」的区别，并且自己做的是真的
@@ -266,4 +290,52 @@ Hybrid RAG 的技术实现是真的，但跑在手工 seed 的几十条样本上
 
 ---
 
-*最后更新：2026-05-01*
+---
+
+## 八、架构图补全建议：对「5 节点方案」的工程评估
+
+ChatGPT 建议在架构图中补充 5 个节点：Context Manager、Running Summary、Context Compressor、Tool Result Processor / Tool Cache、Write Guardrail。方向基本正确，但有几处值得辨析，不然实现时会走弯路。
+
+---
+
+### 说对的部分
+
+**Running Summary + Context Compressor** 是同一件事的两个阶段——先把超出窗口的历史对话压缩成摘要，再用摘要替换掉原始 messages。这个确实该做，也是脱离玩具感最直接的一步。
+
+---
+
+### 说得含糊的部分
+
+**Context Manager** 这个词太虚。在本项目架构里，它实际上是「决定每次给 LLM 多少 token」的逻辑——rolling window 截断 + 摘要注入。不是一个独立模块，是在现有 `autonomous_agent_service.py` 里加几十行代码的事，不需要单独画成节点。
+
+**Tool Result Processor / Tool Cache**：
+- Tool Result Processor 已经有了——`ToolRegistry` 返回结构化 dict，agent loop 把它格式化回 messages，这就是 Tool Result Processor。
+- Tool Cache 值得做，但对本项目优先级不高：工具基本都是实时查 SQLite，数据本身 TTL 很短，缓存收益有限。
+
+**Write Guardrail**：对本项目几乎没有价值。Write Guardrail 是防止 Agent 自主写坏数据库/文件系统用的，适合有大量写操作的 Agent。本项目的写操作只有 `set_goal` 和 `log_progress`，都是用户主动触发的，不存在 LLM 自主乱写的风险。
+
+---
+
+### 实际优先级（工程视角）
+
+| 优先级 | 节点 | 理由 |
+|--------|------|------|
+| P0 | Running Summary | 直接解决「长对话失忆」问题，有明确实现路径 |
+| P0 | user_profile 提取 | 每轮结束后提取偏好写 DB，下次对话注入，记忆才有实质内容 |
+| P1 | Structured Logging / Trace | 每次 tool call 记 JSON log，是「能调试的 Agent」和「不能调试的 Agent」的分界线 |
+| P2 | Tool Cache | 可做可不做，先做上面三个 |
+| 不做 | Write Guardrail | 本项目不需要 |
+
+---
+
+### 结论
+
+ChatGPT 的建议是对面试官友好的「架构八股」——听起来全面，但不分轻重，照单全收会把时间浪费在低价值节点上。
+
+实际工程里：**先把 Running Summary 做完，比把五个半吊子模块都画进架构图更有说服力。**
+
+一个真实跑起来的压缩摘要机制，远比架构图上五个听起来专业的节点更能体现工程能力。
+
+---
+
+*最后更新：2026-05-02（memory upgrade + structured logging 完成）*
