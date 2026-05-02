@@ -1,205 +1,72 @@
-# 实施路线图｜高校求职辅导 Agent
+# 实施路线图（历史记录）
 
-> 本文件定义从当前状态到目标架构的实施顺序。
-> 每个 Phase 附有验收标准，完成前不进入下一个。
-
----
-
-## 当前状态快照（2026-04-29）
-
-**已完成，稳定，不动：**
-- 双层记忆系统（短期对话缓存 + 长期职业画像）
-- 模块化工具层（ToolRegistry + Pydantic schema 声明式注册）
-- Hybrid RAG（ChromaDB + BM25 + RRF 混合召回）
-- 多模态输入（Qwen-VL 简历截图解析）
-- Eval harness（multi-turn eval runner + 7 条双轮测试 + 断言框架）
-- 全套单元测试 + E2E 测试基础设施
-
-**存在问题，需要重构：**
-- 意图识别：1200 行关键词规则树（IntentRouter + IntentGateway），覆盖率差，对自然语言变体天花板极低
-- ReAct 循环：步骤预规划，LLM 只做有限决策，不是真正 LLM 驱动
-- 输出层：各 task_type 格式不统一，无法保证"结论/证据/行动"三段结构
-
-**已做的应急修复（2026-04-29）：**
-- Fix 1：ContextRequirementResolver 增加 inline 简历识别
-- Fix 2：第三方建议路由走 LLM generate 而非能力列表
-- Fix 3：intent_signals 补全词序变体、提升关键词覆盖
+> 这个文件记录各 Phase 的完成情况。当前任务和下一步计划见 `NEXT_PHASE.md`。
 
 ---
 
-## Phase A｜LLM Intent Classifier ✅ 已完成（2026-04-29）
+## Phase A｜LLM Intent Classifier → 废弃，直接跳过
 
-**目标**：用一次 LLM 结构化输出调用替代 IntentRouter + IntentGateway + LLM Planner 三层规则树。
-
-**要做的事：**
-
-1. 新建 `app/routing/llm_intent_classifier.py`
-   - 接收：message + recent_turns + user_state + available_tools
-   - 调用 LLM（JSON mode / function calling），输出 ChatPlan 兼容结构
-   - 包含 `reasoning` 字段（scratchpad，写入 llm_trace，不对用户展示）
-   - 输出 schema 校验失败时降级为 fallback，不抛 500
-
-2. 编写分类器 prompt
-   - 覆盖所有 task_type 的 few-shot 示例（至少 2 例/类型）
-   - 包含对话历史理解示例（follow-up 消息如何利用上下文）
-   - 明确说明何时 needs_more_context=True
-
-3. 修改 `app/services/agent_service.py`
-   - 快捷路由（greeting / capability_help）保留规则处理，其余全部走 Classifier
-   - 删除 intent_router / intent_gateway 调用链
-
-4. 删除文件
-   - `app/routing/intent_router.py`
-   - `app/routing/intent_gateway.py`
-   - `app/routing/intent_signals.py`
-
-**验收标准：**
-- [ ] 跑 `evals/run_multi_turn_eval.py`，7 条双轮用例全部通过
-- [ ] "我的简历该怎么更强" → task_type=resume_analysis，不追问 JD
-- [ ] "有什么岗位适合我?" → 走推荐链路，不追问 JD
-- [ ] "就匹配当前平台的就可以" → 走 job_match_planning，不超时
-- [ ] "我该如何提升" → task_type=career_insights，不超时
-- [ ] 所有 38 条 intent_router 单元测试改写为 Classifier 测试，通过率 ≥ 95%
-
-**验收结果**：7/7 multi-turn eval passed，6 个核心 case 行为符合预期。
+原计划用 LLM 替换规则树意图分类器。
+**实际**：直接重写为真 ReAct function calling 循环，意图分类器整条路线全部废弃。
 
 ---
 
-## Phase B｜统一输出协议 ✅ 已完成（2026-04-29）
+## Phase B｜统一输出协议 ✅ 已完成
 
-**目标**：所有 task_type 的最终回答遵循同一三段结构，消除 ResponseFormatter 碎片化。
-
-**要做的事：**
-
-1. 重写 `app/services/response_formatter.py`
-   - 所有 format_* 方法输出统一结构：结论 → 证据 → 行动建议
-   - 不区分 task_type 的特殊格式路径
-
-2. 更新 Formatter 相关的 eval 断言
-   - 现有断言 `answer_contains_all: ["结论", "证据", "行动"]` 应全部通过
-
-3. 更新 ResponseFormatter 的 LLM prompt（如果使用 LLM 生成格式化文本）
-
-**验收标准：**
-- [ ] resume_analysis / interview_prep / career_insights 三条路径回答均包含结论/证据/行动
-- [ ] multi-turn eval 中 `answer_contains_all["结论","证据","行动"]` 断言全部通过
-- [ ] 用户看不出任何格式退化
-
-**验收结果**：7/7 passed，三条路径（resume/interview/career）answer 均含"结论"字样。
+所有 task_type 回答遵循"结论 → 证据 → 行动"三段结构。
 
 ---
 
-## Phase C｜真正 LLM 驱动的 ReAct 循环 ✅ 已完成（2026-04-30）
+## Phase C｜真正 LLM 驱动的 ReAct 循环 ✅ 已完成
 
-**目标**：PlanExecutor 的每步由 LLM 基于完整观察自主决定，而不是执行预规划序列。
-
-**要做的事：**
-
-1. 升级 `app/services/plan_executor.py`
-   - `execute_react_loop` 改为：每步给 LLM 完整的 (message + 已有工具结果 + 可用工具列表)
-   - LLM 输出：`{ action: "call_tool" | "finish", tool: str, reasoning: str }`
-   - 删除"预规划步骤序列"概念，LLM 自主决定下一步
-   - 保留安全边界：MAX_STEPS=8，工具白名单，重复保护
-
-2. 升级 ReAct decider prompt
-   - 包含 scratchpad 格式："我现在知道 X，还缺 Y，因此下一步做 Z"
-   - 示例覆盖：多步推理、提前终止、上下文不足时追问
-
-**验收标准：**
-- [ ] "帮我找适合我的岗位"：agent 自主完成 profile → resume → search → match 四步，不需要预规划序列
-- [ ] loop_trace 中每步有 reasoning 字段
-- [ ] 不因 LLM 自主决策导致死循环（MAX_STEPS 保护生效）
-
-**验收结果**：7/7 passed，loop_trace 中 decider_action=continue 出现（LLM 真实决策），available_tools_count=7（全量工具）。
+**完成**：`AutonomousAgentService`，LLM 看到所有工具 schema，自主决定调哪个工具、调几次、什么顺序。真正的 function calling，不是预规划工具链。
 
 ---
 
-## Phase D｜Eval 量化指标提取 ✅ 已完成（2026-04-30）
+## Phase D｜Eval 量化指标 ✅ 已完成
 
-**目标**：把 eval harness 跑出来的数据变成简历可写的数字。
-
-**要做的事：**
-
-1. 在 eval runner 中记录并输出：
-   - 路由准确率（task_type 命中率）
-   - Phase A 前后路由准确率对比
-   - multi-turn 通过率
-   - 平均响应延迟
-
-2. 生成 `evals/reports/metrics_summary.md`，记录关键数字
-
-3. 把数字写入简历（见 `docs/resume/RESUME_EVOLUTION.md`）
-
-**验收标准：**
-- [ ] 能用一句话表达：路由准确率从 X% 提升至 Y%
-- [ ] multi-turn eval 通过率 ≥ 90%
-
-**验收结果**：multi-turn 7/7 (100%)，路由准确率 7/7 (100%)，needs_more_context 准确率 4/4 (100%)。
+multi-turn 7/7 (100%)，路由准确率 7/7 (100%)。
 
 ---
 
-## Phase E｜对话层重构与性能优化 ✅ 已完成（2026-04-30）
+## Phase E｜对话层重构与性能优化 ✅ 已完成
 
-**完成的事：**
-
-1. **删除空转 LLM 调用**：定位 diagnostic_planner（12s）和 career_event sync（9s）两处空转调用——前者输出从未接入回答链路，后者阻塞主请求但数据无消费路径。直接删除，career_insights 响应时间从 27s 降至 < 8s。
-
-2. **对话层重构**：formatter 从模板渲染改为 evidence 提供，最终回答统一走 `llm_client.generate()`，传入完整对话历史（多轮 messages 格式）+ 工具结果作为 evidence。agent 现在能理解"你觉得我怎么样"、"那接下来呢"等上下文追问。
-
-3. **规则残留清理**：删除 agent_service 和 classifier 中残留的关键词硬覆盖（`_message_has_role_hint`、interview_prep 硬覆盖等），全部交给 classifier 判断。
-
-4. **ContextRequirementResolver 修复**：interview_prep 追问后用户回答任意岗位名，resolver 正确识别为 target_role 已满足，不再循环追问。
+- 删除空转 LLM 调用（career_diagnostic_planner / career_event sync）
+- career_insights 响应时间从 27s 降至 < 8s
+- 删除 agent_service 中残留的关键词硬覆盖规则
 
 ---
 
-## Phase F｜Memory 升级 + Structured Logging ✅ 已完成（2026-05-02）
+## Phase F｜Goal 持久化 + 真 ReAct Agent ✅ 已完成
 
-**分支**：`feature/memory-upgrade`
-
-**完成的事：**
-
-1. **Running Summary**（`app/services/user_profile_service.py` → `SummaryService`）
-   - 对话超过 24 turns 时，自动把最旧一批 turns 用 LLM 压缩成摘要
-   - 摘要存入 `conversation_summaries` 表，每次对话注入 system prompt
-   - 解决"聊久了就失忆"的根本问题，WINDOW_SIZE=12 保留原文
-
-2. **user_profile 偏好提取**（`app/services/user_profile_service.py` → `UserProfileService`）
-   - 每轮对话结束后，LLM 从本轮交换中提取偏好信号（地点/行业/工作类型/薪资/时间线/回避项）
-   - 增量合并到 `user_profiles` 表，下次对话注入 system prompt
-   - 用户说"不想去外企"，以后每次对话都记得
-
-3. **Structured Logging / Trace**（`app/utils/trace_logger.py`）
-   - 三类事件 JSONL 写入 `logs/agent_trace.jsonl`：
-     - `llm_call`：iteration / latency_ms / had_tool_calls / n_messages / error
-     - `tool_call`：tool / args（长参数截断）/ latency_ms / ok / error
-     - `agent_turn`：stage / iterations / tool_trace / total_latency_ms
-   - 出问题 `tail -f logs/agent_trace.jsonl` 即可实时 trace，不靠猜
-
-4. **DB schema**：新增 `conversation_summaries` 和 `user_profiles` 两张表
-
-**验收脚本**：
-- `.venv/bin/python scripts/verify_memory_upgrade.py`（17 项全通过）
-- `.venv/bin/python scripts/verify_trace_logger.py`
+- `goals` / `goal_progress` 表 + `GoalService`
+- `get_goals` / `set_goal` / `log_progress` / `update_goal_status` 工具
+- 跨 session 目标感知，注入 system prompt
+- analyze_gap 工具（v1 prompt 版）
+- SSE 实时工具调用状态流
 
 ---
 
-## 不做的事（明确排除）
+## Phase G｜MCP Server ✅ 已完成
 
-以下方向在当前阶段不进入主线，原因是工程成本高但简历价值边际收益低：
-
-| 方向 | 排除原因 |
-|---|---|
-| Multi-Agent / Orchestrator | 当前单 Agent 问题未解决，过早抽象 |
-| Self-Consistency（多次采样投票） | 成本高，当前用例不需要 |
-| 显式 CoT 对用户展示 | 产品体验负担，当前不做 |
-| 完整 MCP Server 协议接入 | 非核心，工具层已 MCP-ready |
+- 12 个工具，4 个 domain（jobs / records / profile / goals）
+- FastMCP stdio transport
+- Claude 桌面 app 验收通过
 
 ---
 
-## 执行顺序
+## Phase H｜Memory 升级 + Structured Logging ✅ 已完成（2026-05-02）
 
-```
-A（LLM Classifier）→ B（输出协议）→ C（ReAct 升级）→ D（指标提取）
-```
+分支：`feature/memory-upgrade`
 
-A 是前置，没有 A 就没有 B/C 的意义。B 和 C 可以并行。D 在 A+B+C 完成后做。
+- **Running Summary**：超 24 turns 自动压缩，存 `conversation_summaries`，注入 system prompt
+- **user_profile 提取**：每轮提取偏好，存 `user_profiles`，下次注入，真正跨 session 记忆
+- **Structured Logging**：`logs/agent_trace.jsonl`，llm_call / tool_call / agent_turn 三类事件
+
+验收：`scripts/verify_memory_upgrade.py`（17/17）、`scripts/verify_trace_logger.py`（17/17）
+
+---
+
+## 接下来
+
+见 `NEXT_PHASE.md`。

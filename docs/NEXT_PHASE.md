@@ -1,262 +1,118 @@
-# 下一阶段计划｜从 Chatbot 到真正的 Agent
+# 项目现状 + 下一步计划
 
-> 写作时间：2026-05-01 | 最后更新：2026-05-01  
-> 背景：项目投递 AI 开发岗位，需要对当前项目做诚实评估，并规划真正有含金量的演进路径。
-
----
-
-## 一、当前项目的诚实评估
-
-### 现在本质上是什么
-
-一个**结构化 LLM Pipeline**，不是 Agent。
-
-执行路径是固定的：
-
-```
-用户消息 → 意图分类（LLM）→ 固定工具链 → LLM 生成回答
-```
-
-ReAct loop 的**结构**存在，但决策是假的。意图分类器已经提前决定好了走哪条工具链，LLM 在 loop 里只是沿着预定义路径确认"continue"或"finish"，从未真正改变过执行路径。
-
-区别在于：**谁在真正做决定**。现在是意图分类器在决定，LLM 只是执行。真正的 agent 是 LLM 看到所有可用工具后自主决定调哪个、调几次、什么顺序。
-
-### 为什么不是 Agent
-
-真正的 Agent 核心特征是**自主性**：
-
-| 特征 | 真正的 Agent | 当前项目 |
-|---|---|---|
-| 目标分解 | 自主拆解复杂目标为子任务 | 无，意图分类后走固定流水线 |
-| 动态规划 | 根据中间结果调整计划 | 工具链预定义，不动态调整 |
-| 跨轮次推理 | 上一轮的结果影响下一轮的行动策略 | 仅有对话记忆，无目标追踪 |
-| 处理意外 | 工具失败时自主重规划 | fallback 到静态错误信息 |
-| 自主决策 | LLM 真正决定做什么，不做什么 | LLM 确认人类预定义的路径 |
-
-### 面试官的看法（有经验的 agent 工程师）
-
-> "工程质量不错，RAG 和工具调用用得比较规范，streaming 缺失但可以理解是 demo 阶段。但本质上这是一个带固定流水线的结构化 chatbot。Resolver + ToolChain 的设计表现出系统思维，但没有体现真正的 agent 能力。适合 AI 应用工程师岗位，agent 工程师岗位边缘。"
-
-能过的岗位：
-- AI 应用开发（LLM 集成、工具调用、RAG 落地）✅ 有竞争力
-- AI 工程师（初级） ✅ 有竞争力
-- Agent 工程师（初级） ⚠️ 边缘，看公司标准
-- Agent 工程师（中级+） ❌ 不够
+> 最后更新：2026-05-02
+> 当前分支：feature/memory-upgrade
 
 ---
 
-## 二、为什么这个问题需要真正的 Agent
+## 一、已完成（全部在 main / feature/memory-upgrade 分支）
 
-### 当前问题不需要 Agent
+### 核心 Agent 架构
+- ✅ **真 ReAct function calling 循环**（`app/services/autonomous_agent_service.py`）
+  LLM 看到所有工具 schema，自主决定调哪个工具、调几次、什么顺序。不是意图分类器，不是固定工具链。
+- ✅ **ToolRegistry**（`app/tools/registry.py`）
+  Pydantic 输入校验，统一 ToolResult 结构，11 个工具注册在内。
+- ✅ **Hybrid RAG**（ChromaDB 向量 + BM25 + RRF 融合）
+- ✅ **SSE 实时状态流**（`🤔 正在思考` → `🔧 调用工具：xxx`）
+- ✅ **Qwen-VL 简历图片解析**
 
-"用户问求职问题，系统回答" —— 这个问题本身用 chatbot 就够了，因为每次交互都是独立的 Q&A，没有跨轮次的状态依赖。
+### Memory
+- ✅ **短期记忆**：SQLite 滚动 12 turns（6 个来回）原文
+- ✅ **Goal 持久化**：`goals` / `goal_progress` 表，跨 session 目标感知，注入 system prompt
+- ✅ **Running Summary**：超过 24 turns 自动用 LLM 压缩旧记录，存 `conversation_summaries`，注入 system prompt
+- ✅ **user_profile 偏好提取**：每轮结束后 LLM 提取偏好（地点/行业/工作类型/薪资/时间线/回避），存 `user_profiles`，下次对话注入
 
-**Agent 真正有价值的条件**：任务需要多步骤、有状态、中间结果不确定、需要动态调整。
+### 工具
+- ✅ `search_jobs`（hybrid RAG 检索，假数据）
+- ✅ `get_resume` / `match_resume_to_jobs`
+- ✅ `analyze_gap`（v1，简历 + JD → LLM 自由文本分析）
+- ✅ `get_goals` / `set_goal` / `log_progress` / `update_goal_status`
+- ✅ `get_applications` / `get_interview_feedback`
+- ✅ `get_candidate_profile` / `get_career_insights`
 
-### 求职场景里真正需要 Agent 的任务
+### MCP Server
+- ✅ **12 个工具**按 domain 模块化暴露（jobs / records / profile / goals）
+- ✅ Claude 桌面 app 验收通过（`mcp__career-agent__get_goals` 真实调用返回 SQLite 数据）
 
-> 用户说："我想三个月内拿到后端实习 offer"
+### 工程化
+- ✅ **Structured Logging**：`app/utils/trace_logger.py`，JSONL 写入 `logs/agent_trace.jsonl`
+  记录三类事件：llm_call / tool_call / agent_turn，含耗时和错误
 
-Agent 需要自主完成：
-
-1. 分析当前简历 gap（调用工具）
-2. 搜索目标岗位 JD 并提取要求（调用工具）
-3. 对比 gap，生成每周行动计划（推理 + 生成）
-4. 下周跟进："上周你说要补 Docker，做了吗？" （跨会话记忆 + 目标追踪）
-5. 根据用户反馈调整计划（动态调整）
-
-这才是 Agent：有目标、有跨会话记忆、有状态追踪、中间结果影响后续行动。
-
-**这个问题用 chatbot 做不了**，因为：
-- chatbot 没有持久目标，每次对话都是独立的
-- chatbot 不知道"上次说要做什么"和"有没有做到"
-- chatbot 不能根据用户进展动态调整长期计划
-
----
-
-## 三、main 分支完成情况
-
-### ✅ Phase F-1｜SSE 流式输出
-`/chat` 端点改为 `StreamingResponse`，`run_in_executor` 保证事件循环不阻塞，三条 SSE 事件（status / answer / done）正常工作。`/chat/sync` 保留供 eval 使用。
-
-### ✅ Phase F-2｜真实 Embedding
-接入 DashScope `text-embedding-v3`（1024 维），替换原来的 MD5 hash 假向量。实现了分批调用（每批 10 条避免超限）和维度不匹配时自动重建 collection 的逻辑。
-
-### ⏭ Phase F-3｜PDF 简历解析（暂缓）
-vision_client 已接好，用户可直接上传图片。PDF 解析本质是"PDF → 图片 → vision"，工程价值有限，等 agent 分支稳定后按需补。
-
-### ⏭ Phase F-4｜Gap Analysis（并入 agent 分支）
-不作为独立 pipeline 实现。在 agent 架构里作为一个工具（tool）实现，由 LLM 自主决定何时调用，比固定 pipeline 含金量更高。
-
-### ⏭ Phase F-5｜Eval 量化数字（agent 分支完成后统一跑）
+### 验收脚本
+- `.venv/bin/python scripts/verify_memory_upgrade.py`（17 项）
+- `.venv/bin/python scripts/verify_trace_logger.py`（17 项）
 
 ---
 
-## 四、真正 Agent 版本（分支 `feature/autonomous-agent`）
+## 二、已知缺陷（面试时要能坦然承认）
 
-### 核心架构：工具调用驱动，不是意图分类驱动
-
-**当前假 agent 路径：**
-```
-意图分类（LLM）→ 预定义 tool chain → LLM 生成回答
-```
-LLM 在 ReAct loop 里走的是意图分类器已经决定好的路，从未真正自主。
-
-**新 agent 路径：**
-```
-加载上下文（目标 + 历史）
-    ↓
-LLM 看到：所有工具描述 + 当前目标状态 + 对话历史 + 用户消息
-    ↓
-LLM 自主决定：调哪个工具 / 调几次 / 什么顺序 / 还是直接回答
-    ↓
-执行工具 → 结果返回 LLM → LLM 再次决策（真 ReAct）
-    ↓
-最终回答
-```
-
-### Agent 工具列表（LLM 从中自主选择）
-
-| 工具 | 功能 |
-|---|---|
-| `search_jobs` | 语义搜索匹配岗位 |
-| `get_resume` | 读取用户简历 |
-| `analyze_gap` | 简历 vs JD gap 分析 |
-| `get_goals` | 查询当前求职目标和计划 |
-| `set_goal` | 设定或更新求职目标 |
-| `log_progress` | 记录本周进展（投了几家、面试结果等）|
-
-### 目标持久化（新增 DB 表）
-
-```sql
-goals (
-  id, user_id, goal_text, deadline,
-  status, plan_json, created_at, updated_at
-)
-goal_progress (
-  id, goal_id, note, created_at
-)
-```
-
-每次对话开始前，agent 先查 `goals` 表，把目标状态注入 system prompt。这是跨会话记忆的核心。
-
-### 典型 agent 行为
-
-**第一次对话：**
-> 用户：我想三个月内拿到 fintech 后端实习
-> Agent：自主调用 `set_goal` → `get_resume` → `search_jobs` → `analyze_gap` → 输出分阶段计划
-
-**第三次对话：**
-> 用户：最近有点迷茫
-> Agent：查 `get_goals`（目标存在，第二周应投3家）→ 主动问"上周计划投3家，实际怎么样了？" → 根据回答调 `log_progress` 或调整计划
-
-这是 chatbot 做不到的：chatbot 没有持久目标，不能主动追问，不能根据真实进展更新计划。
-
-### 已有基础（无需重建）
-
-- `app/tools/registry.py` — 工具注册表已有，`search_jobs`、`resume_tools`、`match_tools` 等已注册
-- `web/` — React 前端已有，SSE 已接入
-- `demo/` — 独立 HTML demo 已有
-- `RetrievalService`、`ResumeService`、`MemoryService` — 数据层完整，直接复用
-
-### 实施阶段
-
-**A-1** ✅：`goals` / `goal_progress` 表 + `GoalService` + 注册 goal 工具（`get_goals`、`set_goal`、`log_progress`）到现有 `ToolRegistry`
-
-**A-2** ✅：改造 `AgentService` 决策路径——把工具 schema 交给 LLM，用 function calling 自主决定调哪个工具，替换掉意图分类器 → 固定工具链的路径；同时工具调用过程实时 yield SSE 状态事件
-
-**A-3** ✅：跨会话目标感知——每次对话开始前查 `goals` 表，把目标状态注入 system prompt；无目标时引导用户设定目标
-
-**A-4** ✅：`analyze_gap` 工具——简历 vs JD gap 分析（v1 prompt 版），注册进 `ToolRegistry`
-
-**A-5** ✅：MCP server——12 个工具按 domain 模块化暴露（jobs / records / profile / goals），Claude 桌面 app 验收通过
-
-**A-6** ✅：Memory 升级（分支 `feature/memory-upgrade`）
-- Running Summary：对话超过 24 turns 时自动压缩旧记录，存 `conversation_summaries` 表，注入 system prompt
-- user_profile 提取：每轮结束后 LLM 提取偏好（地点/行业/工作类型/薪资/时间线），存 `user_profiles` 表，下次对话注入
-- Structured Logging：`app/utils/trace_logger.py`，JSONL 写入 `logs/agent_trace.jsonl`，记录每次 llm_call / tool_call / agent_turn 的耗时和结果
-
-**接下来：**
-- analyze_gap 结构化输出（JSON schema：match_score / matched_skills / missing_skills）
-- 真实岗位数据（Adzuna API）
-- 最小 eval（5 个核心场景）
-- 工程化（streaming answer / retry）
+| 缺陷 | 严重程度 |
+|------|----------|
+| 岗位数据是假的（手工 seed，不是真实市场） | 高 |
+| analyze_gap 输出是自由文本，无结构化 match_score | 高 |
+| Final answer 不流式（analyze_gap 等重工具 30s 后文字一次性出现） | 中 |
+| 没有 eval 数字（无法量化"通过率"） | 中 |
+| DashScope 调用无 retry（偶发超时直接失败） | 中 |
+| 无认证（user_id 是前端自填字符串） | 低 |
 
 ---
 
-## 五、执行顺序（更新后）
+## 三、接下来要做的事（按优先级）
 
+### P0：analyze_gap 结构化输出
+**现状**：`app/services/gap_service.py` 是纯 prompt → 自由文本。
+
+**目标**：改成三步输出 JSON：
+```json
+{
+  "match_score": 72,
+  "matched_skills": ["Python", "FastAPI", "SQL"],
+  "missing_skills": ["Docker", "Kubernetes"],
+  "suggestions": ["补 Docker 基础", "做一个容器化部署的项目"]
+}
 ```
-main 分支（已完成）:
-  ✅ F-1 Streaming  ✅ F-2 真实 Embedding
 
-feature/autonomous-agent → main（已合并）:
-  ✅ A-1 Goal 持久化 + goal 工具注册
-  ✅ A-2 真 Function Calling 循环（含工具调用实时 SSE）
-  ✅ A-3 跨会话目标感知（含首次使用引导）
-  ✅ A-4 Gap Analysis tool（v1 prompt 版）
-  ✅ A-5 MCP server（12 工具，Claude 桌面验收通过）
-
-feature/memory-upgrade（当前分支）:
-  ✅ A-6 Running Summary + user_profile 提取 + Structured Logging
-
-接下来：
-  → analyze_gap 结构化输出（JSON schema）
-  → 真实岗位数据（Adzuna API）
-  → 最小 eval（5 个核心场景）
-  → 工程化（streaming answer / retry）
-```
+**改动文件**：`app/services/gap_service.py`，新增 prompt 让 LLM 输出 JSON，加 `json.loads()` 解析，fallback 到旧版文本。
+**验收脚本**：`scripts/verify_gap_structured.py`
 
 ---
 
-## 六、开发纪律（必须遵守）
+### P1：真实岗位数据（Adzuna API）
+**现状**：`search_jobs` 检索手工 seed 的几十条假数据。
 
-之前项目推进中出现了反复打地鼠、屎山代码积累的问题，根本原因是：改了一个地方没想清楚连锁效应，然后用下一个 fix 去补上一个 fix。以下是接下来必须遵守的原则。
+**目标**：接入 Adzuna Australia Jobs API（免费，有 Sydney/Melbourne 数据），替换 seed 数据，搜出真实市面岗位。
 
-### 原则一：Phase 串行，验收后才能进入下一个
-
-每个 Phase 做完 → 跑 eval → 通过 → commit → 才能动下一个。不能 F-1 没测完就跑去做 F-2。
-
-### 原则二：改之前先描述影响范围，确认再动手
-
-每次动代码之前，先说清楚：
-- 涉及哪些文件
-- 不涉及哪些文件（边界在哪里）
-- 是否影响现有 eval 结果
-
-确认没问题再动手，不靠猜测推进。
-
-### 原则三：遇到 bug 先读日志找根因，不靠猜
-
-之前很多问题是猜一个方向改代码，不对再猜下一个，结果越改越乱。以后遇到问题：
-
-```
-读日志 → 确定根因 → 描述根因 → 确认 → 一次改对
-```
-
-不允许"先试试看"。
-
-### 原则四：新功能上线前先写期望行为
-
-新功能实现之前，先用一句话写清楚"这个功能的期望行为是什么"，对应的 eval case 是什么。功能做完立刻验证，不靠感觉判断对不对。
-
-### 原则五：不做没有明确目的的改动
-
-每次改动必须能回答："这个改动解决了什么问题？"如果答案是模糊的，就不动。
+**API 文档**：https://developer.adzuna.com/
+**改动文件**：`app/services/job_service.py` 或新建 `app/services/adzuna_service.py`
+**验收**：搜"Sydney fintech backend intern"，结果来自真实 Adzuna，不是假数据。
 
 ---
 
-## 七、简历怎么讲这个项目（改进后）
+### P2：最小 eval（5 个核心场景）
+**目标**：有数字才能在面试和 README 里说"通过率 X%"。
 
-**改进前能说的**：
-> "用 FastAPI + LLM 构建了一个求职辅导 chatbot，集成了 RAG 检索和工具调用。"
+5 个场景：
+1. 搜岗位 → `search_jobs` 被调用
+2. gap 分析 → `analyze_gap` 被调用，返回 match_score
+3. 设目标 → `set_goal` 被调用，DB 有记录
+4. 查目标 → `get_goals` 返回数据
+5. 闲聊 → 不调用任何工具，直接回答
 
-**main 分支（当前可说的）**：
-> "构建了一个求职辅导 AI 系统，实现了 SSE 流式输出、基于 DashScope text-embedding-v3 的语义检索（1024 维，hybrid BM25 + 向量 RRF 融合排序）。系统有完整 eval 框架，multi-turn 通过率 100%。"
-
-**完成 agent 分支后能说的**：
-> "在此基础上实现了基于 function calling 的真正自主 Agent：LLM 自主决定调用哪些工具（岗位搜索、简历分析、gap 分析、目标管理），跨会话追踪求职目标，根据真实进展动态调整计划。这是 chatbot 无法实现的能力——它需要持久目标状态、跨轮次主动推理、和真正的 LLM 自主决策。"
+**验收脚本**：`scripts/eval_agent.py`
 
 ---
 
-*最后更新：2026-05-02（A-6 memory upgrade + structured logging 完成）*
+### P3：工程化补全
+- DashScope 调用加 Retry（指数退避 2-3 次，`app/llm/client.py`）
+- Final answer streaming（stream=True + SSE token 推送）
+
+---
+
+## 四、不做的事
+
+| 方向 | 原因 |
+|------|------|
+| Write Guardrail | 本项目写操作只有 set_goal/log_progress，用户主动触发，不需要防护 |
+| Tool Cache | 工具基本实时查 SQLite，缓存收益低 |
+| 认证系统 | 非核心，不影响技术含金量 |
+| Docker / 反馈机制 | 等核心功能稳定后再做 |
