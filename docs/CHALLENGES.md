@@ -1,62 +1,203 @@
 # 开发难题与解决方案
 
-> 记录项目开发过程中遇到的真实技术问题，用于面试时展示工程判断力。
+> 记录项目从 router-first chatbot 演进到真正 Agent 过程中遇到的真实技术问题。
+> 用于面试时展示工程判断力——每个问题都有"第一反应（错的）"和"真正根因"。
 
 ---
 
-## 1. LLM 重复调用同一个工具
+## 架构阶段一：Router + Planner（假 Agent）
 
-**现象**：用户问"帮我搜一下悉尼的 fintech 后端实习"，`search_jobs` 被连续调用 3 次，响应时间是正常的 3 倍。
+### 1. 意图分类器是个陷阱
 
-**第一反应（错的）**：在 system prompt 里加一句"每个工具只调用一次"。这是打地鼠——加了规则，换个场景还会复发，治标不治本。
+**现象**：最初用 LLM 做意图分类，把用户输入分成"搜岗位"、"gap 分析"、"查目标"等几类，再走对应的固定工具链。代码跑通了，演示效果也不错。
 
-**根因定位**：在 agent 循环里打了追踪日志，发现前两次调用的 tool result 是 `"ok": false, "error": "1 validation error"`。LLM 看到工具报错后重试——行为完全正确，不是模型问题。
+**问题暴露**：用户说"帮我找几个 fintech 实习，顺便看看我的简历够不够"——这是复合意图，分类器只能选一个分支，另一半需求直接丢失。更根本的问题：**LLM 在 ReAct loop 里只是在沿着分类器决定好的路径走，从未真正自主决策过**。
 
-继续追：打印每次调用的实际 arguments，发现 `filters` 参数被传成了 JSON 字符串 `"{\"location\": \"Sydney\"}"` 而不是 object。
+**反思**：Intent classifier 把 agent 退化成了 router。它有两个不可修复的缺陷：
+1. 分类粒度固定，无法处理用户意图的组合和模糊性
+2. 工具链是人写死的，LLM 没有动态规划能力
 
-**真正根因**：Pydantic 的 `model_json_schema()` 默认生成带 `$defs` + `$ref` 的 JSON Schema。Qwen 不能正确解析 `$ref` 引用，把嵌套 object 参数序列化成了字符串，导致 Pydantic 校验失败。
+**解法**：废弃意图分类器，把所有工具 schema 直接交给 LLM，让它通过 function calling 自主决定调哪些工具、调几次、什么顺序。这才是真 ReAct——LLM 是决策者，不是执行者。
 
-**解法**：在 `_build_tool_schemas()` 里将所有 `$defs`/`$ref` 递归展开成 inline schema 再传给 LLM。同时把 `filters: {location, work_type}` 展平成顶层参数，彻底规避嵌套 object 问题。
-
-**结果**：`search_jobs` 从 3 次调用降为 1 次，响应时间减少约 2/3。
+**代价**：latency 略增（少一次分类调用，但多了工具调用的 round trip）。收益：真正的自主性，复合意图自然拆解。
 
 ---
 
-## 2. LLM 跳过工具直接输出幻觉内容
+### 2. SSE 里的 asyncio 线程安全问题
 
-**现象**：用户搜悉尼软件实习，agent 有时不调 `search_jobs`，直接输出 Atlassian、Canva 等公司名——这些是 LLM 训练数据里的知名公司，不是数据库里的真实岗位。
+**现象**：`/chat` 端点返回 SSE 流，`svc.respond()` 在 thread pool 里同步跑。工具调用时想实时推状态事件（"🔧 调用工具：search_jobs"），但从线程里直接 `yield` 或操作 asyncio 对象会报错或静默失败。
+
+**第一反应（错的）**：把 `respond()` 改成 async。但 `respond()` 里有同步的 LLM 调用和数据库操作，改成 async 会阻塞事件循环。
+
+**真正根因**：asyncio 不是线程安全的——在 thread pool 里直接操作 asyncio 对象（Queue、Future）会有 race condition。
+
+**解法**：`asyncio.Queue` 作为跨线程通道，thread pool 里通过 `loop.call_soon_threadsafe(queue.put_nowait, event)` 推状态事件，async 的 SSE 生成器从 queue 里消费。这是标准的 asyncio + threading 桥接模式。
+
+---
+
+### 3. LLM 不知道该用哪个 user_id
+
+**现象**：工具需要 `user_id` 参数才能查到对应用户的数据，但 LLM 经常传错——传 `"user"`、`"unknown"`、或者直接不传，导致工具返回空数据。
+
+**第一反应（错的）**：在每个工具的参数里把 `user_id` 改成可选项，做 fallback。这会让工具语义变模糊，而且 LLM 仍然不知道该填什么。
+
+**真正根因**：LLM 不知道当前用户是谁，因为没有人告诉它。这是 context 缺失问题，不是工具参数设计问题。
+
+**解法**：在 system prompt 里明确写 `"当前用户的 user_id 为：{user_id}，调用任何需要 user_id 的工具时必须使用此值"`。LLM 拿到明确指令后，user_id 传递准确率接近 100%。
+
+---
+
+## 架构阶段二：Hybrid RAG
+
+### 4. 纯向量检索对精确技术词不准
+
+**现象**：用户搜 "FastAPI intern"，向量检索召回了很多 "Python web framework" 相关岗位，但有一条完全匹配的岗位（title 里有 "FastAPI"）排在第 8 位。
+
+**根因**：`text-embedding-v3` 对 "FastAPI" 这类专有技术词的向量表示被"Python"、"web"、"API" 等更通用词语稀释了，语义相近但词面不匹配的结果排名更高。
+
+**解法**：加 BM25 词法召回（精确词面匹配），两路结果用 RRF（Reciprocal Rank Fusion）融合。RRF 的优点是不需要对两路分数归一化，直接用排名位置计算，鲁棒性强。融合后 "FastAPI" 精确匹配的岗位稳定排在前 3。
+
+---
+
+### 5. ChromaDB embedding 维度 mismatch
+
+**现象**：从 256 维 embedding 切换到 DashScope `text-embedding-v3`（1024 维）后，upsert 数据时报 `InvalidDimensionException`。旧 collection 的维度元数据是 256，新 embedding 是 1024，ChromaDB 在写入时才检查维度，不是在初始化时。
+
+**第一反应（错的）**：手动删 ChromaDB 数据目录。但这需要人工操作，重新 deploy 时还会复现。
+
+**解法**：在 `RetrievalService` 初始化时加异常捕获——upsert 时捕获 `InvalidDimensionException`，自动删除旧 collection 重建，然后重试。这样维度变更是自愈的，不需要手动干预。
+
+---
+
+## 架构阶段三：Memory 升级
+
+### 6. 滚动窗口会让 Agent 失忆
+
+**现象**：用户在第 1 轮说"我不想去外企，只看 startup"，聊了 7 轮之后，Agent 给他推荐了 Amazon 实习。滚动 6 轮窗口把第 1 轮的偏好丢弃了，Agent 完全不记得。
+
+**根因**：6 轮滚动窗口是短期记忆，不是长期记忆。对"长期陪伴求职"这个产品定位，这是根本性的设计缺陷，不是参数调优能修的。
+
+**解法一（Running Summary）**：超过窗口阈值（24 turns）时，用 LLM 把旧对话压缩成摘要存入 `conversation_summaries` 表。下次对话把摘要注入 system prompt，相当于"记得聊过什么，但不记得原话"。解决了"长对话失忆"问题。
+
+**解法二（user_profile 提取）**：每轮对话结束后，独立跑一次 LLM 调用，从对话里提取偏好信号（偏好地点、行业、工作类型、薪资范围、回避因素等），写入 `user_profiles` 表。下次对话把 user_profile 注入 system prompt，形成真正的跨 session 用户画像。
+
+**两者分工**：Running Summary 保留"对话脉络"，user_profile 保留"用户是谁"。两者结合才构成完整的长期记忆。
+
+---
+
+### 7. user_profile 提取的 LLM 调用不能在主循环里
+
+**现象**：最初把 user_profile 提取放在 `respond()` 最后，导致用户等待时间增加约 3-5 秒——每次对话结束都要多等一次 LLM 调用。
+
+**根因**：profile 提取是"对这次对话的后处理"，不影响本轮回答，不应该阻塞主响应链路。
+
+**解法**：profile 提取改为异步/后台执行，主响应链路在 `respond()` 返回后就结束，profile 提取在后台静默完成。用户感知到的响应时间不变。
+
+---
+
+## 架构阶段四：工具层与 LLM 交互
+
+### 8. Qwen 无法解析 JSON Schema 里的 $ref
+
+**现象**：`search_jobs` 有一个嵌套参数 `filters: {location, work_type}`。实际调用中，Qwen 把 `filters` 传成了 JSON 字符串 `"{\"location\": \"Sydney\"}"` 而不是 object，导致 Pydantic 校验失败。LLM 看到工具报错后重试，`search_jobs` 被连续调用 3 次。
+
+**诊断过程**：在 agent 循环里加了 LLM 调用追踪，打印每次传给 LLM 的 arguments。发现前两次调用的工具参数格式就是错的——不是 LLM 行为问题，是参数校验失败导致的正常重试。
+
+**根因**：Pydantic 的 `model_json_schema()` 对嵌套 model 会生成 `$defs` + `$ref` 引用。Qwen 不能解析 `$ref`，把它当成普通字符串类型，所以把 object 序列化成了 JSON 字符串。
+
+**解法**：两步。第一步，在 `_build_tool_schemas()` 里递归展开所有 `$defs`/`$ref` 成 inline schema。第二步，把 `filters.location`/`filters.work_type` 展平为顶层参数——彻底规避嵌套 object，Qwen 对 flat 参数的处理是可靠的。
+
+**结果**：工具调用从 3 次降为 1 次。
+
+---
+
+### 9. LLM 跳过工具输出幻觉内容
+
+**现象**：用户搜悉尼软件实习，agent 有时不调 `search_jobs`，直接输出 Atlassian、Canva 等公司名。这些是 LLM 训练数据里的知名公司，不是数据库里的真实岗位。
 
 **第一反应（错的）**：在 system prompt 加"求职问题必须调工具"。这是 prompt 打地鼠，换个问法还会绕过。
 
-**根因定位**：LLM 决定是否调工具的依据是工具描述。`search_jobs` 的描述是 `"Search jobs using a natural language query."` ——太模糊，LLM 无法判断"调这个工具"和"直接从训练数据回答"哪个更好，于是凭训练知识回答。
+**真正根因**：工具描述是 **LLM 和工具之间的接口契约**。`search_jobs` 的描述是 `"Search jobs using a natural language query."` ——LLM 看到这个描述，无法判断"我需要调这个工具"还是"我直接从训练数据回答就行"。它选了后者，因为它确实"知道" Sydney 有哪些科技公司。
 
-**真正根因**：工具描述没有传达两个关键信息：① 这个工具连接的是实时数据库；② LLM 自身的训练数据没有当前岗位信息，用训练数据回答一定是错的。
+LLM 不知道两件事：① 这个工具连接的是实时数据库；② 它的训练数据里没有当前岗位信息，用训练数据回答一定是错的。
 
-工具描述是 LLM 和工具之间的**接口契约**，描述不准确 → LLM 做出错误决策。
+**解法**：把工具描述改成明确传达这两个信息：`"Search the live job postings database for real, current openings. You MUST call this tool — your training data does not contain current listings and will be fabricated."`
 
-**解法**：把描述改成："Search the live job postings database for real, current openings. You MUST call this tool whenever the user asks about job opportunities — your training data does not contain current listings and will be fabricated."
-
-**结果**：LLM 在所有求职查询场景下均调用 `search_jobs`，不再产生幻觉岗位。
+**结果**：所有求职查询场景均调 `search_jobs`，不再产生幻觉岗位。
 
 ---
 
-## 3. 为什么选择 Pydantic Protocol 而不是 ABC 定义 JobProvider
+### 12. Running Summary 的触发时机设计
 
-**背景**：接入 Adzuna API 时需要定义一个 `JobProvider` 接口，未来替换成 CareerHub 或其他数据源。
+**问题**：什么时候压缩历史对话？有两个选项：
+1. 每轮结束后都跑一次摘要更新
+2. 超过阈值才触发
 
-**选择**：用 `typing.Protocol` 而不是 `ABC`。
+**方案 1 的问题**：每轮都多一次 LLM 调用，latency 增加，而且大多数对话根本到不了需要压缩的长度，这些调用全部白费。
 
-**原因**：`Protocol` 是结构子类型（structural subtyping）——任何实现了 `fetch_jobs` 方法的类都自动满足接口，不需要显式继承。这意味着未来接入 CareerHub 时，只要新类有正确的方法签名，不需要修改任何现有代码。`ABC` 则需要显式继承，对外部数据源适配器更侵入。
+**方案 2 的设计**：设定 `ARCHIVE_THRESHOLD = 24 turns`。窗口内保留最近 12 轮原文（`WINDOW_SIZE = 12`），超出 24 轮的旧记录才压缩进摘要。这样：
+- 短对话（< 24 轮）：零额外开销
+- 长对话：最多每 12 轮触发一次压缩，摊薄成本
+
+**踩过的坑**：最初 WINDOW_SIZE=6、ARCHIVE_THRESHOLD=14，太激进，普通的求职咨询 3-4 轮就开始压缩，摘要质量差（信息太少压缩意义不大）。调大参数后体验正常。
 
 ---
 
-## 4. ChromaDB $ref 展开的工程决策
+### 13. MCP Server 工具标准化
 
-**背景**：修复 Qwen 无法解析 `$ref` 的 bug 时，有两种选项：
+**背景**：ToolRegistry 是项目私有接口，外部系统无法复用这些工具。
+
+**问题**：如果 USYD CareerHub 想集成，或者用户想在 Claude 桌面 app 里直接调用，私有接口需要写适配层，每个接入方都要重新对接。
+
+**解法**：把 ToolRegistry 暴露为 MCP server。每个 ToolDefinition 的 `name`、`description`、`input_model` 直接映射成 MCP tool schema，handler 映射成 MCP tool handler。
+
+**好处**：任何 MCP 兼容客户端（Claude Code、Cursor、其他 LLM 框架）都可以直接调用，不需要知道内部实现。Claude 桌面 app 验收：`mcp__career-agent__get_goals` 真实调用返回 SQLite 数据，工具调用链路完整。
+
+**工程决策**：工具按业务域分模块（jobs / records / profile / goals），不是一个大文件。每个 domain 单独的 MCP module，方便未来按需暴露或隐藏部分工具。
+
+---
+
+### 14. 前端 SSE 解析错误
+
+**现象**：后端 `/chat` 返回 SSE 流，前端偶尔拿不到完整回答，或者看到 `[object Object]` 而不是文字内容。
+
+**根因**：前端用 `response.json()` 解析 SSE 响应——`response.json()` 等待整个响应体结束再解析，跟 SSE 的流式传输根本不兼容。SSE 需要用 `response.body` 的 `ReadableStream` 逐行读取。
+
+**解法**：把 `sendChat` 里的 `response.json()` 改成 `ReadableStream` reader，按换行符切分，每行解析成 SSE 事件对象。`status` 事件更新状态指示器，`answer` 事件填充回答内容，`done` 事件关闭流。
+
+---
+
+### 15. DashScope 用 OpenAI 兼容模式的坑
+
+**背景**：DashScope 提供 OpenAI 兼容接口（`/compatible-mode/v1`），可以用 OpenAI SDK 或直接 `requests` 调用。
+
+**踩过的坑**：
+
+1. **thinking 模式和 tool_calls 不兼容**：Qwen3 系列支持 `thinking` 参数，但开启 thinking 时不支持 function calling，`tool_calls` 永远是空的。需要在所有 function calling 请求里显式 `disable_thinking`。
+
+2. **`content: None` 的处理**：LLM 决定调工具时，assistant message 的 `content` 是 `null`。OpenAI 规范允许这样，但如果不显式处理，直接把 `None` 序列化进 messages 再传给 DashScope 会报参数错误。
+
+3. **超时行为**：DashScope 偶发请求挂住不超时（连接成功但不返回），不是 TCP 层超时，需要在 `requests.post` 里同时设置 `connect timeout` 和 `read timeout`。
+
+---
+
+## 工程决策记录
+
+### 10. 为什么 JobProvider 用 Protocol 而不是 ABC
+
+**背景**：接入 Adzuna API 时定义 `JobProvider` 接口，未来换 CareerHub 或其他数据源。
+
+**选择 Protocol**：结构子类型——任何有 `fetch_jobs` 方法的类自动满足接口，不需要显式继承。未来接入新数据源不需要修改任何现有代码。ABC 需要显式继承，对外部适配器更侵入。
+
+---
+
+### 11. $ref 展开 vs 手写工具 Schema
+
+**背景**：修复 Qwen $ref 解析 bug，有两个选项：
 1. 在 `_build_tool_schemas()` 里递归展开 `$defs`/`$ref`
-2. 手写每个工具的 JSON Schema，完全绕过 Pydantic 自动生成
+2. 手写每个工具的 JSON Schema，绕过 Pydantic
 
-**选择方案 1 的原因**：Pydantic 自动生成的 schema 是唯一真相来源，手写 schema 会造成双重维护负担——每次修改 input model 都要同步手写 schema，迟早出现不一致。展开逻辑写一次，所有工具都受益。
+**选方案 1**：Pydantic input model 是唯一真相来源。手写 schema 造成双重维护——每次修改 model 都要同步手写 schema，迟早出现不一致。展开逻辑写一次，所有工具受益。
 
 ---
 
