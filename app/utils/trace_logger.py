@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # Log file lives at <project_root>/logs/agent_trace.jsonl
-_LOG_DIR = Path(__file__).resolve().parents[3] / "logs"
+_LOG_DIR = Path(__file__).resolve().parents[2] / "logs"
 _LOG_FILE = _LOG_DIR / "agent_trace.jsonl"
 
 

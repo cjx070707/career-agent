@@ -7,7 +7,6 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.services.agent_service import AgentService
 from app.services.autonomous_agent_service import AutonomousAgentService
 
 
@@ -112,15 +111,12 @@ async def chat(payload: ChatRequest) -> StreamingResponse:
 @router.post("/chat/sync", response_model=ChatResponse)
 def chat_sync(payload: ChatRequest) -> ChatResponse:
     """Synchronous endpoint kept for evals and direct API testing."""
-    result = AgentService().respond(payload.user_id, payload.message)
+    result = AutonomousAgentService().respond(payload.user_id, payload.message)
     return ChatResponse(
         answer=result.answer,
         stage=result.stage,
         memory_used=result.memory_used,
         sources=result.sources,
         tool_used=result.tool_used,
-        plan=result.plan,
         tool_trace=result.tool_trace,
-        loop_trace=result.loop_trace,
-        llm_trace=result.llm_trace,
     )

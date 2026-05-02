@@ -315,7 +315,28 @@ class AutonomousAgentService:
                 "function": {
                     "name": tool["name"],
                     "description": tool["description"],
-                    "parameters": tool["input_schema"],
+                    "parameters": self._inline_refs(tool["input_schema"]),
                 },
             })
         return schemas
+
+    @staticmethod
+    def _inline_refs(schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Resolve $defs/$ref in place so Qwen can parse nested object schemas."""
+        import copy
+        schema = copy.deepcopy(schema)
+        defs = schema.pop("$defs", {})
+        if not defs:
+            return schema
+
+        def resolve(node: Any) -> Any:
+            if isinstance(node, dict):
+                if "$ref" in node:
+                    ref_name = node["$ref"].split("/")[-1]
+                    return resolve(defs.get(ref_name, node))
+                return {k: resolve(v) for k, v in node.items()}
+            if isinstance(node, list):
+                return [resolve(i) for i in node]
+            return node
+
+        return resolve(schema)

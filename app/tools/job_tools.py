@@ -7,11 +7,13 @@ def build_job_tools() -> list[ToolDefinition]:
     retrieval_service = RetrievalService()
 
     def _search(payload: SearchJobsToolInput) -> list[dict]:
-        filters = (
-            payload.filters.model_dump(exclude_none=True)
-            if payload.filters is not None
-            else None
-        )
+        filters: dict | None = None
+        if payload.location or payload.work_type:
+            filters = {}
+            if payload.location:
+                filters["location"] = payload.location
+            if payload.work_type:
+                filters["work_type"] = payload.work_type
         return [
             {
                 "type": hit.type,

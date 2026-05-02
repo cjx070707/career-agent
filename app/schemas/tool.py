@@ -26,21 +26,10 @@ class CareerInsightsToolInput(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
 
 
-class SearchJobsFilters(BaseModel):
-    """Structured slots forwarded to the retrieval layer.
-
-    Both fields are optional so callers can request a loose search, a
-    location-only filter, a work_type-only filter, or both together. Values
-    are compared against job metadata case-insensitively as substrings.
-    """
-
-    location: Optional[str] = None
-    work_type: Optional[str] = None
-
-
 class SearchJobsToolInput(BaseModel):
     query: str = Field(..., min_length=1)
-    filters: Optional[SearchJobsFilters] = None
+    location: Optional[str] = Field(None, description="Filter by city, e.g. 'Sydney'")
+    work_type: Optional[str] = Field(None, description="Filter by work type, e.g. 'intern', 'full-time'")
 
 
 class MatchResumeToJobsToolInput(BaseModel):
