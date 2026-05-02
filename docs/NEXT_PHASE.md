@@ -161,15 +161,26 @@ goal_progress (
 
 ### 实施阶段
 
-**A-1**：`goals` / `goal_progress` 表 + `GoalService` + 注册 goal 工具（`get_goals`、`set_goal`、`log_progress`）到现有 `ToolRegistry`
+**A-1** ✅：`goals` / `goal_progress` 表 + `GoalService` + 注册 goal 工具（`get_goals`、`set_goal`、`log_progress`）到现有 `ToolRegistry`
 
-**A-2**：改造 `AgentService` 决策路径——把工具 schema 交给 LLM，用 function calling 自主决定调哪个工具，替换掉意图分类器 → 固定工具链的路径；同时工具调用过程实时 yield SSE 状态事件
+**A-2** ✅：改造 `AgentService` 决策路径——把工具 schema 交给 LLM，用 function calling 自主决定调哪个工具，替换掉意图分类器 → 固定工具链的路径；同时工具调用过程实时 yield SSE 状态事件
 
-**A-3**：跨会话目标感知——每次对话开始前查 `goals` 表，把目标状态注入 system prompt；无目标时引导用户设定目标
+**A-3** ✅：跨会话目标感知——每次对话开始前查 `goals` 表，把目标状态注入 system prompt；无目标时引导用户设定目标
 
-**A-4**：`analyze_gap` 工具——简历 vs JD 结构化 gap 分析，注册进 `ToolRegistry`
+**A-4** ✅：`analyze_gap` 工具——简历 vs JD gap 分析（v1 prompt 版），注册进 `ToolRegistry`
 
-**A-5**：多轮 eval + 量化数字写入 README
+**A-5** ✅：MCP server——12 个工具按 domain 模块化暴露（jobs / records / profile / goals），Claude 桌面 app 验收通过
+
+**A-6** ✅：Memory 升级（分支 `feature/memory-upgrade`）
+- Running Summary：对话超过 24 turns 时自动压缩旧记录，存 `conversation_summaries` 表，注入 system prompt
+- user_profile 提取：每轮结束后 LLM 提取偏好（地点/行业/工作类型/薪资/时间线），存 `user_profiles` 表，下次对话注入
+- Structured Logging：`app/utils/trace_logger.py`，JSONL 写入 `logs/agent_trace.jsonl`，记录每次 llm_call / tool_call / agent_turn 的耗时和结果
+
+**接下来：**
+- analyze_gap 结构化输出（JSON schema：match_score / matched_skills / missing_skills）
+- 真实岗位数据（Adzuna API）
+- 最小 eval（5 个核心场景）
+- 工程化（streaming answer / retry）
 
 ---
 
@@ -179,12 +190,21 @@ goal_progress (
 main 分支（已完成）:
   ✅ F-1 Streaming  ✅ F-2 真实 Embedding
 
-feature/autonomous-agent 分支（基于 main，前端/工具注册表/数据层全部继承）:
-  A-1 Goal 持久化 + goal 工具注册
-  → A-2 真 Function Calling 循环（含工具调用实时 SSE）
-  → A-3 跨会话目标感知（含首次使用引导）
-  → A-4 Gap Analysis tool
-  → A-5 Eval 数字
+feature/autonomous-agent → main（已合并）:
+  ✅ A-1 Goal 持久化 + goal 工具注册
+  ✅ A-2 真 Function Calling 循环（含工具调用实时 SSE）
+  ✅ A-3 跨会话目标感知（含首次使用引导）
+  ✅ A-4 Gap Analysis tool（v1 prompt 版）
+  ✅ A-5 MCP server（12 工具，Claude 桌面验收通过）
+
+feature/memory-upgrade（当前分支）:
+  ✅ A-6 Running Summary + user_profile 提取 + Structured Logging
+
+接下来：
+  → analyze_gap 结构化输出（JSON schema）
+  → 真实岗位数据（Adzuna API）
+  → 最小 eval（5 个核心场景）
+  → 工程化（streaming answer / retry）
 ```
 
 ---
@@ -239,4 +259,4 @@ feature/autonomous-agent 分支（基于 main，前端/工具注册表/数据层
 
 ---
 
-*最后更新：2026-05-01*
+*最后更新：2026-05-02（A-6 memory upgrade + structured logging 完成）*

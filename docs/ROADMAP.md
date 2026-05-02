@@ -152,6 +152,37 @@
 
 ---
 
+## Phase F｜Memory 升级 + Structured Logging ✅ 已完成（2026-05-02）
+
+**分支**：`feature/memory-upgrade`
+
+**完成的事：**
+
+1. **Running Summary**（`app/services/user_profile_service.py` → `SummaryService`）
+   - 对话超过 24 turns 时，自动把最旧一批 turns 用 LLM 压缩成摘要
+   - 摘要存入 `conversation_summaries` 表，每次对话注入 system prompt
+   - 解决"聊久了就失忆"的根本问题，WINDOW_SIZE=12 保留原文
+
+2. **user_profile 偏好提取**（`app/services/user_profile_service.py` → `UserProfileService`）
+   - 每轮对话结束后，LLM 从本轮交换中提取偏好信号（地点/行业/工作类型/薪资/时间线/回避项）
+   - 增量合并到 `user_profiles` 表，下次对话注入 system prompt
+   - 用户说"不想去外企"，以后每次对话都记得
+
+3. **Structured Logging / Trace**（`app/utils/trace_logger.py`）
+   - 三类事件 JSONL 写入 `logs/agent_trace.jsonl`：
+     - `llm_call`：iteration / latency_ms / had_tool_calls / n_messages / error
+     - `tool_call`：tool / args（长参数截断）/ latency_ms / ok / error
+     - `agent_turn`：stage / iterations / tool_trace / total_latency_ms
+   - 出问题 `tail -f logs/agent_trace.jsonl` 即可实时 trace，不靠猜
+
+4. **DB schema**：新增 `conversation_summaries` 和 `user_profiles` 两张表
+
+**验收脚本**：
+- `.venv/bin/python scripts/verify_memory_upgrade.py`（17 项全通过）
+- `.venv/bin/python scripts/verify_trace_logger.py`
+
+---
+
 ## 不做的事（明确排除）
 
 以下方向在当前阶段不进入主线，原因是工程成本高但简历价值边际收益低：
