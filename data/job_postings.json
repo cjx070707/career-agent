@@ -1,707 +1,763 @@
 [
   {
     "type": "job_posting",
-    "title": "Backend Engineer Intern",
-    "snippet": "Python, FastAPI, REST APIs, SQL, and basic cloud exposure.",
-    "company": "USYD CareerHub Partner",
-    "location": "Sydney",
-    "work_type": "intern",
-    "posted_at": "2026-04-02",
-    "url": "https://usyd-careerhub.internal/job/backend-engineer-intern",
-    "tags": [
-      "python",
-      "fastapi",
-      "backend",
-      "sql"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "AI Platform Backend Engineer",
-    "snippet": "Backend services for LLM products, tool orchestration, retrieval systems, and platform APIs.",
-    "company": "Canva",
-    "location": "Sydney",
-    "work_type": "fulltime",
-    "posted_at": "2026-04-03",
-    "url": "https://usyd-careerhub.internal/job/ai-platform-backend-engineer",
-    "tags": [
-      "llm",
-      "backend",
-      "platform",
-      "python"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Frontend Engineer Intern",
-    "snippet": "React, TypeScript, component libraries, UI implementation, and interaction polish.",
-    "company": "Atlassian",
-    "location": "Sydney",
-    "work_type": "intern",
-    "posted_at": "2026-03-29",
-    "url": "https://usyd-careerhub.internal/job/frontend-engineer-intern",
-    "tags": [
-      "frontend",
-      "react",
-      "typescript"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Sydney Fintech Backend Intern",
-    "snippet": "Backend intern at a Sydney fintech startup working on Python services, Postgres, and payment APIs.",
-    "company": "Airwallex",
-    "location": "Sydney",
-    "work_type": "intern",
-    "posted_at": "2026-04-05",
-    "url": "https://usyd-careerhub.internal/job/sydney-fintech-backend-intern",
-    "tags": [
-      "backend",
-      "python",
-      "postgres",
-      "payments"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "USYD Data Analyst Intern",
-    "snippet": "Data analyst intern with a University of Sydney research lab, using Python, pandas, and SQL for health analytics.",
-    "company": "University of Sydney",
-    "location": "Sydney",
+    "title": "System Development Engineer Intern, Sydney",
+    "snippet": "This is a System Development Engineer Intern, Sydney role with Amazon based in Sydney, NSW, AU  Amazon  Role Seniority - intern More about the System Development Engineer Intern, Sydney role at Amazon Do you love automating and streamlining manual processes? Do you have a passion for making things e",
+    "company": "Amazon",
+    "location": "The Rocks, Sydney",
     "work_type": "intern",
     "posted_at": "2026-04-01",
-    "url": "https://usyd-careerhub.internal/job/usyd-data-analyst-intern",
+    "url": "https://www.adzuna.com.au/land/ad/5684811269?se=NF8kXtlF8RGgIpBcXwoRIA&utm_medium=api&utm_source=b0d6903d&v=93F96B84E9C6F24FA4FD9C3FCC0DD9C5D158521F",
     "tags": [
-      "data",
-      "analytics",
-      "python",
-      "pandas",
-      "sql"
+      "it jobs",
+      "contract"
     ]
   },
   {
     "type": "job_posting",
-    "title": "Sydney AI Platform Engineer",
-    "snippet": "AI platform engineer in Sydney building ML inference services with Docker, Kubernetes, and AWS.",
-    "company": "Google",
-    "location": "Sydney",
-    "work_type": "fulltime",
-    "posted_at": "2026-03-26",
-    "url": "https://usyd-careerhub.internal/job/sydney-ai-platform-engineer",
-    "tags": [
-      "ai",
-      "platform",
-      "kubernetes",
-      "aws"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Sydney SaaS Frontend Intern",
-    "snippet": "Frontend intern at a Sydney-based SaaS company, working with TypeScript, React, and component design systems.",
-    "company": "SafetyCulture",
-    "location": "Sydney",
-    "work_type": "intern",
-    "posted_at": "2026-04-06",
-    "url": "https://usyd-careerhub.internal/job/sydney-saas-frontend-intern",
-    "tags": [
-      "frontend",
-      "react",
-      "typescript",
-      "ui"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Sydney Graduate Software Engineer",
-    "snippet": "Graduate software engineer with work rights in Sydney, full-stack role with Python, TypeScript, and GCP.",
-    "company": "Atlassian",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-20",
-    "url": "https://usyd-careerhub.internal/job/sydney-graduate-software-engineer",
-    "tags": [
-      "graduate",
-      "full-stack",
-      "python",
-      "typescript",
-      "gcp"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "USYD Machine Learning Research Intern",
-    "snippet": "Assist a USYD lab on model training, evaluation pipelines, and experiment tracking using PyTorch.",
-    "company": "University of Sydney",
-    "location": "Sydney",
-    "work_type": "intern",
-    "posted_at": "2026-04-07",
-    "url": "https://usyd-careerhub.internal/job/usyd-ml-research-intern",
-    "tags": [
-      "ai",
-      "ml",
-      "pytorch",
-      "research"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Graduate Data Engineer Program",
-    "snippet": "Build data pipelines and warehouse models with Python, SQL, and cloud tooling for analytics teams.",
-    "company": "CBA",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-18",
-    "url": "https://usyd-careerhub.internal/job/graduate-data-engineer-program",
-    "tags": [
-      "graduate",
-      "data",
-      "python",
-      "sql"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Canva Backend Internship Program",
-    "snippet": "Work on backend microservices and APIs using Java or Python, with strong code review culture.",
-    "company": "Canva",
-    "location": "Sydney",
-    "work_type": "intern",
-    "posted_at": "2026-04-08",
-    "url": "https://usyd-careerhub.internal/job/canva-backend-internship-program",
-    "tags": [
-      "intern",
-      "backend",
-      "api",
-      "microservices"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Westpac Technology Graduate",
-    "snippet": "Rotate across engineering teams including cloud platform, backend systems, and digital channels.",
-    "company": "Westpac",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-14",
-    "url": "https://usyd-careerhub.internal/job/westpac-technology-graduate",
-    "tags": [
-      "graduate",
-      "backend",
-      "cloud",
-      "platform"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "DevOps Engineer Internship",
-    "snippet": "Support CI/CD, observability, and container operations with Docker, Kubernetes, and Terraform.",
-    "company": "Macquarie",
-    "location": "Sydney",
-    "work_type": "intern",
-    "posted_at": "2026-04-04",
-    "url": "https://usyd-careerhub.internal/job/devops-engineer-internship",
-    "tags": [
-      "devops",
-      "docker",
-      "kubernetes",
-      "terraform"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Cloud Platform Graduate Engineer",
-    "snippet": "Graduate role building cloud infrastructure automation on AWS with Python and IaC.",
-    "company": "AWS",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-22",
-    "url": "https://usyd-careerhub.internal/job/cloud-platform-graduate-engineer",
-    "tags": [
-      "graduate",
-      "aws",
-      "cloud",
-      "python"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Junior Full Stack Engineer",
-    "snippet": "Build internal web platforms with React, Node.js, and PostgreSQL in a product-led team.",
-    "company": "Linktree",
-    "location": "Sydney",
-    "work_type": "fulltime",
-    "posted_at": "2026-03-31",
-    "url": "https://usyd-careerhub.internal/job/junior-full-stack-engineer",
-    "tags": [
-      "full-stack",
-      "react",
-      "node",
-      "postgres"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Graduate Cyber Security Analyst",
-    "snippet": "Monitor security events, triage incidents, and improve SOC workflows with SIEM tooling.",
-    "company": "Deloitte AU",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-15",
-    "url": "https://usyd-careerhub.internal/job/graduate-cyber-security-analyst",
-    "tags": [
-      "graduate",
-      "security",
-      "soc",
-      "siem"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "USYD Product Analytics Intern",
-    "snippet": "Analyze student platform usage, build dashboards, and run A/B experiment analysis.",
-    "company": "University of Sydney",
-    "location": "Sydney",
-    "work_type": "intern",
-    "posted_at": "2026-04-09",
-    "url": "https://usyd-careerhub.internal/job/usyd-product-analytics-intern",
-    "tags": [
-      "intern",
-      "analytics",
-      "sql",
-      "dashboard"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Graduate Quant Developer",
-    "snippet": "Work with trading engineers on low-latency systems using C++, Python, and performance tooling.",
-    "company": "Optiver",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-16",
-    "url": "https://usyd-careerhub.internal/job/graduate-quant-developer",
-    "tags": [
-      "graduate",
-      "quant",
-      "c++",
-      "python"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Software Engineer Intern - Developer Experience",
-    "snippet": "Improve CI pipelines, build tooling, and maintain internal developer portal services.",
-    "company": "Atlassian",
-    "location": "Sydney",
-    "work_type": "intern",
-    "posted_at": "2026-04-10",
-    "url": "https://usyd-careerhub.internal/job/software-engineer-intern-dx",
-    "tags": [
-      "intern",
-      "devex",
-      "tooling",
-      "ci"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Graduate AI Engineer Program",
-    "snippet": "Deliver applied ML features for customer products including model serving and monitoring.",
-    "company": "Microsoft",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-23",
-    "url": "https://usyd-careerhub.internal/job/graduate-ai-engineer-program",
-    "tags": [
-      "graduate",
-      "ai",
-      "ml",
-      "model-serving"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Data Science Intern - Risk Analytics",
-    "snippet": "Prototype risk models, validate assumptions, and present findings to product teams.",
-    "company": "NAB",
-    "location": "Melbourne",
-    "work_type": "intern",
-    "posted_at": "2026-04-01",
-    "url": "https://usyd-careerhub.internal/job/data-science-intern-risk-analytics",
-    "tags": [
-      "intern",
-      "data-science",
-      "risk",
-      "python"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Graduate Site Reliability Engineer",
-    "snippet": "Support production reliability, alerting, and incident response for mission critical systems.",
-    "company": "Canva",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-21",
-    "url": "https://usyd-careerhub.internal/job/graduate-site-reliability-engineer",
-    "tags": [
-      "graduate",
-      "sre",
-      "observability",
-      "incident-response"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Backend Engineer Intern - Payments",
-    "snippet": "Build payment APIs, event-driven services, and reconciliation tooling for transactions.",
-    "company": "Stripe",
-    "location": "Remote (AU)",
-    "work_type": "intern",
-    "posted_at": "2026-04-11",
-    "url": "https://usyd-careerhub.internal/job/backend-engineer-intern-payments",
-    "tags": [
-      "intern",
-      "backend",
-      "payments",
-      "api"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Graduate Software Engineer - Banking Platforms",
-    "snippet": "Develop APIs and internal tools for business banking platform modernization.",
-    "company": "Westpac",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-19",
-    "url": "https://usyd-careerhub.internal/job/graduate-software-engineer-banking-platforms",
-    "tags": [
-      "graduate",
-      "backend",
-      "api",
-      "banking"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "USYD Health AI Research Assistant",
-    "snippet": "Assist model evaluation and data preprocessing for health AI research projects.",
-    "company": "University of Sydney",
-    "location": "Sydney",
-    "work_type": "parttime",
-    "posted_at": "2026-04-12",
-    "url": "https://usyd-careerhub.internal/job/usyd-health-ai-research-assistant",
-    "tags": [
-      "ai",
-      "research",
-      "health",
-      "python"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Frontend Graduate Program",
-    "snippet": "Graduate pathway focused on frontend architecture, accessibility, and design system delivery.",
-    "company": "Canva",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-24",
-    "url": "https://usyd-careerhub.internal/job/frontend-graduate-program",
-    "tags": [
-      "graduate",
-      "frontend",
-      "react",
-      "accessibility"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Junior Data Analyst",
-    "snippet": "Support reporting pipelines and dashboard maintenance using SQL and BI tools.",
-    "company": "PwC AU",
-    "location": "Sydney",
-    "work_type": "fulltime",
-    "posted_at": "2026-03-30",
-    "url": "https://usyd-careerhub.internal/job/junior-data-analyst",
-    "tags": [
-      "data",
-      "sql",
-      "bi",
-      "analytics"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Software Engineer Intern - Mobile Backend",
-    "snippet": "Build backend APIs for mobile features with strong focus on reliability and testing.",
-    "company": "SafetyCulture",
-    "location": "Sydney",
-    "work_type": "intern",
-    "posted_at": "2026-04-13",
-    "url": "https://usyd-careerhub.internal/job/software-engineer-intern-mobile-backend",
-    "tags": [
-      "intern",
-      "backend",
-      "api",
-      "testing"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Graduate Data Scientist",
-    "snippet": "Join a two-year graduate program applying ML and analytics to customer lifecycle optimization.",
-    "company": "Macquarie",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-17",
-    "url": "https://usyd-careerhub.internal/job/graduate-data-scientist",
-    "tags": [
-      "graduate",
-      "data-science",
-      "ml",
-      "python"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Cloud Support Engineer Intern",
-    "snippet": "Assist cloud migration and infrastructure automation work for enterprise customers.",
-    "company": "AWS",
-    "location": "Sydney",
-    "work_type": "intern",
-    "posted_at": "2026-04-14",
-    "url": "https://usyd-careerhub.internal/job/cloud-support-engineer-intern",
-    "tags": [
-      "intern",
-      "cloud",
-      "aws",
-      "automation"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Graduate Product Manager - Platforms",
-    "snippet": "Partner with engineering to define roadmap for internal platform capabilities.",
-    "company": "Atlassian",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-27",
-    "url": "https://usyd-careerhub.internal/job/graduate-product-manager-platforms",
-    "tags": [
-      "graduate",
-      "product",
-      "platform",
-      "roadmap"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Junior DevOps Engineer",
-    "snippet": "Maintain CI/CD workflows, improve infrastructure reliability, and manage container orchestration.",
-    "company": "Employment Hero",
-    "location": "Melbourne",
-    "work_type": "fulltime",
-    "posted_at": "2026-03-28",
-    "url": "https://usyd-careerhub.internal/job/junior-devops-engineer",
-    "tags": [
-      "devops",
-      "ci/cd",
-      "kubernetes",
-      "terraform"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "USYD Software Engineering Capstone Assistant",
-    "snippet": "Support capstone project teams with code reviews and backend architecture guidance.",
-    "company": "University of Sydney",
-    "location": "Sydney",
-    "work_type": "parttime",
-    "posted_at": "2026-04-15",
-    "url": "https://usyd-careerhub.internal/job/usyd-capstone-assistant",
-    "tags": [
-      "usyd",
-      "backend",
-      "mentoring",
-      "architecture"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Machine Learning Engineer Intern",
-    "snippet": "Prototype ranking and recommendation models with Python, feature pipelines, and experiment tooling.",
-    "company": "Canva",
-    "location": "Sydney",
+    "title": "Structural/Civil Engineer Intern Sydney",
+    "snippet": "Job Title: Structural/Civil Engineer Intern Sydney (Unpaid Internship) Location: Sydney, NSW, Australia Duration: 3 months About the Role: We are seeking a highly motivated and detail-oriented Structural Engineer Intern to join our Sydney team. This internship provides hands-on exposure to structura",
+    "company": "Study and Work",
+    "location": "Sydney, Sydney Region",
     "work_type": "intern",
     "posted_at": "2026-04-16",
-    "url": "https://usyd-careerhub.internal/job/machine-learning-engineer-intern",
+    "url": "https://www.adzuna.com.au/details/5700657638?utm_medium=api&utm_source=b0d6903d",
     "tags": [
-      "intern",
-      "ml",
-      "python",
-      "recommendation"
+      "engineering jobs",
+      "contract"
     ]
   },
   {
     "type": "job_posting",
-    "title": "Graduate Software Engineer - Trading Systems",
-    "snippet": "Build and optimize trading infrastructure with strong focus on performance and reliability.",
-    "company": "IMC",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-25",
-    "url": "https://usyd-careerhub.internal/job/graduate-software-engineer-trading-systems",
-    "tags": [
-      "graduate",
-      "trading",
-      "performance",
-      "c++"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Remote Data Engineering Intern",
-    "snippet": "Help build ETL pipelines and data quality checks for distributed analytics teams.",
-    "company": "Deloitte AU",
-    "location": "Remote (AU)",
+    "title": "STRUCTURAL/CIVIL ENGINEER INTERN SYDNEY",
+    "snippet": "15th April, 2026 Job Title: Structural/Civil Engineer Intern Sydney (Unpaid Internship) Location: Sydney, NSW, Australia Duration: 3 months About the Role: We are seeking a highly motivated and detail-oriented Structural Engineer Intern to join our Sydney team. This internship provides hands-on expo",
+    "company": "Study And Work",
+    "location": "The Rocks, Sydney",
     "work_type": "intern",
-    "posted_at": "2026-04-17",
-    "url": "https://usyd-careerhub.internal/job/remote-data-engineering-intern",
+    "posted_at": "2026-04-16",
+    "url": "https://www.adzuna.com.au/details/5700967158?utm_medium=api&utm_source=b0d6903d",
     "tags": [
-      "intern",
-      "data-engineering",
-      "etl",
-      "sql"
+      "engineering jobs",
+      "contract"
     ]
   },
   {
     "type": "job_posting",
-    "title": "Graduate AI Consultant",
-    "snippet": "Deliver AI proof-of-concepts and analytics strategy recommendations for enterprise clients.",
-    "company": "EY AU",
-    "location": "Sydney",
-    "work_type": "graduate",
-    "posted_at": "2026-03-13",
-    "url": "https://usyd-careerhub.internal/job/graduate-ai-consultant",
+    "title": "System Development Engineer Intern, Sydney",
+    "snippet": "Description Do you love automating and streamlining manual processes? Do you have a passion for making things easier, better, faster and more efficient? Read on. We may have the right role for you. Systems Development interns work with technical leaders to refine technical direction, and then follow",
+    "company": "Amazon",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-03-27",
+    "url": "https://www.adzuna.com.au/details/5680214624?utm_medium=api&utm_source=b0d6903d",
     "tags": [
-      "graduate",
-      "ai",
-      "consulting",
-      "analytics"
+      "it jobs",
+      "contract"
     ]
   },
   {
     "type": "job_posting",
-    "title": "Junior Backend Engineer - Identity Platform",
-    "snippet": "Develop identity and authentication services with secure API design practices.",
-    "company": "Okta",
-    "location": "Sydney",
-    "work_type": "fulltime",
+    "title": "System Development Engineer Intern, Sydney",
+    "snippet": "Description Do you love automating and streamlining manual processes? Do you have a passion for making things easier, better, faster and more efficient? Read on. We may have the right role for you. Systems Development interns work with technical leaders to refine technical direction, and then follow",
+    "company": "Amazon",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-03-28",
+    "url": "https://www.adzuna.com.au/details/5680893490?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Business Consultant Internship - in Sydney, Australia",
+    "snippet": "About Client: Our client’s vision is to integrate ESG and climate considerations into every business decision to drive sustainable growth. By utilising the latest data, AI, and technology, they aim to help organisations accelerate their time to value, comply with emerging regulations, and enhance ov",
+    "company": "INAUTALENT",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2025-10-19",
+    "url": "https://www.adzuna.com.au/details/5454336728?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "consultancy jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "HUMAN RESOURCES INTERNSHIP (RECRUITMENT) SYDNEY",
+    "snippet": "15th April, 2026 Human Resources Intern (Recruitment) Location: Sydney, Australia We are seeking motivated students or recent graduates interested in gaining practical experience in Human Resources, with a strong focus on Recruitment and Selection within the Australian market. Key Responsibilities: ",
+    "company": "Study And Work",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-16",
+    "url": "https://www.adzuna.com.au/details/5700967187?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "hr & recruitment jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Backend Engineer Intern (TikTok LIVE - Sydney) - 2026 Start (BS/MS)",
+    "snippet": "This is a Backend Engineer Intern (TikTok LIVE - Sydney) - 2026 Start (BS/MS) role with TikTok based in Sydney, NSW, AU  TikTok  Role Seniority - intern More about the Backend Engineer Intern (TikTok LIVE - Sydney) - 2026 Start (BS/MS) role at TikTok TikTok LIVE Revenue: TikTok Live revenue engineer",
+    "company": "TikTok",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-10",
+    "url": "https://www.adzuna.com.au/land/ad/5695258910?se=NF8kXtlF8RGgIpBcXwoRIA&utm_medium=api&utm_source=b0d6903d&v=7F9722E48D79800BEA146BACBC1C65A4A6DC2A67",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "2026 Software Dev Engineer Intern (Location : Sydney)",
+    "snippet": "Description Do you want to solve real customer problems through innovative technology? Do you enjoy working on scalable services in a collaborative team environment? Do you want to see your code directly impact millions of customers worldwide? At Amazon, we hire the best minds in technology to innov",
+    "company": "Amazon",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-03-16",
+    "url": "https://www.adzuna.com.au/details/5668210850?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "2026 Software Dev Engineer Intern (Location : Sydney)",
+    "snippet": "View transcript Description Do you want to solve real customer problems through innovative technology? Do you enjoy working on scalable services in a collaborative team environment? Do you want to see your code directly impact millions of customers worldwide? At Amazon, we hire the best minds in tec",
+    "company": "Amazon",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-03-15",
+    "url": "https://www.adzuna.com.au/details/5666058750?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "2026 Software Dev Engineer Intern (Location : Sydney)",
+    "snippet": "Do you want to solve real customer problems through innovative technology? Do you enjoy working on scalable services in a collaborative team environment? Do you want to see your code directly impact millions of customers worldwide? At Amazon, we hire the best minds in technology to innovate and buil",
+    "company": "Amazon",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-03-16",
+    "url": "https://www.adzuna.com.au/details/5668055981?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Accounting Internship (Part time) Sydney",
+    "snippet": "Location: Sydney | Type: Internship | 3 months About the Role: We are offering a hands-on internship for a motivated Accounting Intern looking to gain practical experience in finance and accounting. This is an excellent opportunity to develop your skills in real-world accounting tasks and learn from",
+    "company": "Study and Work",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
     "posted_at": "2026-04-18",
-    "url": "https://usyd-careerhub.internal/job/junior-backend-engineer-identity",
+    "url": "https://www.adzuna.com.au/details/5702989552?utm_medium=api&utm_source=b0d6903d",
     "tags": [
-      "backend",
-      "security",
-      "api",
-      "identity"
+      "part time jobs",
+      "contract"
     ]
   },
   {
     "type": "job_posting",
-    "title": "USYD Research Data Engineer",
-    "snippet": "Build reproducible research data workflows, metadata standards, and validation tooling.",
-    "company": "University of Sydney",
-    "location": "Sydney",
-    "work_type": "fulltime",
-    "posted_at": "2026-04-19",
-    "url": "https://usyd-careerhub.internal/job/usyd-research-data-engineer",
-    "tags": [
-      "usyd",
-      "data-engineering",
-      "python",
-      "research"
-    ]
-  },
-  {
-    "type": "job_posting",
-    "title": "Software Engineer Internship - Platform Security",
-    "snippet": "Implement security automation and policy checks across cloud services and developer workflows.",
-    "company": "Google",
-    "location": "Sydney",
+    "title": "ACCOUNTING INTERNSHIP (PART TIME) SYDNEY",
+    "snippet": "17th April, 2026 Location: Sydney | Type: Internship | 3 months About the Role: We are offering a hands-on internship for a motivated Accounting Intern looking to gain practical experience in finance and accounting. This is an excellent opportunity to develop your skills in real-world accounting tas",
+    "company": "Study And Work",
+    "location": "The Rocks, Sydney",
     "work_type": "intern",
-    "posted_at": "2026-04-20",
-    "url": "https://usyd-careerhub.internal/job/software-engineer-intern-platform-security",
+    "posted_at": "2026-04-18",
+    "url": "https://www.adzuna.com.au/details/5703240503?utm_medium=api&utm_source=b0d6903d",
     "tags": [
-      "intern",
-      "security",
-      "cloud",
-      "automation"
+      "part time jobs",
+      "contract"
     ]
   },
   {
     "type": "job_posting",
-    "title": "Graduate Full Stack Developer",
-    "snippet": "Join product squads delivering customer-facing features across React frontend and API backend.",
-    "company": "CBA",
-    "location": "Sydney",
-    "work_type": "graduate",
+    "title": "Human Resources Internship (Recruitment)Â Sydney",
+    "snippet": "Human Resources Intern (Recruitment) Location: Sydney, Australia We are seeking motivated students or recent graduates interested in gaining practical experience in Human Resources, with a strong focus on Recruitment and Selection within the Australian market. Key Responsibilities: Assist with end-t",
+    "company": "Study and Work",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-04-16",
+    "url": "https://www.adzuna.com.au/details/5700657631?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "hr & recruitment jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Accounting (Unpaid internship) Part Time - Sydney",
+    "snippet": "Location: Sydney, NSW | Type: Internship | 3-6 months About the Role: We are offering a hands-on internship for a motivated Accounting Intern looking to gain practical experience in finance and accounting. This is an excellent opportunity to develop your skills in real-world accounting tasks and lea",
+    "company": "Study and Work",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-04-24",
+    "url": "https://www.adzuna.com.au/details/5708744214?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "part time jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Structural Engineering Intern",
+    "snippet": "Ace Talent Recruitment Structural Engineer Intern Sydney, NSW, Australia - Internship About Us: Ace Talent Recruitment was established with the intention of becoming the go-to provider for customers, staff members, and contingent labor. We are currently one of Australia's fastest-growing businesses ",
+    "company": "Ace Talent Recruitment",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2025-11-20",
+    "url": "https://www.adzuna.com.au/details/5504513741?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "engineering jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Digital Marketing Unpaid Internship (Part Time) - Sydney",
+    "snippet": "Social Media & Digital Marketing Internship – Build Your Digital Career Location: Sydney Duration: 12-week Professional Internship Industry: Marketing, Social Media & Digital Strategy About the Opportunity This internship offers hands-on experience in social media and digital marketing within an Aus",
+    "company": "Study and Work",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-04-18",
+    "url": "https://www.adzuna.com.au/details/5702989548?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "part time jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Marketing Intern - for Startup in Sydney, Australia",
+    "snippet": "About our Client: Our client is an online marketplace for carefully curated pre-loved, vintage, and antique furniture and home decor in Australia They redefine the furniture shopping experience through an elevated platform for buyers to discover and purchase one-of-a-kind pieces, while also offering",
+    "company": "INAUTALENT",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
     "posted_at": "2026-03-12",
-    "url": "https://usyd-careerhub.internal/job/graduate-full-stack-developer",
+    "url": "https://www.adzuna.com.au/details/5662345790?utm_medium=api&utm_source=b0d6903d",
     "tags": [
-      "graduate",
-      "full-stack",
-      "react",
-      "backend"
+      "pr, advertising & marketing jobs",
+      "contract"
     ]
   },
   {
     "type": "job_posting",
-    "title": "Data Analyst Intern - Marketing Analytics",
-    "snippet": "Analyze funnel and campaign performance, create dashboards, and support experimentation insights.",
-    "company": "Canva",
-    "location": "Sydney",
+    "title": "Operations Intern - for Startup in Sydney, Australia",
+    "snippet": "Operations Intern - Growing Sustainable Vintage Marketplace About Client: Our client is building the “future of sustainable homes” with an growing online platform for carefully curated pre-loved, vintage, and antique furniture and home decor in Australia. They redefine the furniture shopping experie",
+    "company": "INAUTALENT",
+    "location": "The Rocks, Sydney",
     "work_type": "intern",
     "posted_at": "2026-04-21",
-    "url": "https://usyd-careerhub.internal/job/data-analyst-intern-marketing-analytics",
+    "url": "https://www.adzuna.com.au/details/5705964808?utm_medium=api&utm_source=b0d6903d",
     "tags": [
-      "intern",
-      "data",
-      "analytics",
-      "sql"
+      "sales jobs",
+      "contract"
     ]
   },
   {
     "type": "job_posting",
-    "title": "Remote Graduate Cloud Engineer",
-    "snippet": "Participate in a remote-first graduate cloud engineering pathway with AWS and Kubernetes.",
-    "company": "NAB",
-    "location": "Remote (AU)",
-    "work_type": "graduate",
-    "posted_at": "2026-03-11",
-    "url": "https://usyd-careerhub.internal/job/remote-graduate-cloud-engineer",
+    "title": "DIGITAL MARKETING UNPAID INTERNSHIP (PART TIME) - SYDNEY",
+    "snippet": "17th April, 2026 Social Media & Digital Marketing Internship – Build Your Digital Career Location: Sydney Duration: 12-week Professional Internship Industry: Marketing, Social Media & Digital Strategy About the Opportunity This internship offers hands-on experience in social media and digital market",
+    "company": "Study And Work",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-18",
+    "url": "https://www.adzuna.com.au/details/5703240432?utm_medium=api&utm_source=b0d6903d",
     "tags": [
-      "graduate",
-      "cloud",
-      "aws",
-      "kubernetes"
+      "part time jobs",
+      "contract"
     ]
   },
   {
     "type": "job_posting",
-    "title": "Junior Product Analyst",
-    "snippet": "Support product teams with SQL analysis, KPI tracking, and hypothesis-driven reporting.",
-    "company": "Atlassian",
-    "location": "Melbourne",
-    "work_type": "fulltime",
-    "posted_at": "2026-03-10",
-    "url": "https://usyd-careerhub.internal/job/junior-product-analyst",
+    "title": "Quantitative Research Intern 2026/27 Sydney, Australia",
+    "snippet": "ABOUT IMC: We’re a high-performance trading firm powered by technology, for those who want to be the best among the best. ABOUT THE ROLE: IMC is a leading global trading firm that combines technology, advanced quantitative research, and cutting-edge machine learning techniques to make markets more e",
+    "company": "IMC Financial Markets",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-05-01",
+    "url": "https://www.adzuna.com.au/details/5715189026?utm_medium=api&utm_source=b0d6903d",
     "tags": [
-      "product",
-      "analytics",
-      "sql",
-      "kpi"
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Software Engineer Intern 2026/27 Sydney, Australia",
+    "snippet": "ABOUT THE ROLE: At IMC, Software Engineers don’t just write code and design technology. They are responsible for spotting new opportunities, developing new technologies and solving problems. Every day, our software makes millions of trading decisions in some of the most competitive markets across th",
+    "company": "IMC Financial Markets",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-05-01",
+    "url": "https://www.adzuna.com.au/details/5715188985?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Operations Intern - for Startup in Sydney, Australia",
+    "snippet": "Job Description Operations Intern - for Startup in Sydney, Australia About Client: Our client is building the “future of sustainable homes” with an growing online platform for carefully curated pre-loved, vintage, and antique furniture and home decor in Australia. They redefine the furniture shoppin",
+    "company": "Australiance",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-04-16",
+    "url": "https://www.adzuna.com.au/details/5700754199?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "admin jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Marketing Intern - for Startup in Sydney, Australia",
+    "snippet": "Job Description Marketing Intern - for an Online Vintage Marketplace Startup About our Client: Our client is an online marketplace for carefully curated pre-loved, vintage, and antique furniture and home decor in Australia. They redefine the furniture shopping experience through an elevated platform",
+    "company": "Australiance",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-03-28",
+    "url": "https://www.adzuna.com.au/details/5680766481?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "pr, advertising & marketing jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "WEB DEVELOPER INTERN",
+    "snippet": "16th April, 2026 Job Title: Web Developer Intern Location: Sydney, Australia Duration: 3 Months Type: Internship About Us: One of our host companies is excited to re-launch its online store and is looking for a motivated Web Developer Intern to join their team for a temporary position. This internsh",
+    "company": "Study And Work",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-17",
+    "url": "https://www.adzuna.com.au/details/5702141225?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "2027 Summer Internship - Account Analyst, APAC (Sydney)",
+    "snippet": "PIMCO is a global leader in active fixed income with deep expertise across public and private markets. We invest our clients' capital across a range of fixed income and credit opportunities, leveraging our decades of experience navigating complex debt markets. Our flexible capital base and deep rela",
+    "company": "PIMCO",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-04-01",
+    "url": "https://www.adzuna.com.au/details/5684743133?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "accounting & finance jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Apprentice Carpenter | Commercial & Industrial Construction | Sydney",
+    "snippet": "Total Construction is a multi-award-winning construction company that is also officially recognised as a Great Place to Work for 2021, 2022, 2024 and 2025 by our employees. Celebrating over 30 years strong, our team members have taken great pride in and are driven by the company purpose of making a ",
+    "company": "Total Construction",
+    "location": "The Rocks, Sydney",
+    "work_type": "full-time",
+    "posted_at": "2026-04-01",
+    "url": "https://www.adzuna.com.au/details/5684756277?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "trade & construction jobs"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "ATTENTION ALL TVET STUDENTS",
+    "snippet": "Trades & Services Apprentice / Trainee Working across Sydney, Central Coast & Hunter regions Permanent / Full Time 10/4/2026 Are you ready to design a future you’ll love? Kickstart your career with Central Coast Group Training - the Coast’s leading employer of Apprentices and Trainees for over 40 ye",
+    "company": "CCGT",
+    "location": "The Rocks, Sydney",
+    "work_type": "full-time",
+    "posted_at": "2026-04-12",
+    "url": "https://www.adzuna.com.au/details/5697196368?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "trade & construction jobs",
+      "permanent"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Quantitative Trader Internship: November 2026 - Long Term Placement in Hong Kong",
+    "snippet": "Overview Susquehanna is looking for penultimate year students who are interested in using decision science to solve problems through an internship in Sydney, with the intention to secure a full-time graduate position in our Hong Kong office. Susquehanna is a global quantitative trading firm powered ",
+    "company": "Susquehanna Pacific",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-03-02",
+    "url": "https://www.adzuna.com.au/details/5650844596?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Quantitative Trader Internship: November 2026 - Long Term Placement in Hong Kong",
+    "snippet": "JOB DESCRIPTION Overview Susquehanna is looking for penultimate year students who are interested in using decision science to solve problems through an internship in Sydney, with the intention to secure a full-time graduate position in our Hong Kong office. Susquehanna is a global quantitative tradi",
+    "company": "Sig Susquehanna",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-18",
+    "url": "https://www.adzuna.com.au/details/5703537461?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Quantitative Trader Internship: November 2026 - Long Term Placement in Hong Kong",
+    "snippet": "Susquehanna is looking for penultimate year students who are interested in using decision science to solve problems through an internship in Sydney, with the intention to secure a full-time graduate position in our Hong Kong office. Susquehanna is a global quantitative trading firm powered by scient",
+    "company": "SIG",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-01-10",
+    "url": "https://www.adzuna.com.au/details/5576828871?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "STARTED YOUR APPRENTICESHIP & LOOKING FOR A NEW EMPLOYER?",
+    "snippet": "Trades & Services Apprentice / Trainee Working across Sydney, Central Coast & Hunter regions Permanent / Full Time 15/4/2026 Are you ready to design a future you’ll love? Kick start your career with Central Coast Group Training - the Coast’s leading employer of Apprentices and Trainees for close to ",
+    "company": "CCGT",
+    "location": "The Rocks, Sydney",
+    "work_type": "full-time",
+    "posted_at": "2026-04-16",
+    "url": "https://www.adzuna.com.au/details/5700965479?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "trade & construction jobs",
+      "permanent"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Human Resources Intern - Unpaid",
+    "snippet": "Additional Information Job Number 26049194 Job Category Management Development Programs/Interns Location Sydney Harbour Marriott Hotel at Circular Quay, 30 Pitt Street, Sydney, New South Wales, Australia, 2000 VIEW ON MAP (https://www.google.com/maps?q=Sydney%20Harbour%20Marriott%20Hotel%20at%20Circ",
+    "company": "Marriott",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-04-24",
+    "url": "https://www.adzuna.com.au/details/5708930894?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "hospitality & catering jobs"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "W Sydney - 2026 Voyage Program - F&B Operations",
+    "snippet": "Additional Information Job Number 26033053 Job Category Management Development Programs/Interns Location Sydney Area Office, Sheraton Grand Sydney Hyde Park, Sydney, NEW SOUTH WALES, Australia, 2000 VIEW ON MAP (https://www.google.com/maps?q=Sydney%20Area%20Office%2C%20Sheraton%20Grand%20Sydney%20Hy",
+    "company": "Marriott",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-03-18",
+    "url": "https://www.adzuna.com.au/details/5670250811?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "hr & recruitment jobs"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Pier One Sydney - 2026 Voyage Program - F&B Operations",
+    "snippet": "Additional Information Job Number 26028350 Job Category Management Development Programs/Interns Location Sydney Area Office, Sheraton Grand Sydney Hyde Park, Sydney, NEW SOUTH WALES, Australia, 2000 VIEW ON MAP (https://www.google.com/maps?q=Sydney%20Area%20Office%2C%20Sheraton%20Grand%20Sydney%20Hy",
+    "company": "Marriott",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-03-07",
+    "url": "https://www.adzuna.com.au/details/5657159761?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "hr & recruitment jobs"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Pier One Sydney - 2026 Voyage Program - Rooms Operations",
+    "snippet": "Additional Information Job Number 26028348 Job Category Management Development Programs/Interns Location Sydney Area Office, Sheraton Grand Sydney Hyde Park, Sydney, NEW SOUTH WALES, Australia, 2000 VIEW ON MAP (https://www.google.com/maps?q=Sydney%20Area%20Office%2C%20Sheraton%20Grand%20Sydney%20Hy",
+    "company": "Marriott",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-03-07",
+    "url": "https://www.adzuna.com.au/details/5657159773?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "hr & recruitment jobs"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "1ST YEAR APPRENTICE ROOFER",
+    "snippet": "Trades & Services Apprentice / Trainee Working across Sydney, Central Coast & Hunter regions Permanent / Full Time 21/4/2026 Get paid to complete your Certificate III in Roof Tiling Work on big, high-quality projects Real career progression - Opportunities to grow within the business Are you ready t",
+    "company": "CCGT",
+    "location": "The Rocks, Sydney",
+    "work_type": "full-time",
+    "posted_at": "2026-04-22",
+    "url": "https://www.adzuna.com.au/details/5707074071?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "trade & construction jobs",
+      "permanent"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "1ST/2ND/3RD/4TH YEAR APPRENTICE CABINET MAKER",
+    "snippet": "Trades & Services Apprentice / Trainee Working across Sydney, Central Coast & Hunter regions Permanent / Full Time 24/4/2026 Hands-on apprenticeship in commercial cabinet making and joinery Work across factory and on-site projects with experienced tradespeople Pathway to full-time tradesperson role ",
+    "company": "CCGT",
+    "location": "The Rocks, Sydney",
+    "work_type": "full-time",
+    "posted_at": "2026-04-25",
+    "url": "https://www.adzuna.com.au/details/5709974140?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "trade & construction jobs",
+      "permanent"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Finance Intern",
+    "snippet": "Additional Information Job Number 26044929 Job Category Management Development Programs/Interns Location W Sydney, 31 Wheat Road, Sydney, New South Wales, Australia, 2000 VIEW ON MAP (https://www.google.com/maps?q=W%20Sydney%2C%2031%20Wheat%20Road%2C%20Sydney%2C%20New%20South%20Wales%2C%20Australia%",
+    "company": "Marriott",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-04-15",
+    "url": "https://www.adzuna.com.au/details/5699619743?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "hospitality & catering jobs"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "AI Automation Internship",
+    "snippet": "AI Automation Intern (3-Month Internship) Location: Onsite (Sydney) Hours: 3 days per week Duration: 12 Weeks (Unpaid Internship) Industry: AI, Automation, CRM, Digital Solutions Facilitated by: STUDY AND WORK About the Opportunity We are seeking a motivated and tech-savvy AI Automation Intern to jo",
+    "company": "Study and Work",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-04-15",
+    "url": "https://www.adzuna.com.au/details/5699396334?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Data Center Infrastructure Engineer Intern",
+    "snippet": "This is a Data Center Infrastructure Engineer Intern role with Amazon based in Sydney, NSW, AU  Amazon  Role Seniority - intern More about the Data Center Infrastructure Engineer Intern role at Amazon Every day across the world we develop the ideas, services and products that make life easier for te",
+    "company": "Amazon",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-24",
+    "url": "https://www.adzuna.com.au/land/ad/5709070279?se=NF8kXtlF8RGgIpBcXwoRIA&utm_medium=api&utm_source=b0d6903d&v=C0B7C6239B0E4E13DE4AD4F4C280E2A5D25E0BD5",
+    "tags": [
+      "engineering jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "APPRENTICE PLASTERER",
+    "snippet": "Trades & Services Apprentice / Trainee Working across Sydney, Central Coast & Hunter regions Permanent / Full Time 28/4/2026 Paid apprenticeship completing Certificate III in Wall & Ceiling Lining Gain hands-on experience across a variety of construction projects Build real trade skills with long-te",
+    "company": "CCGT",
+    "location": "The Rocks, Sydney",
+    "work_type": "full-time",
+    "posted_at": "2026-04-30",
+    "url": "https://www.adzuna.com.au/details/5714201758?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "trade & construction jobs",
+      "permanent"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "1ST/2ND YEAR APPRENTICE LANDSCAPER",
+    "snippet": "Trades & Services Apprentice / Trainee Working across Sydney, Central Coast & Hunter regions Permanent / Full Time 20/4/2026 Paid full-time apprenticeship obtaining a Cert III in Landscape Construction Hands-on work across large residential estate projects Build strong skills with experienced mentor",
+    "company": "CCGT",
+    "location": "The Rocks, Sydney",
+    "work_type": "full-time",
+    "posted_at": "2026-04-21",
+    "url": "https://www.adzuna.com.au/details/5706067665?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "trade & construction jobs",
+      "permanent"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Data Center Technicians Intern",
+    "snippet": "This is a Data Center Technicians Intern role with Microsoft based in Sydney, NSW, AU  Microsoft  Role Seniority - intern More about the Data Center Technicians Intern role at Microsoft Overview In alignment with our Microsoft values, we are committed to cultivating an inclusive work environment for",
+    "company": "Microsoft",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-11",
+    "url": "https://www.adzuna.com.au/land/ad/5696343374?se=NF8kXtlF8RGgIpBcXwoRIA&utm_medium=api&utm_source=b0d6903d&v=075DF1BE81A57B07495658A17AD54D5E891CAB33",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "2026 Account Manager Intern",
+    "snippet": "This is a 2026 Account Manager Intern role with Amazon based in Sydney, NSW, AU  Amazon  Role Seniority - intern More about the 2026 Account Manager Intern role at Amazon Amazon is seeking enthusiastic, ambitious and curious individuals who are eager to shape the future of Amazon’s Marketplace busin",
+    "company": "Amazon",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-17",
+    "url": "https://www.adzuna.com.au/land/ad/5702188389?se=NF8kXtlF8RGgIpBcXwoRIA&utm_medium=api&utm_source=b0d6903d&v=04528D728419F236C08E7C12D84E4B8A2CA9D0D7",
+    "tags": [
+      "sales jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Workplace Risk Intern",
+    "snippet": "Description The WTW Pacific Intern Program is a structured, immersive experience designed for students to bridge the gap between academic study and professional practice in insurance and risk management. Program Structure & Eligibility Academic Status: This program is specifically designed for stude",
+    "company": "WTW",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-05-02",
+    "url": "https://www.adzuna.com.au/details/5716363338?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "consultancy jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Quantitative Trader Internship: November 2026",
+    "snippet": "JOB DESCRIPTION Overview Susquehanna is looking for penultimate year students who are interested in using decision science to solve problems in the world around them to join our 2026 Quantitative Trader Internship Program. Susquehanna is a global quantitative trading firm powered by scientific rigor",
+    "company": "Sig Susquehanna",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-03-02",
+    "url": "https://www.adzuna.com.au/details/5650850074?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Quantitative Trader Internship: November 2026",
+    "snippet": "Overview Susquehanna is looking for penultimate year students who are interested in using decision science to solve problems in the world around them to join our 2026 Quantitative Trader Internship Program. Susquehanna is a global quantitative trading firm powered by scientific rigor, curiosity, and",
+    "company": "Susquehanna Pacific",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-03-02",
+    "url": "https://www.adzuna.com.au/details/5650836325?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Quantitative Trader Internship: November 2026",
+    "snippet": "Susquehanna is looking for penultimate year students who are interested in using decision science to solve problems in the world around them to join our 2026 Quantitative Trader Internship Program. Susquehanna is a global quantitative trading firm powered by scientific rigor, curiosity, and innovati",
+    "company": "SIG",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2025-08-17",
+    "url": "https://www.adzuna.com.au/details/5355345150?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Cloud Support Associate Apprentice, Support Engineering",
+    "snippet": "Description The Cloud Support Apprenticeship Program is for Australian Permanent residents who are passionate about technology and looking to start their career in the cloud. A qualification and a career at the same time? Learning and earning within an apprenticeship means you can get both – a quali",
+    "company": "Amazon",
+    "location": "The Rocks, Sydney",
+    "work_type": "full-time",
+    "posted_at": "2026-04-01",
+    "url": "https://www.adzuna.com.au/details/5684758596?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs",
+      "permanent"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Cloud Support Associate Apprentice, Support Engineering",
+    "snippet": "Description The Cloud Support Apprenticeship Program is for Australian Permanent residents who are passionate about technology and looking to start their career in the cloud. A qualification and a career at the same time? Learning and earning within an apprenticeship means you can get both - a quali",
+    "company": "Amazon",
+    "location": "Sydney, Sydney Region",
+    "work_type": null,
+    "posted_at": "2026-04-02",
+    "url": "https://www.adzuna.com.au/details/5686706501?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "it jobs"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Equity Analyst Internship: November 2026",
+    "snippet": "Overview Susquehanna is looking for penultimate year students who are passionate about the financial markets and event driven research to join our 2026 Equity Analyst Internship Program. Working from our Sydney office, you will partner with our senior equity analysts and traders to assist in identif",
+    "company": "Susquehanna Pacific",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-03-02",
+    "url": "https://www.adzuna.com.au/details/5650836220?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "accounting & finance jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Equity Analyst Internship: November 2026",
+    "snippet": "JOB DESCRIPTION Overview Susquehanna is looking for penultimate year students who are passionate about the financial markets and event driven research to join our 2026 Equity Analyst Internship Program. Working from our Sydney office, you will partner with our senior equity analysts and traders to a",
+    "company": "Sig Susquehanna",
+    "location": "The Rocks, Sydney",
+    "work_type": "intern",
+    "posted_at": "2026-04-14",
+    "url": "https://www.adzuna.com.au/details/5698633344?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "accounting & finance jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Equity Analyst Internship: November 2026",
+    "snippet": "Susquehanna is looking for penultimate year students who are passionate about the financial markets and event driven research to join our 2026 Equity Analyst Internship Program. Working from our Sydney office, you will partner with our senior equity analysts and traders to assist in identifying trad",
+    "company": "SIG",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2025-08-19",
+    "url": "https://www.adzuna.com.au/details/5357364137?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "accounting & finance jobs",
+      "contract"
+    ]
+  },
+  {
+    "type": "job_posting",
+    "title": "Intern, ANZ",
+    "snippet": "WELLINGTON MANAGEMENT Wellington Management offers comprehensive investment management capabilities that span nearly all segments of the global capital markets. Our investment solutions, tailored to the unique return and risk objectives of institutional clients in more than 50 countries, draw on a r",
+    "company": "Wellington Management",
+    "location": "Sydney, Sydney Region",
+    "work_type": "intern",
+    "posted_at": "2026-04-29",
+    "url": "https://www.adzuna.com.au/details/5713109620?utm_medium=api&utm_source=b0d6903d",
+    "tags": [
+      "accounting & finance jobs",
+      "contract"
     ]
   }
 ]

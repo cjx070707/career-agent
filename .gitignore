@@ -14,3 +14,4 @@ web/tsconfig.tsbuildinfo
 
 .venv/
 scripts/add_resume.json
+logs/
