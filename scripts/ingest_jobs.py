@@ -43,24 +43,36 @@ def _summarize(rows: list[JobPosting]) -> str:
     return "\n".join(lines)
 
 
+def _fetch_adzuna(query: str, location: str, max_results: int) -> list[dict[str, Any]]:
+    from app.services.adzuna_service import AdzunaService
+    svc = AdzunaService()
+    print(f"Fetching up to {max_results} jobs from Adzuna: query={query!r} location={location!r}")
+    return svc.fetch_jobs(query=query, location=location, max_results=max_results)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate and materialize job postings dataset.")
-    parser.add_argument(
-        "--input",
-        default="data/job_postings.json",
-        help="Input dataset file (.json or .jsonl).",
-    )
-    parser.add_argument(
-        "--output",
-        default="data/job_postings.json",
-        help="Output normalized dataset file (.json).",
-    )
+    parser = argparse.ArgumentParser(description="Validate and materialise job postings dataset.")
+    parser.add_argument("--input", default="data/job_postings.json",
+                        help="Input dataset file (.json or .jsonl). Ignored when --source=adzuna.")
+    parser.add_argument("--output", default="data/job_postings.json",
+                        help="Output normalised dataset file (.json).")
+    parser.add_argument("--source", choices=["file", "adzuna"], default="file",
+                        help="Data source: 'file' (default) reads --input; 'adzuna' fetches live data.")
+    parser.add_argument("--query", default="intern Sydney",
+                        help="Search query passed to Adzuna (only used with --source=adzuna).")
+    parser.add_argument("--location", default="Sydney",
+                        help="Location filter passed to Adzuna (only used with --source=adzuna).")
+    parser.add_argument("--max-results", type=int, default=100,
+                        help="Max jobs to fetch from Adzuna (only used with --source=adzuna).")
     args = parser.parse_args()
 
-    input_path = Path(args.input)
     output_path = Path(args.output)
 
-    payload = _load_input(input_path)
+    if args.source == "adzuna":
+        payload = _fetch_adzuna(args.query, args.location, args.max_results)
+    else:
+        payload = _load_input(Path(args.input))
+
     validated: list[JobPosting] = []
     for index, row in enumerate(payload, start=1):
         try:
