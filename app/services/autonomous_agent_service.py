@@ -62,6 +62,7 @@ class AutonomousAgentService:
         user_id: str,
         message: str,
         on_status: Optional[Callable[[str], None]] = None,
+        on_token: Optional[Callable[[str], None]] = None,
     ) -> AutonomousAgentResult:
         """Run the autonomous agent loop.
 
@@ -102,12 +103,21 @@ class AutonomousAgentService:
 
             llm_start = time.monotonic()
             try:
-                response_msg = self.llm.chat_with_tools(
-                    system_prompt=system_prompt,
-                    messages=messages,
-                    tools=tool_schemas,
-                    timeout=self.TOOL_TIMEOUT,
-                )
+                if on_token:
+                    response_msg = self.llm.stream_chat_with_tools(
+                        system_prompt=system_prompt,
+                        messages=messages,
+                        tools=tool_schemas,
+                        on_token=on_token,
+                        timeout=self.TOOL_TIMEOUT,
+                    )
+                else:
+                    response_msg = self.llm.chat_with_tools(
+                        system_prompt=system_prompt,
+                        messages=messages,
+                        tools=tool_schemas,
+                        timeout=self.TOOL_TIMEOUT,
+                    )
                 llm_ms = int((time.monotonic() - llm_start) * 1000)
                 tool_calls = response_msg.get("tool_calls")
                 tracer.log_llm_call(

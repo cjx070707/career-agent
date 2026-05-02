@@ -47,35 +47,43 @@ async def chat(payload: ChatRequest) -> StreamingResponse:
 
         loop = asyncio.get_event_loop()
         # Thread-safe bridge: worker thread → async queue → SSE
-        status_q: asyncio.Queue[str] = asyncio.Queue()
-        _DONE = object()  # sentinel
+        # Queue carries: str (status text), ("token", str), or _DONE sentinel
+        event_q: asyncio.Queue = asyncio.Queue()
+        _DONE = object()
 
         def on_status(text: str) -> None:
-            # Called from the thread-pool thread; forward to the async loop.
-            loop.call_soon_threadsafe(status_q.put_nowait, text)
+            loop.call_soon_threadsafe(event_q.put_nowait, ("status", text))
+
+        def on_token(text: str) -> None:
+            loop.call_soon_threadsafe(event_q.put_nowait, ("token", text))
 
         svc = AutonomousAgentService()
 
-        # Run respond() in a thread so the event loop stays free to flush SSE.
         async def _run() -> None:
             try:
                 return await loop.run_in_executor(
                     None,
-                    lambda: svc.respond(payload.user_id, payload.message, on_status=on_status),
+                    lambda: svc.respond(
+                        payload.user_id, payload.message,
+                        on_status=on_status, on_token=on_token,
+                    ),
                 )
             finally:
-                loop.call_soon_threadsafe(status_q.put_nowait, _DONE)
+                loop.call_soon_threadsafe(event_q.put_nowait, _DONE)
 
         task = asyncio.ensure_future(_run())
 
-        # Stream status events until the sentinel arrives
+        # Stream status + token events until the sentinel arrives
         while True:
-            item = await status_q.get()
+            item = await event_q.get()
             if item is _DONE:
                 break
-            yield _sse("status", text=item)
+            kind, text = item
+            if kind == "status":
+                yield _sse("status", text=text)
+            else:
+                yield _sse("token", text=text)
 
-        # Collect the final result (or surface the exception)
         try:
             result = await task
         except Exception as exc:
@@ -86,7 +94,7 @@ async def chat(payload: ChatRequest) -> StreamingResponse:
         sources_data = [s.model_dump() for s in (result.sources or [])]
         yield _sse(
             "answer",
-            text=result.answer,
+            text=result.answer,  # fallback for clients that don't handle token events
             stage=result.stage,
             memory_used=result.memory_used,
             tool_used=result.tool_used,

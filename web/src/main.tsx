@@ -118,6 +118,7 @@ async function sendChat(
   message: string,
   signal: AbortSignal,
   onStatus?: (text: string) => void,
+  onToken?: (text: string) => void,
 ): Promise<ChatResponse> {
   const response = await fetch("/chat", {
     method: "POST",
@@ -131,18 +132,17 @@ async function sendChat(
     throw new Error(body || `Request failed with ${response.status}`);
   }
 
-  // Parse SSE stream: each event is "data: {...}\n\n"
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let answerEvent: Record<string, unknown> | null = null;
+  let streamedText = "";
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    // Split on newlines; keep last (potentially incomplete) chunk in buffer
     const lines = buffer.split("\n");
     buffer = lines.pop() ?? "";
 
@@ -158,6 +158,10 @@ async function sendChat(
       }
       if (event.type === "status") {
         onStatus?.(String(event.text ?? ""));
+      } else if (event.type === "token") {
+        const tok = String(event.text ?? "");
+        streamedText += tok;
+        onToken?.(tok);
       } else if (event.type === "answer") {
         answerEvent = event;
       } else if (event.type === "error") {
@@ -170,9 +174,12 @@ async function sendChat(
     throw new Error("No answer received from server");
   }
 
+  // Prefer streamed text; fall back to answer.text for non-streaming clients
+  const finalText = streamedText || String(answerEvent.text ?? "");
+
   return {
     contract_version: "chat.v1",
-    answer: String(answerEvent.text ?? ""),
+    answer: finalText,
     stage: String(answerEvent.stage ?? "direct"),
     memory_used: Boolean(answerEvent.memory_used),
     tool_used: (answerEvent.tool_used as string | null) ?? null,
@@ -257,17 +264,34 @@ function App() {
       const controller = new AbortController();
       chatAbortRef.current = controller;
       const timeoutId = window.setTimeout(() => controller.abort(), 120000);
+
+      // Add a placeholder message that gets updated token-by-token
+      const streamingId = nextId.current++;
+      setMessages((current) => [
+        ...current,
+        { id: streamingId, role: "agent", content: "", response: null },
+      ]);
+
       const response = await sendChat(
         userId.trim() || "demo-user",
         trimmed,
         controller.signal,
         (text) => setStatusLabel(text),
+        (tok) => setMessages((current) =>
+          current.map((m) =>
+            m.id === streamingId ? { ...m, content: m.content + tok } : m
+          )
+        ),
       );
       window.clearTimeout(timeoutId);
-      setMessages((current) => [
-        ...current,
-        { id: nextId.current++, role: "agent", content: response.answer, response },
-      ]);
+      // Replace placeholder with final response (includes metadata)
+      setMessages((current) =>
+        current.map((m) =>
+          m.id === streamingId
+            ? { ...m, content: response.answer, response }
+            : m
+        )
+      );
       if (response.stage === "fallback") {
         setStatusLabel("Ready");
       } else if (response.stage === "tool") {

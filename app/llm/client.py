@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import httpx
 from pydantic import ValidationError
@@ -334,6 +334,83 @@ class LLMClient:
         if not choices:
             raise ValueError("chat_with_tools: no choices in response")
         return choices[0].get("message", {})
+
+    def stream_chat_with_tools(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        on_token: Callable[[str], None],
+        timeout: float = 60.0,
+    ) -> Dict[str, Any]:
+        """Streaming version of chat_with_tools.
+
+        Calls on_token(text) for each content token as it arrives.
+        on_token is only called when the LLM is generating a final answer
+        (no tool_calls in the stream). Returns the same dict as chat_with_tools.
+        """
+        request: Dict[str, Any] = {
+            "model": self._generator_model(),
+            "messages": [{"role": "system", "content": system_prompt}] + messages,
+            "tools": tools,
+            "tool_choice": "auto",
+            "stream": True,
+        }
+        self._disable_thinking(request)
+
+        url = f"{self._planner_base_url().rstrip('/')}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self._planner_api_key()}",
+            "Content-Type": "application/json",
+        }
+
+        content_parts: List[str] = []
+        tool_calls_map: Dict[int, Dict] = {}  # index → accumulated tool_call
+        has_tool_calls = False
+
+        with httpx.stream("POST", url, headers=headers, json=request, timeout=timeout) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line.startswith("data:"):
+                    continue
+                raw = line[len("data:"):].strip()
+                if raw == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+
+                delta = chunk.get("choices", [{}])[0].get("delta", {})
+
+                # Accumulate content tokens
+                token = delta.get("content") or ""
+                if token:
+                    content_parts.append(token)
+                    if not has_tool_calls:
+                        on_token(token)
+
+                # Accumulate tool_calls (streamed as index-keyed deltas)
+                for tc_delta in delta.get("tool_calls") or []:
+                    idx = tc_delta.get("index", 0)
+                    if idx not in tool_calls_map:
+                        tool_calls_map[idx] = {"id": "", "type": "function",
+                                               "function": {"name": "", "arguments": ""}}
+                    tc = tool_calls_map[idx]
+                    tc["id"] = tc.get("id") or tc_delta.get("id", "")
+                    fn = tc_delta.get("function", {})
+                    tc["function"]["name"] += fn.get("name") or ""
+                    tc["function"]["arguments"] += fn.get("arguments") or ""
+                    has_tool_calls = True
+
+        content = "".join(content_parts)
+        if tool_calls_map:
+            return {
+                "role": "assistant",
+                "content": content or None,
+                "tool_calls": list(tool_calls_map.values()),
+            }
+        return {"role": "assistant", "content": content}
 
     def decide_next_action(
         self,
