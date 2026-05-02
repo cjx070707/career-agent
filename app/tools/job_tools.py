@@ -36,7 +36,12 @@ def build_job_tools() -> list[ToolDefinition]:
     return [
         ToolDefinition(
             name="search_jobs",
-            description="Search jobs using a natural language query.",
+            description=(
+                "Search the live job postings database for real, current openings. "
+                "You MUST call this tool whenever the user asks about job or internship opportunities — "
+                "your training data does not contain current job listings and will be wrong or fabricated. "
+                "Only this tool has access to real, up-to-date postings."
+            ),
             category="job_search",
             input_model=SearchJobsToolInput,
             # Tool layer transports the structured retrieval payload unchanged.
