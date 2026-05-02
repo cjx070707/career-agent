@@ -96,9 +96,8 @@ AutonomousAgentService.respond()          # app/services/autonomous_agent_servic
 
 ## 接下来要做的事（按优先级）
 
-- **P3**：工程化补全
-  - DashScope retry（指数退避，`app/llm/client.py`）
-  - Final answer streaming（stream=True + SSE token 推送）
+- **P3**：Final answer streaming（stream=True + SSE token 推送）
+  - Retry 暂缓：demo 阶段超时偶发，不是高频痛点，等真实用户上线后再加
 
 ---
 
