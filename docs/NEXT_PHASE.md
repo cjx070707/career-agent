@@ -1,7 +1,8 @@
 # 项目现状 + 下一步计划
 
-> 最后更新：2026-05-02
+> 最后更新：2026-05-03
 > 当前分支：main
+> **项目状态：已完成（P4 demo 验收通过）**
 
 ---
 
@@ -15,17 +16,17 @@
 - ✅ **Hybrid RAG**（ChromaDB 向量 + BM25 + RRF 融合）
 - ✅ **SSE 实时状态流 + Final answer token streaming**
   `🤔 正在思考` → `🔧 调用工具：xxx` → token by token 打字效果
-- ✅ **Qwen-VL 简历图片解析**
+- ✅ **Qwen-VL 简历图片解析**（前端上传 → 解析 → 存库）
 
 ### Memory（四层注入）
 - ✅ **短期记忆**：SQLite 滚动 12 turns 原文
-- ✅ **Goal 持久化**：`goals` / `goal_progress` 表，跨 session 目标感知
-- ✅ **Running Summary**：超过 24 turns 自动压缩，注入 system prompt
-- ✅ **user_profile 偏好提取**：每轮结束后 LLM 提取偏好，跨 session 持久化
+- ✅ **Goal 持久化**：`goals` / `goal_progress` 表，跨 session 目标感知，注入 system prompt
+- ✅ **Running Summary**：超过 24 turns 自动 LLM 压缩，存 `conversation_summaries`，注入 system prompt
+- ✅ **user_profile 偏好提取**：每轮结束后 LLM 提取偏好（地点/行业/薪资/时间线），存 `user_profiles`，跨 session 注入
 
 ### 工具（11 个）
 - ✅ `search_jobs`（Adzuna 真实岗位数据，55 条，含悉尼/墨尔本）
-- ✅ `analyze_gap`（结构化 JSON 输出：match_score / matched_skills / missing_skills / suggestions）
+- ✅ `analyze_gap`（结构化 JSON 输出：match_score / matched_skills / missing_skills / suggestions，自动按 user_id 查简历）
 - ✅ `get_resume` / `match_resume_to_jobs`
 - ✅ `get_goals` / `set_goal` / `log_progress` / `update_goal_status`
 - ✅ `get_applications` / `get_interview_feedback`
@@ -37,7 +38,12 @@
 
 ### 工程化
 - ✅ **Structured Logging**：JSONL 写入 `logs/agent_trace.jsonl`（llm_call / tool_call / agent_turn）
-- ✅ **`docs/CHALLENGES.md`**：15 个真实踩坑记录，面试素材
+- ✅ **P2 Eval**：`scripts/eval_agent.py`，5 场景 × 3 问法 × LLM-as-judge
+  工具调用准确率 **14/15 = 93%**，答案质量均分 **4.2/5**
+- ✅ **`docs/CHALLENGES.md`**：14 个真实踩坑记录，面试素材
+
+### 验收
+- ✅ **P4 端到端 demo 验收**：搜岗位 → gap 分析（match_score 85）→ 设目标 → 查进展，全程通畅
 
 ---
 
@@ -45,64 +51,21 @@
 
 | 缺陷 | 严重程度 |
 |------|----------|
-| 岗位数据覆盖有限（Adzuna 55 条，非实时拉取） | 高 |
+| 简历写入需要通过前端图片上传或 API，无纯对话上传流程 | 高 |
+| 岗位数据 55 条静态快照，非实时拉取，覆盖有限 | 高 |
 | DashScope 调用无 retry（偶发超时直接失败） | 中 |
+| user_profile 偏好提取未端到端验收 | 中 |
 | 无认证（user_id 前端自填） | 低 |
 
 ---
 
-## 三、接下来要做的事（按优先级）
+## 三、已决定不做的事
 
-### ✅ P2：最小 eval（5 个核心场景）
-
-**结果**：工具调用准确率 **14/15 = 93%**，答案质量均分 **4.2/5**（LLM-as-judge）
-
-| 场景 | 工具准确率 | 质量均分 |
-|------|-----------|---------|
-| search_jobs | 3/3 | 3.3/5 |
-| analyze_gap | 3/3 | 3.7/5 |
-| set_goal | 3/3 | 4.0/5 |
-| get_goals | 2/3 | 5.0/5 |
-| chitchat_no_tool | 3/3 | 5.0/5 |
-
-唯一 miss：get_goals 有一个问法（"帮我看看我设了什么目标"）被 LLM 从 system prompt 直接回答，无需调工具——这是正确行为，不是 bug。
-
-**产出**：`scripts/eval_agent.py`（5 场景 × 3 问法 × LLM-as-judge）
-
----
-
-### P3：解决 demo 数据覆盖问题（P2 之后）
-**现状**：`search_jobs` 只检索静态 ChromaDB 快照（55 条 Adzuna 数据）。demo 时若 query 命中率低，技术故事直接塌掉。这是目前最高风险点。
-
-**目标**：查询时实时从 Adzuna 拉一页数据，与 ChromaDB 结果合并返回。demo 永远有真实数据。
-
-**改动**：`app/tools/job_tools.py` 的 `_search()` — 先调 `AdzunaService.fetch_jobs()`，结果注入 context，ChromaDB 结果补充。
-
----
-
-### P4：固定演示路径（不是代码，是验收）
-P2 + P3 完成后，走一遍完整场景确认无幻觉、无超时、响应流畅：
-
-1. 上传简历（Qwen-VL 解析）
-2. 搜悉尼后端实习 → 返回真实 Adzuna 岗位
-3. 选一个岗位做 gap 分析 → 返回 match_score + suggestions
-4. 设目标（截止日期 + 目标描述）
-5. 第二条对话查目标进展
-
-全程 ≤ 5 分钟，每步结果可信。**做完这一步，项目才算真正结束。**
-
----
-
-### Retry（延后，上线后再做）
-DashScope 偶发超时在 demo 阶段不是高频痛点。等真实用户上线后再加指数退避。
-
----
-
-## 四、不做的事
-
-| 方向 | 原因 |
-|------|------|
-| Write Guardrail | 写操作只有 set_goal/log_progress，用户主动触发 |
+| 方向 | 决策理由 |
+|------|---------|
+| P3 实时 Adzuna 拉取 | demo 路径可控，55 条覆盖已验证够用；实时调用增加延迟和外部依赖，demo 阶段代价大于收益 |
+| Retry | demo 阶段超时偶发，等真实用户上线后再加指数退避 |
+| Write Guardrail | 写操作只有 set_goal/log_progress，用户主动触发，无防护必要 |
 | Tool Cache | 工具实时查 SQLite，缓存收益低 |
 | 认证系统 | 非核心，不影响技术含金量 |
 | Docker | 等核心功能稳定后再做 |

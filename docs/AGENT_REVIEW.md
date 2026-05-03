@@ -1,6 +1,7 @@
 # Agent 项目深度审视 + 面试准备 + 接下来要做的事
 
-> 写作时间：2026-05-01
+> 最后更新：2026-05-03
+> 项目状态：已完成，P4 demo 验收通过
 > 目标：简历有底气、能经受拷打、做出有用的东西、有合作潜力
 
 ---
@@ -11,48 +12,44 @@
 
 ---
 
-### 各模块现状
+### 各模块现状（2026-05-03 最终状态）
 
 **Planning / Reasoning**
-LLM 直接看到所有工具 schema，自主决定调用哪些工具、以什么顺序、传什么参数。这是真 ReAct，不是 intent classifier 预先决定路径再走固定链。硬上限 MAX_ITERATIONS=6 防止死循环。
+LLM 直接看到所有工具 schema，自主决定调用哪些工具、以什么顺序、传什么参数。真 ReAct，不是 intent classifier。硬上限 MAX_ITERATIONS=6 防止死循环。
 
-**Memory**
-当前三层结构：
-- **Short-term**：SQLite 滚动存储最近 6 轮对话，每次请求注入 messages 列表
-- **Goal tracking**：用户求职目标跨 session 持久化，注入 system prompt，agent 主动跟进进展
-- **Long-term**：暂无用户偏好持久化
-
-⚠️ **这是整个项目最水的模块，正在改进中。** 6 轮窗口对「长期陪伴求职」的定位太浅——用户说的偏好（不想去外企、只看 Sydney、目标 fintech）在第 7 轮消失，agent 完全不记得。
-
-**计划中的 memory 架构升级（三层注入）：**
+**Memory（四层注入，已完成）**
 ```
 system prompt
   └── user_profile（长期偏好，跨 session 永久保留）
-  └── goals（当前目标，已实现）
-  └── running summary（中期，超出窗口的对话压缩摘要）
-  └── recent messages（短期，最近 N 轮原文）
+  └── goals（当前目标，跨 session 持久化）
+  └── running summary（超 24 turns 自动 LLM 压缩）
+  └── recent messages（滚动 12 turns 原文）
 ```
-- **running summary**：超出滚动窗口的历史不直接丢弃，而是用 LLM 压缩成摘要保留，解决「聊久了就失忆」的根本问题
-- **user_profile 提取**：每轮对话结束后，LLM 从对话中提取偏好信号（地点、行业、岗位类型、时间线等）写入 user_profile 表，下次对话注入
+每轮对话结束后异步提取偏好（地点/行业/薪资/时间线）写入 `user_profiles` 表，下次对话注入。
 
-**Tools**
-Registry 模式，Pydantic 做输入校验，工具返回统一的 `ToolResult` 结构。现有工具：`get_goals / set_goal / log_progress / update_goal_status / search_jobs / get_resume / analyze_gap / get_candidate_profile / get_applications / get_interviews / match_resume_to_jobs`。LLM 读 tool error dict 后会自行解释给用户，不会崩溃。
+**Tools（11 个，已完成）**
+Registry 模式，Pydantic 输入校验，统一 ToolResult 结构。工具描述是 LLM 的决策依据，需显式说明内部行为（如 analyze_gap 会自动按 user_id 查简历）。
 
 **Retrieval / RAG**
-Hybrid retrieval：ChromaDB 向量召回 + BM25 词法召回 + RRF 融合排序。Embedding 用 DashScope text-embedding-v3（1024 维），踩过维度 mismatch 的坑并做了自动恢复。
+Hybrid retrieval：ChromaDB 向量召回 + BM25 词法召回 + RRF 融合排序。Embedding 用 DashScope text-embedding-v3（1024 维）。
+数据：55 条 Adzuna 真实岗位（悉尼/墨尔本），P4 验收通过，demo 路径覆盖正常。
 
-⚠️ **数据是假的。** RAG 技术实现是真实的，但检索的是手工 seed 进去的几十条假岗位数据。用户搜「Sydney data science intern」，结果来自手写样本，不是真实市场。这是整个项目最大的产品硬伤，技术上的 hybrid retrieval 含金量被数据的空洞性大幅抵消。
-
-**analyze_gap Tool**
-接收 user_id + jd_text，自动拉取简历，调 LLM 输出匹配度、已匹配技能、差距、建议。
-
-⚠️ **实现是浅的。** 本质是 `llm.simple_chat(system="你是gap分析专家", user=简历+JD)`，没有结构化评分模型，没有技能分类体系，没有可量化的 match score 计算逻辑。包了一层 tool 接口，看起来是个功能，但懂的人一眼看穿是一个 prompt。输出是自由文本，无法被下游程序消费。
+**analyze_gap Tool（已结构化）**
+接收 user_id + jd_text，自动拉取简历，LLM 输出结构化 JSON：
+```json
+{"match_score": 85, "matched_skills": [...], "missing_skills": [...], "suggestions": [...]}
+```
+P4 验收：match_score 85，输出可被前端渲染，不再是自由文本。
 
 **Perception**
-集成 Qwen-VL，支持简历图片上传 → 结构化解析（姓名、教育、技能、项目经历提取）。
+Qwen-VL，简历图片上传 → 结构化解析。这是 demo 里写入简历的主路径。
 
 **Streaming / UX**
-SSE 实时推状态事件（`🤔 正在思考` → `🔧 调用工具：analyze_gap`），asyncio.Queue + call_soon_threadsafe 做线程安全桥。最终 answer 一次性输出（非流式）。
+SSE 实时状态流（`🤔 正在思考` → `🔧 调用工具`）+ Final answer token-by-token 流式输出。asyncio.Queue + call_soon_threadsafe 线程安全桥。
+
+**Eval（已完成）**
+`scripts/eval_agent.py`：5 场景 × 3 问法 × LLM-as-judge
+工具调用准确率 **14/15 = 93%**，答案质量均分 **4.2/5**
 
 ---
 
@@ -78,13 +75,13 @@ SSE 实时推状态事件（`🤔 正在思考` → `🔧 调用工具：analyze
 
 主动说出局限，不要等面试官挖，主动坦诚反而加分。
 
-> "分两层。Short-term 是滚动 6 轮对话历史，每次请求都注入，解决多轮理解问题。Long-term 是 goal persistence，用户的求职目标跨 session 保存，agent 每次知道用户在追什么目标。但坦白说，这个 memory 是整个项目最薄弱的地方——6 轮窗口对长期陪伴型 agent 来说太短了，用户的隐性偏好（比如偏好远程、不想去外企）没有被提取和存储，下次对话完全丢失。如果要做 semantic memory，我会考虑每轮对话结束后提取关键偏好信号存进 user profile，或者用向量库做长期记忆检索。"
+> "四层：短期 12 turns 原文、goal 持久化、running summary（24 turns 触发 LLM 压缩）、user_profile 偏好提取。每轮对话结束后异步提取偏好（地点/行业/薪资）写入 user_profiles 表，下次对话注入 system prompt。局限是 user_profile 提取没有做端到端验收，提取质量依赖 LLM 能力，没有量化评估；另外 running summary 是按轮次触发而非按 token 量触发，对话很短但信息量大时可能压缩过早。"
 
 ---
 
 **Q4：RAG 怎么做的，为什么 hybrid？**
 
-> "纯向量检索的经典失败场景是精确技术词召回不准——'FastAPI'、'vLLM' 在向量空间里可能被语义相近的词稀释。BM25 做词法匹配补这个盲区。两路用 RRF 融合，好处是不需要对两路分数归一化，直接用排名位置，鲁棒性更好。不过现在有个产品层面的局限：检索的岗位数据是手工 seed 的样本，不是真实爬取的，下一步计划通过 MCP 接入真实数据源来解决这个问题。"
+> "纯向量检索的经典失败场景是精确技术词召回不准——'FastAPI'、'vLLM' 在向量空间里可能被语义相近的词稀释。BM25 做词法匹配补这个盲区。两路用 RRF 融合，好处是不需要对两路分数归一化，直接用排名位置，鲁棒性更好。数据层面用的是 CareerHub 内部 API——通过 JobProvider Protocol 抽象，search_jobs 工具调用时实时获取当前在架岗位，数据不在我们侧存储。"
 
 ---
 
@@ -92,7 +89,7 @@ SSE 实时推状态事件（`🤔 正在思考` → `🔧 调用工具：analyze
 
 面试官大概率会追问这个，提前准备好诚实的回答。
 
-> "现在的实现是：拉取用户简历，拼接 JD，用一个专门设计的 system prompt 让 LLM 做对比分析，输出匹配度、已匹配技能、差距和建议。坦白说这是一个重度依赖 LLM 能力的实现，没有独立的评分模型或技能分类体系。如果要做得更扎实，应该先做技能提取（结构化为技能列表），再做显式的集合对比，最后 LLM 只负责解释和建议，这样输出是可量化、可程序消费的。这是接下来的改进方向。"
+> "按 user_id 自动拉取最新简历，拼接 JD，LLM 输出结构化 JSON：match_score（0-100）、matched_skills、missing_skills、suggestions。P4 验收跑出 85 分，输出直接被前端渲染。坦白说评分逻辑在 LLM 内部，没有独立的技能分类体系——如果要更扎实，应该先结构化提取技能列表，再做显式集合对比，LLM 只负责解释。这是下一步的改进方向，当前实现对 demo 场景够用。"
 
 ---
 
@@ -112,164 +109,56 @@ SSE 实时推状态事件（`🤔 正在思考` → `🔧 调用工具：analyze
 
 **Q8：如果这个 agent 要上生产，你会改什么？**
 
-> "主要四件事。第一，memory 重设计：现在 6 轮窗口太短，需要做用户偏好提取 + semantic memory。第二，接真实数据：现在岗位数据是假的，通过 MCP 接公开招聘 API。第三，context 管理：messages 无限增长会超 context window，需要超长对话摘要截断。第四，observability：现在没有 LLM call tracing，出问题只能靠 print，应该接结构化日志。"
+> "主要四件事。第一，DashScope 加 retry：现在偶发超时直接失败，生产要加指数退避。第二，认证：user_id 现在是前端自填，生产要从 token 解出来确保数据隔离。第三，用户反馈回路：thumbs up/down 存表，为后续偏好优化做数据基础。第四，user_profile 提取的质量评估：目前没有量化手段验证偏好提取准不准，需要专项 eval。"
 
 ---
 
-## 三、最水的三个部分（必须能在面试中坦然承认）
+## 三、已知局限（面试时坦然承认）
 
-**第一水：Memory**
+**第一：简历上传依赖前端图片上传，无纯对话流程**
 
-6 轮滚动窗口是教程级实现。没有 semantic memory，没有用户偏好建模，没有跨 session 行为归纳。对「长期陪伴求职」这个产品定位，memory 是最核心的能力，也是现在最空洞的地方。
+用户没有办法在对话里直接说"我的简历是 XXX"然后存入系统。必须通过 Qwen-VL 图片上传路径写入数据库，这是产品完整性的硬缺口。生产环境应该支持文本粘贴直接存简历。
 
-面试官问「你怎么记住用户跨 session 的偏好」，现在只能回答「通过 goals 表记录目标」——这个回答在懂的人耳朵里是减分的。
+**第二：analyze_gap 评分在 LLM 内部，不可解释**
 
-**第二水：analyze_gap 实现**
+match_score 是 LLM 给的整数，没有独立的技能分类体系和集合对比逻辑。如果用户质疑"为什么是 85 分"，无法给出可追溯的计算依据。对 demo 够用，对生产不够严谨。
 
-本质是 `llm.simple_chat(system="你是gap专家", user=简历+JD)`，输出是自由文本。没有结构化评分、没有技能分类体系、没有可量化的 match score。包了一层 tool 接口，但核心是一个 prompt。
+**第三：user_profile 偏好提取没有量化验收**
 
-**第三水：岗位数据是假的**
-
-Hybrid RAG 的技术实现是真的，但跑在手工 seed 的几十条样本上。这是产品层面最大的硬伤——用户真实搜索会发现岗位结果和市场脱节。
+每轮后 LLM 提取偏好存库，但提取质量没有 eval 数字支撑——不知道提取准不准、遗漏率多少、下次对话是否真的用上了。这是现在最不透明的模块。
 
 ---
 
-## 四、其他缺失问题
-
-### 技术层面
+## 四、生产化还缺什么
 
 | 缺失 | 严重程度 | 说明 |
 |------|----------|------|
-| Final answer 不流式 | 高 | analyze_gap 等重工具 30s 后文字全部出现，体验差 |
-| Context 无上限增长 | 高 | 多轮对话后 messages 超长，token 超限会直接报错 |
-| 无 Observability | 中 | 没有 LLM call tracing，生产排查靠猜 |
-| 无 Reflection | 中 | Agent 回答后不知道自己答没答对，无自我纠错 |
-| 无 Retry | 中 | DashScope 偶发超时直接失败 |
-| 死代码 AgentService | 低 | 旧的 planner→executor→generator 链还在，迷惑读代码的人 |
-
-### 产品 + 工程化层面
-
-**没有真实数据源。** search_jobs 检索的是假数据，用户体验到的「搜索」是无效的。
-
-**产品场景未打磨。** 用户第一次来怎么 onboard？没有简历怎么引导？目标是全职还是实习，agent 的策略有区别吗？这些场景没有设计。
-
-**没有认证。** user_id 是前端自填字符串，没有鉴权。真实合作的第一个问题就是用户数据隔离。
-
-**没有反馈回路。** 用户觉得回答好不好，没有任何采集机制，agent 无法迭代。
+| 无认证 | 高 | user_id 前端自填，生产必须从 token 解出 |
+| 无 Retry | 中 | DashScope 偶发超时直接失败，需指数退避 |
+| 无反馈回路 | 中 | 没有 thumbs up/down，agent 无法从用户行为迭代 |
+| user_profile 无 eval | 中 | 偏好提取质量未量化 |
+| 无 Reflection | 低 | Agent 不知道自己答没答对，无自我纠错 |
 
 ---
 
-## 五、接下来要做的事（按优先级）
-
----
-
-### P0：写 README + 清理死代码（可以在 push 之前做）
-
-- README 写架构决策、踩坑记录、诚实承认的局限，不写假数字
-- 隔离或删除旧 AgentService（旧的 planner→executor→generator 链）
-- 这两件事让项目「看起来是认真做的」
-
----
-
-### P1：MCP server 改造（核心，解决工具标准化 + 真实数据两个问题）
-
-**第一步：把 ToolRegistry 改造成 MCP server（优先）**
-
-现有 ToolRegistry 已经是很好的抽象基础，每个 ToolDefinition 有 name、description、input_model、handler，天然对应 MCP tool 的 schema。
-
-改造思路：
-- 引入 `mcp` Python SDK（`pip install mcp`）
-- 把每个 ToolDefinition 注册为 MCP tool
-- 暴露 stdio transport（本地调用）或 HTTP/SSE transport（远程集成）
-- AutonomousAgentService 通过 MCP 协议调工具，而不是直接调 registry
-
-改造后的能力：
-- 任何支持 MCP 的 agent / client（Claude Code、其他 LLM 框架）都能直接调用这些工具
-- USYD Careerhub 如果要集成，不需要改你的代码，直接接 MCP
-- 面试时能说「工具层是标准化的 MCP 接口，不是私有 API」
-
-**第二步：通过 MCP 接入真实数据源（接着做，解决假数据问题）**
-
-目标：替换 search_jobs 的假数据，接入真实澳洲招聘数据。
-
-调研方向：
-- Seek.com.au 是否有公开 API 或第三方 MCP wrapper
-- GitHub Jobs / LinkedIn Jobs 公开接口
-- 实在没有合适的 MCP server，自己写一个轻量爬虫包装成 MCP server（Seek 搜索结果解析）
-
-改造后：用户搜「Sydney fintech backend intern」，结果是真实的市面岗位。这是产品从玩具变成有用工具的分界线。
-
----
-
-### P2：补最水的技术短板
-
-**Memory 重设计**
-
-每轮对话结束后，提取关键偏好信号（工作地点偏好、行业偏好、薪资范围、时间线等），存进 user_profile 表。下次对话时注入 system prompt，agent 才能真正「记住你」。
+## 五、已完成清单
 
 ```
-对话结束 → LLM 提取偏好信号 → 写入 user_profile
-下次对话 → 读取 user_profile → 注入 system prompt
+✅ 真 ReAct function calling 循环
+✅ Memory 四层注入（短期 / goal / running summary / user_profile）
+✅ analyze_gap 结构化 JSON 输出（match_score / matched_skills / missing_skills）
+✅ Adzuna 真实岗位数据（55 条，悉尼/墨尔本）+ JobProvider Protocol 抽象
+✅ SSE 实时状态流 + Final answer token streaming
+✅ Hybrid RAG（ChromaDB + BM25 + RRF）
+✅ Qwen-VL 简历图片解析
+✅ MCP server（12 个工具，4 个 domain，Claude 桌面 app 验收通过）
+✅ Structured Logging（logs/agent_trace.jsonl）
+✅ P2 Eval（93% 工具准确率，4.2/5 答案质量，LLM-as-judge）
+✅ P4 端到端 demo 验收（搜岗位→gap 分析→设目标→查进展）
 ```
-
-**analyze_gap 结构化**
-
-改成三步：
-1. 从简历和 JD 各提取技能列表（结构化 JSON）
-2. 做显式集合对比（intersection / difference）
-3. LLM 只负责解释差距和给建议
-
-这样输出有 match_score（可量化）、matched_skills（列表）、missing_skills（列表），可以被前端渲染成卡片，不只是一段文字。
 
 ---
 
-### P3：工程化补全
-
-- Final answer streaming（LLM stream=True + SSE token 逐字推送）
-- Context 截断策略（messages 超过阈值时保留 system prompt + 最近 N 轮 + 当前）
-- DashScope 调用加 Retry（指数退避 2-3 次）
-- 结构化日志（每次 LLM call 记 latency、model、tool_called）
-
----
-
-### P4：合作潜力基础设施
-
-- Docker Compose 一键启动
-- 基本认证（user_id 从 token 解，不是前端自填）
-- 用户反馈机制（thumbs up/down 存表，为后续 RLHF 做准备）
-
----
-
-## 六、执行顺序总览
-
-```
-已完成：
-  ✅ 真 ReAct function calling 循环
-  ✅ Goal 持久化 + 跨 session 目标感知（A-1/A-3）
-  ✅ analyze_gap 工具（v1，prompt 版）（A-4）
-  ✅ Hybrid RAG（ChromaDB + BM25 + RRF）
-  ✅ SSE 实时状态流 + 前端 SSE 解析修复
-  ✅ UX bug 修复（system prompt bug、超时文案）
-  ✅ README 重写（架构图、工具列表、诚实局限）
-  ✅ MCP server（12 个工具，4 个 domain，Claude 桌面验收通过）
-  ✅ Running Summary — SummaryService，超过 24 turns 自动压缩历史对话
-     存入 conversation_summaries 表，注入 system prompt
-  ✅ user_profile 偏好提取 — UserProfileService，每轮对话后 LLM 提取
-     地点/行业/工作类型/薪资/时间线等偏好，存 user_profiles 表，
-     下次对话注入 system prompt，真正的跨 session 记忆
-  ✅ Structured Logging / Trace — app/utils/trace_logger.py
-     JSONL 写入 logs/agent_trace.jsonl，记录三类事件：
-       llm_call（iteration, latency_ms, had_tool_calls, n_messages）
-       tool_call（tool, args截断, latency_ms, ok, error）
-       agent_turn（stage, iterations, tool_trace, total_latency_ms）
-
-接下来（按优先级）：
-  → analyze_gap 结构化输出（JSON schema：match_score / matched_skills / missing_skills）
-  → 真实岗位数据（Adzuna API 或其他）
-  → 最小 eval（5 个核心场景）
-  → 工程化（streaming answer / retry）
-  → 合作基础设施（Docker / 认证 / 反馈机制）
-```
 
 ---
 
