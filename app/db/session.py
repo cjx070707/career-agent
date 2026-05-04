@@ -1,4 +1,6 @@
+import hashlib
 import sqlite3
+import uuid
 from sqlite3 import Connection
 from typing import Optional
 
@@ -146,9 +148,22 @@ def init_db(db_path: Optional[str] = None) -> None:
                 "ALTER TABLE conversation_turns ADD COLUMN session_id TEXT"
             )
         if "title" not in turn_columns:
-            # first user message used as conversation title (stored on session start)
             connection.execute(
                 "ALTER TABLE conversation_turns ADD COLUMN title TEXT"
+            )
+
+        # Backfill: assign every user's NULL-session turns to a stable "legacy"
+        # session so they appear in the sidebar.  The session_id is derived
+        # deterministically from user_id so repeated init_db calls are idempotent.
+        null_users = connection.execute(
+            "SELECT DISTINCT user_id FROM conversation_turns WHERE session_id IS NULL"
+        ).fetchall()
+        for row in null_users:
+            uid = row["user_id"]
+            legacy_sid = str(uuid.UUID(hashlib.md5(f"legacy-{uid}".encode()).hexdigest()))
+            connection.execute(
+                "UPDATE conversation_turns SET session_id = ? WHERE user_id = ? AND session_id IS NULL",
+                (legacy_sid, uid),
             )
         career_profile_columns = {
             row["name"]

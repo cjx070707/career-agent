@@ -329,11 +329,30 @@ function App() {
       .catch(() => setHistoryLoaded(true));
   };
 
-  // On mount / userId change: load sessions + current session messages
+  // On mount / userId change: load sessions, then load most recent session
   useEffect(() => {
-    if (!userId.trim()) return;
-    loadSessions(userId);
-    loadSession(userId, sessionId);
+    const uid = userId.trim();
+    if (!uid) return;
+
+    setHistoryLoaded(false);
+    fetch(`/conversations/${encodeURIComponent(uid)}/sessions`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: SessionMeta[]) => {
+        setSessions(data);
+        if (data.length === 0) {
+          // Brand-new user — nothing to load
+          setHistoryLoaded(true);
+          return;
+        }
+        // Load the session that was open when the user left (localStorage),
+        // falling back to the most recent session.
+        const storedSid = localStorage.getItem("career-agent-session-id");
+        const target = data.find((s) => s.session_id === storedSid) ?? data[0];
+        persistSessionId(target.session_id);
+        setSessionId(target.session_id);
+        loadSession(uid, target.session_id);
+      })
+      .catch(() => setHistoryLoaded(true));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
@@ -348,6 +367,7 @@ function App() {
     setResumeImageResult(null);
     setSavedResume(null);
     setHistoryLoaded(true);
+    loadSessions(userId.trim() || "demo-user");
   }
 
   function handleSessionSelect(sid: string) {
