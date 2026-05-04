@@ -290,6 +290,8 @@ function App() {
     setChatInput("");
     setError(null);
     setStatusLabel("Ready");
+    setResumeImageResult(null);
+    setSavedResume(null);
   }
 
   const latestResponse = useMemo(() => {
@@ -418,6 +420,7 @@ function App() {
     setChatInput(prompt);
   }
 
+  // QueryView path: parse only, user manually clicks "Save as Resume"
   async function handleResumeImageParse(file: File) {
     if (isVisionLoading) return;
     setError(null);
@@ -429,6 +432,55 @@ function App() {
       setResumeImageResult(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setIsVisionLoading(false);
+    }
+  }
+
+  // Chat path: parse → auto-save → insert confirmation message in chat
+  async function handleChatResumeUpload(file: File) {
+    if (isVisionLoading) return;
+    setError(null);
+    setIsVisionLoading(true);
+    try {
+      const parsed = await parseResumeImage(file);
+      const hasContent = hasParsedResumeContent(parsed.parsed);
+
+      if (!hasContent || parsed.warnings.length > 0) {
+        const warnText = parsed.warnings.length > 0
+          ? `⚠️ 简历解析不完整：${parsed.warnings.join("；")}。请确认上传的是清晰的简历图片。`
+          : "⚠️ 简历解析结果为空，请确认上传了正确的简历图片。";
+        setMessages((curr) => [
+          ...curr,
+          { id: nextId.current++, role: "agent", content: warnText },
+        ]);
+        return;
+      }
+
+      // Auto-save to DB
+      const saved = await saveParsedResume(userId.trim() || "demo-user", parsed.parsed);
+      const name = parsed.parsed.name ? `（${parsed.parsed.name}）` : "";
+      const skills = parsed.parsed.skills.slice(0, 5).join("、");
+      const skillsLine = skills ? `\n- 识别技能：${skills}${parsed.parsed.skills.length > 5 ? " 等" : ""}` : "";
+
+      setMessages((curr) => [
+        ...curr,
+        {
+          id: nextId.current++,
+          role: "agent",
+          content:
+            `✅ 简历已解析并保存${name}（ID: ${saved.resume_id}）。${skillsLine}\n\n现在可以问我：\n- "帮我分析和某个 JD 的差距"\n- "我适合哪些 Python 岗位？"`,
+        },
+      ]);
+    } catch (err) {
+      setMessages((curr) => [
+        ...curr,
+        {
+          id: nextId.current++,
+          role: "agent",
+          content: `❌ 简历上传失败：${err instanceof Error ? err.message : "未知错误"}，请重试。`,
+        },
+      ]);
     } finally {
       setIsVisionLoading(false);
     }
@@ -541,7 +593,7 @@ function App() {
               isVisionLoading={isVisionLoading}
               onCancel={cancelChatRequest}
               onSubmit={handleChatSubmit}
-              onParseResumeImage={handleResumeImageParse}
+              onParseResumeImage={handleChatResumeUpload}
             />
           ) : (
             <QueryView
