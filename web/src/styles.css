@@ -367,8 +367,11 @@ h1 {
 
 .empty-state {
   min-height: 260px;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   text-align: center;
   padding: 24px;
   color: #495650;
@@ -606,4 +609,119 @@ textarea:focus,
   .trace-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── New Chat button ────────────────────────────────────────────────────── */
+.new-chat-btn {
+  border: 1px dashed #b0c4b8;
+  background: transparent;
+  border-radius: 8px;
+  min-height: 38px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #315044;
+  letter-spacing: 0.01em;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.new-chat-btn:hover {
+  background: #edf4ef;
+  border-color: #7aab92;
+}
+
+/* ── Empty state hint (extends existing .empty-state) ─────────────────── */
+.empty-hint {
+  font-size: 0.82rem;
+  color: #7a9085;
+}
+
+/* ── .spin helper class (reuses existing @keyframes spin) ───────────────── */
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+/* ── Vision parse status in chat ────────────────────────────────────────── */
+.vision-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #315044;
+  padding: 8px 12px;
+  background: #edf4ef;
+  border-radius: 8px;
+  border: 1px solid #c4d9cc;
+  width: fit-content;
+}
+
+/* ── Markdown content in agent messages ─────────────────────────────────── */
+.md-content {
+  line-height: 1.6;
+  font-size: inherit;
+  color: inherit;
+}
+
+.md-content p {
+  margin: 0 0 0.6em;
+}
+
+.md-content p:last-child {
+  margin-bottom: 0;
+}
+
+.md-content h1,
+.md-content h2,
+.md-content h3,
+.md-content h4 {
+  margin: 0.8em 0 0.3em;
+  font-size: 1em;
+  font-weight: 800;
+}
+
+.md-content ul,
+.md-content ol {
+  margin: 0.4em 0 0.6em;
+  padding-left: 1.5em;
+}
+
+.md-content li {
+  margin-bottom: 0.25em;
+}
+
+.md-content code {
+  background: #eef4f0;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.88em;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  color: #1a3d2e;
+}
+
+.md-content pre {
+  background: #eef4f0;
+  border-radius: 6px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.md-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.md-content strong {
+  font-weight: 700;
+}
+
+.md-content blockquote {
+  border-left: 3px solid #b0c4b8;
+  margin: 0.5em 0;
+  padding-left: 12px;
+  color: #4a5e54;
+}
+
+.md-content a {
+  color: #0e6643;
+  text-decoration: underline;
 }

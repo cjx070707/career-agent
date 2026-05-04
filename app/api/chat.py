@@ -1,16 +1,36 @@
 import asyncio
 import json
 import queue as _queue_module
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.autonomous_agent_service import AutonomousAgentService
+from app.services.memory_service import MemoryService
 
 
 router = APIRouter(tags=["chat"])
+
+
+# ---------------------------------------------------------------------------
+# History endpoint
+# ---------------------------------------------------------------------------
+
+class HistoryMessage(BaseModel):
+    id: int
+    role: str
+    content: str
+
+
+@router.get("/conversations/{user_id}", response_model=List[HistoryMessage])
+def get_conversation_history(user_id: str) -> List[HistoryMessage]:
+    """Return the most recent conversation turns for a user (up to 12)."""
+    turns = MemoryService().load_recent_messages(user_id)
+    return [HistoryMessage(id=t.id, role=t.role, content=t.content) for t in turns]
+
 
 # ---------------------------------------------------------------------------
 # SSE helper
