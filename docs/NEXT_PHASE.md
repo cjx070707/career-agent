@@ -1,8 +1,8 @@
 # 项目现状 + 下一步计划
 
-> 最后更新：2026-05-03
+> 最后更新：2026-05-04
 > 当前分支：main
-> **项目状态：已完成（P4 demo 验收通过）**
+> **项目状态：生产就绪（中间件 + 前端 UX 已合并 main）**
 
 ---
 
@@ -45,17 +45,33 @@
 ### 验收
 - ✅ **P4 端到端 demo 验收**：搜岗位 → gap 分析（match_score 85）→ 设目标 → 查进展，全程通畅
 
+### 生产中间件（`feature/production-middleware` → main）
+- ✅ **CORS** middleware
+- ✅ **X-Request-ID**：每请求唯一 UUID，贯穿日志链路
+- ✅ **结构化请求日志**：JSON lines，method / path / status / latency / request_id
+- ✅ **全局异常处理**：统一错误格式，不泄露 stack trace，含 request_id
+- ✅ **Rate limiting**（slowapi，20 req/min per IP，待换 Redis backend）
+
+### 前端 UX（`feature/frontend-ux` → main）
+- ✅ **localStorage user_id**：自动生成 8 位 hex id，跨 session 稳定，不再 hardcode `demo-user`
+- ✅ **对话历史加载**：`GET /conversations/{user_id}` 接口 + 前端 mount 时加载最近 12 条
+- ✅ **New Chat 按钮**：侧边栏一键清空，开启新会话
+- ✅ **react-markdown 渲染**：agent 回复支持标题、列表、代码块、加粗，流式 token 实时渲染
+- ✅ **聊天框图片粘贴**：Cmd+V 粘贴简历截图触发 Qwen-VL 解析，内联状态提示
+- ✅ **Enter 发送**：Shift+Enter 换行，纯 Enter 提交
+- ✅ **自动滚动到底部**
+
 ---
 
 ## 二、已知缺陷（面试时坦然承认）
 
 | 缺陷 | 严重程度 |
 |------|----------|
-| 简历写入需要通过前端图片上传或 API，无纯对话上传流程 | 高 |
+| 无简历引导流：新用户无简历时 agent 无法 gap 分析，缺乏明确引导 | 高 |
 | 岗位数据 55 条静态快照，非实时拉取，覆盖有限 | 高 |
 | DashScope 调用无 retry（偶发超时直接失败） | 中 |
 | user_profile 偏好提取未端到端验收 | 中 |
-| 无认证（user_id 前端自填） | 低 |
+| 无认证（user_id localStorage 自填，可被伪造） | 低 |
 
 ---
 
@@ -84,7 +100,7 @@ ChromaDB server（HTTP mode，单独进程，多 worker 共享）
 | per-user chat lock（Redis） | 防止同一用户并发 LLM 调用耗尽 DashScope 配额 | 高峰期大面积 429 |
 | ChromaDB server mode | 多进程直接读写同一文件会 corrupt | 向量库损坏 |
 
-**已完成的中间件（`feature/production-middleware`）：**
+**已完成的中间件（已合并 main）：**
 - ✅ CORS
 - ✅ X-Request-ID（每请求唯一 UUID，贯穿日志链路）
 - ✅ 结构化请求日志（JSON lines，method/path/status/latency/request_id）
@@ -101,7 +117,22 @@ ChromaDB server（HTTP mode，单独进程，多 worker 共享）
 
 ---
 
-## 四、已决定不做的事
+## 四、下一步（简历引导流）
+
+产品当前最大断层：新用户没有简历 → `analyze_gap` 返回废话或报错 → 用户不知道下一步。
+核心 demo 路径（搜岗位 → gap 分析）因此无法完整走通。
+
+**要做的三件事：**
+
+1. **Empty state 入口**：新用户第一次打开，empty state 里加"上传简历开始"按钮，点击触发简历上传流程
+2. **Agent 主动引导**：`analyze_gap` 工具检测到 user 无简历时，在回复里明确说明："请先上传简历（Cmd+V 粘贴截图或点击按钮）"，不再返回模糊答案
+3. **Chat composer 简历入口**：输入框下方加一个 `📎 上传简历` 小按钮，不占主界面空间，点击触发图片/PDF 选择
+
+预计改动量：前端 ~50 行，后端 `analyze_gap` 工具描述调整 ~5 行。
+
+---
+
+## 五、已决定不做的事
 
 | 方向 | 决策理由 |
 |------|---------|
