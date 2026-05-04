@@ -1,4 +1,5 @@
-import React, { FormEvent, useMemo, useRef, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
@@ -227,12 +228,26 @@ async function saveParsedResume(
   return response.json();
 }
 
+// ── Stable user_id via localStorage ──────────────────────────────────────
+function getOrCreateUserId(): string {
+  const key = "career-agent-user-id";
+  const stored = localStorage.getItem(key);
+  if (stored) return stored;
+  // Generate short 8-char hex id — readable but unique enough for demo
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  localStorage.setItem(key, id);
+  return id;
+}
+
 function App() {
   const [view, setView] = useState<ViewMode>("chat");
-  const [userId, setUserId] = useState("demo-user");
-  const [chatInput, setChatInput] = useState("帮我找一些 Python backend 岗位");
+  const [userId, setUserId] = useState<string>(getOrCreateUserId);
+  const [chatInput, setChatInput] = useState("");
   const [queryInput, setQueryInput] = useState("结合我的投递和面试反馈，我下一步该准备什么？");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [queryResult, setQueryResult] = useState<ChatResponse | null>(null);
   const [resumeImageResult, setResumeImageResult] = useState<ResumeImageParseResponse | null>(null);
   const [savedResume, setSavedResume] = useState<SavedParsedResumeResponse | null>(null);
@@ -243,6 +258,38 @@ function App() {
   const [statusLabel, setStatusLabel] = useState("Ready");
   const nextId = useRef(1);
   const chatAbortRef = useRef<AbortController | null>(null);
+
+  // Load history on mount (or when userId changes after manual edit)
+  useEffect(() => {
+    if (!userId.trim()) return;
+    setHistoryLoaded(false);
+    fetch(`/conversations/${encodeURIComponent(userId.trim())}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((turns: { id: number; role: string; content: string }[]) => {
+        if (turns.length === 0) { setHistoryLoaded(true); return; }
+        setMessages(
+          turns.map((t) => ({
+            id: t.id,
+            // backend stores "assistant"; frontend uses "agent"
+            role: (t.role === "user" ? "user" : "agent") as "user" | "agent",
+            content: t.content,
+          }))
+        );
+        // nextId must stay above any loaded ids to avoid collisions
+        nextId.current = Math.max(...turns.map((t) => t.id)) + 1;
+        setHistoryLoaded(true);
+      })
+      .catch(() => setHistoryLoaded(true));
+  // Only re-run when userId actually changes (not on every render)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  function handleNewChat() {
+    setMessages([]);
+    setChatInput("");
+    setError(null);
+    setStatusLabel("Ready");
+  }
 
   const latestResponse = useMemo(() => {
     if (view === "query") return queryResult;
@@ -269,7 +316,7 @@ function App() {
       const streamingId = nextId.current++;
       setMessages((current) => [
         ...current,
-        { id: streamingId, role: "agent", content: "", response: null },
+        { id: streamingId, role: "agent", content: "", response: undefined },
       ]);
 
       const response = await sendChat(
@@ -421,7 +468,10 @@ function App() {
           <input
             id="user-id"
             value={userId}
-            onChange={(event) => setUserId(event.target.value)}
+            onChange={(event) => {
+              setUserId(event.target.value);
+              localStorage.setItem("career-agent-user-id", event.target.value);
+            }}
             placeholder="user_id"
           />
         </div>
@@ -444,6 +494,17 @@ function App() {
             Query
           </button>
         </div>
+
+        {view === "chat" && (
+          <button
+            className="new-chat-btn"
+            type="button"
+            onClick={handleNewChat}
+            title="Start a new conversation"
+          >
+            + New Chat
+          </button>
+        )}
 
         <div className="starter-list">
           {queryStarters.map((item) => {
@@ -472,11 +533,14 @@ function App() {
           {view === "chat" ? (
             <ChatView
               messages={messages}
+              historyLoaded={historyLoaded}
               input={chatInput}
               setInput={setChatInput}
               isLoading={isLoading}
+              isVisionLoading={isVisionLoading}
               onCancel={cancelChatRequest}
               onSubmit={handleChatSubmit}
+              onParseResumeImage={handleResumeImageParse}
             />
           ) : (
             <QueryView
@@ -531,43 +595,99 @@ function StatusPill({
 
 function ChatView({
   messages,
+  historyLoaded,
   input,
   setInput,
   isLoading,
+  isVisionLoading,
   onCancel,
   onSubmit,
+  onParseResumeImage,
 }: {
   messages: Message[];
+  historyLoaded: boolean;
   input: string;
   setInput: (value: string) => void;
   isLoading: boolean;
+  isVisionLoading: boolean;
   onCancel: () => void;
   onSubmit: (event: FormEvent) => void;
+  onParseResumeImage: (file: File) => Promise<void>;
 }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  async function handlePaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const imageItem = Array.from(event.clipboardData.items).find((item) =>
+      item.type.startsWith("image/")
+    );
+    if (!imageItem) return; // let normal text paste fall through
+    event.preventDefault();
+    const file = imageItem.getAsFile();
+    if (!file || isVisionLoading) return;
+    await onParseResumeImage(
+      new File([file], file.name || "pasted-resume.png", {
+        type: file.type || "image/png",
+      })
+    );
+  }
+
+  const showEmpty = historyLoaded && messages.length === 0;
+
   return (
     <div className="chat-view">
       <div className="message-list">
-        {messages.length === 0 ? (
+        {!historyLoaded ? (
+          <div className="empty-state">
+            <Loader2 size={22} className="spin" />
+            <span>Loading history...</span>
+          </div>
+        ) : showEmpty ? (
           <div className="empty-state">
             <MessageSquareText size={30} />
-            <strong>Start with a job search, career diagnosis, or history question.</strong>
+            <strong>Start with a job search, career diagnosis, or a career question.</strong>
+            <span className="empty-hint">Try: "帮我找 Python backend 岗位" or "分析我的简历缺口"</span>
           </div>
         ) : (
           messages.map((message) => (
             <article key={message.id} className={`message ${message.role}`}>
               <span>{message.role === "user" ? "You" : "Agent"}</span>
-              <p>{message.content}</p>
+              {message.role === "agent" ? (
+                <div className="md-content">
+                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                </div>
+              ) : (
+                <p>{message.content}</p>
+              )}
               {message.response ? <MessageDiagnostics response={message.response} /> : null}
             </article>
           ))
         )}
+        {isVisionLoading && (
+          <div className="vision-status">
+            <Loader2 size={16} className="spin" />
+            <span>正在解析简历图片...</span>
+          </div>
+        )}
+        <div ref={bottomRef} />
       </div>
 
       <form className="composer" onSubmit={onSubmit}>
         <textarea
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="Ask about jobs, applications, interviews, or next steps"
+          onPaste={(e) => void handlePaste(e)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onSubmit(e as unknown as FormEvent);
+            }
+          }}
+          placeholder="Ask about jobs, or paste a resume image (Cmd+V)…"
           rows={3}
         />
         {isLoading ? (
