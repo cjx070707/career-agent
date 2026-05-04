@@ -63,6 +63,7 @@ class AutonomousAgentService:
         message: str,
         on_status: Optional[Callable[[str], None]] = None,
         on_token: Optional[Callable[[str], None]] = None,
+        session_id: Optional[str] = None,
     ) -> AutonomousAgentResult:
         """Run the autonomous agent loop.
 
@@ -78,7 +79,7 @@ class AutonomousAgentService:
 
         # ── 1. Context ───────────────────────────────────────────────
         goals = self.goals.get_active_goals(user_id)
-        history = self.memory.load_recent_messages(user_id)
+        history = self.memory.load_recent_messages(user_id, session_id=session_id)
         summary = self.memory.load_summary(user_id)
         user_profile = self.memory.load_user_profile(user_id)
 
@@ -204,7 +205,7 @@ class AutonomousAgentService:
                 answer = "抱歉，这个问题的处理步骤超出了预期，请稍后重试或把问题拆分得更具体一些。"
 
         # ── 6. Persist to memory ─────────────────────────────────────
-        self.memory.save_turn(user_id, message, answer)
+        self.memory.save_turn(user_id, message, answer, session_id=session_id)
 
         # Log the completed turn
         total_ms = int((time.monotonic() - turn_start) * 1000)

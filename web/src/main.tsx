@@ -92,6 +92,13 @@ type Message = {
 
 type ViewMode = "query" | "chat";
 
+type SessionMeta = {
+  session_id: string;
+  title: string;
+  created_at: string;
+  turn_count: number;
+};
+
 const queryStarters = [
   {
     label: "Find jobs",
@@ -119,13 +126,14 @@ async function sendChat(
   userId: string,
   message: string,
   signal: AbortSignal,
+  sessionId?: string,
   onStatus?: (text: string) => void,
   onToken?: (text: string) => void,
 ): Promise<ChatResponse> {
   const response = await fetch("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: userId, message }),
+    body: JSON.stringify({ user_id: userId, message, session_id: sessionId ?? null }),
     signal,
   });
 
@@ -234,7 +242,6 @@ function getOrCreateUserId(): string {
   const key = "career-agent-user-id";
   const stored = localStorage.getItem(key);
   if (stored) return stored;
-  // Generate short 8-char hex id — readable but unique enough for demo
   const id = Array.from(crypto.getRandomValues(new Uint8Array(4)))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -242,9 +249,42 @@ function getOrCreateUserId(): string {
   return id;
 }
 
+// ── Session ID per conversation ───────────────────────────────────────────
+function newSessionId(): string {
+  return crypto.randomUUID();
+}
+
+function getOrCreateSessionId(): string {
+  const key = "career-agent-session-id";
+  const stored = localStorage.getItem(key);
+  if (stored) return stored;
+  const id = newSessionId();
+  localStorage.setItem(key, id);
+  return id;
+}
+
+function persistSessionId(id: string): void {
+  localStorage.setItem("career-agent-session-id", id);
+}
+
+// ── Format a timestamp as relative time ──────────────────────────────────
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "刚刚";
+  if (mins < 60) return `${mins} 分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} 天前`;
+  return new Date(iso).toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
+}
+
 function App() {
   const [view, setView] = useState<ViewMode>("chat");
   const [userId, setUserId] = useState<string>(getOrCreateUserId);
+  const [sessionId, setSessionId] = useState<string>(getOrCreateSessionId);
+  const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [queryInput, setQueryInput] = useState("结合我的投递和面试反馈，我下一步该准备什么？");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -260,38 +300,64 @@ function App() {
   const nextId = useRef(1);
   const chatAbortRef = useRef<AbortController | null>(null);
 
-  // Load history on mount (or when userId changes after manual edit)
-  useEffect(() => {
-    if (!userId.trim()) return;
+  // ── Load session list ─────────────────────────────────────────────────
+  const loadSessions = (uid: string) => {
+    fetch(`/conversations/${encodeURIComponent(uid)}/sessions`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: SessionMeta[]) => setSessions(data))
+      .catch(() => {});
+  };
+
+  // ── Load messages for a specific session ─────────────────────────────
+  const loadSession = (uid: string, sid: string) => {
     setHistoryLoaded(false);
-    fetch(`/conversations/${encodeURIComponent(userId.trim())}`)
+    fetch(`/conversations/${encodeURIComponent(uid)}/sessions/${encodeURIComponent(sid)}`)
       .then((r) => r.ok ? r.json() : [])
       .then((turns: { id: number; role: string; content: string }[]) => {
-        if (turns.length === 0) { setHistoryLoaded(true); return; }
         setMessages(
           turns.map((t) => ({
             id: t.id,
-            // backend stores "assistant"; frontend uses "agent"
             role: (t.role === "user" ? "user" : "agent") as "user" | "agent",
             content: t.content,
           }))
         );
-        // nextId must stay above any loaded ids to avoid collisions
-        nextId.current = Math.max(...turns.map((t) => t.id)) + 1;
+        if (turns.length > 0) {
+          nextId.current = Math.max(...turns.map((t) => t.id)) + 1;
+        }
         setHistoryLoaded(true);
       })
       .catch(() => setHistoryLoaded(true));
-  // Only re-run when userId actually changes (not on every render)
+  };
+
+  // On mount / userId change: load sessions + current session messages
+  useEffect(() => {
+    if (!userId.trim()) return;
+    loadSessions(userId);
+    loadSession(userId, sessionId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   function handleNewChat() {
+    const newSid = newSessionId();
+    persistSessionId(newSid);
+    setSessionId(newSid);
     setMessages([]);
     setChatInput("");
     setError(null);
     setStatusLabel("Ready");
     setResumeImageResult(null);
     setSavedResume(null);
+    setHistoryLoaded(true);
+  }
+
+  function handleSessionSelect(sid: string) {
+    if (sid === sessionId) return;
+    persistSessionId(sid);
+    setSessionId(sid);
+    setMessages([]);
+    setError(null);
+    setStatusLabel("Ready");
+    loadSession(userId, sid);
   }
 
   const latestResponse = useMemo(() => {
@@ -326,6 +392,7 @@ function App() {
         userId.trim() || "demo-user",
         trimmed,
         controller.signal,
+        sessionId,
         (text) => setStatusLabel(text),
         (tok) => setMessages((current) =>
           current.map((m) =>
@@ -334,7 +401,6 @@ function App() {
         ),
       );
       window.clearTimeout(timeoutId);
-      // Replace placeholder with final response (includes metadata)
       setMessages((current) =>
         current.map((m) =>
           m.id === streamingId
@@ -342,9 +408,9 @@ function App() {
             : m
         )
       );
-      if (response.stage === "fallback") {
-        setStatusLabel("Ready");
-      } else if (response.stage === "tool") {
+      // Refresh session list so new/updated session appears in sidebar
+      loadSessions(userId.trim() || "demo-user");
+      if (response.stage === "tool") {
         setStatusLabel("Ran tools");
       } else {
         setStatusLabel("Ready");
@@ -379,6 +445,7 @@ function App() {
         userId.trim() || "demo-user",
         trimmed,
         controller.signal,
+        undefined,
         (text) => setStatusLabel(text),
       );
       window.clearTimeout(timeoutId);
@@ -548,29 +615,48 @@ function App() {
           </button>
         </div>
 
-        {view === "chat" && (
-          <button
-            className="new-chat-btn"
-            type="button"
-            onClick={handleNewChat}
-            title="Start a new conversation"
-          >
-            + New Chat
-          </button>
+        {view === "chat" ? (
+          <>
+            <button
+              className="new-chat-btn"
+              type="button"
+              onClick={handleNewChat}
+            >
+              + 新对话
+            </button>
+            <div className="session-list">
+              {sessions.length === 0 ? (
+                <div className="session-empty">暂无历史对话</div>
+              ) : (
+                sessions.map((s) => (
+                  <button
+                    key={s.session_id}
+                    type="button"
+                    className={`session-item${s.session_id === sessionId ? " active" : ""}`}
+                    onClick={() => handleSessionSelect(s.session_id)}
+                    title={s.title}
+                  >
+                    <span className="session-title">{s.title}</span>
+                    <span className="session-meta">{relativeTime(s.created_at)}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="starter-list">
+            {queryStarters.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button key={item.label} type="button" onClick={() => useStarter(item.prompt)}>
+                  <Icon size={17} />
+                  <span>{item.label}</span>
+                  <ChevronRight size={16} />
+                </button>
+              );
+            })}
+          </div>
         )}
-
-        <div className="starter-list">
-          {queryStarters.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button key={item.label} type="button" onClick={() => useStarter(item.prompt)}>
-                <Icon size={17} />
-                <span>{item.label}</span>
-                <ChevronRight size={16} />
-              </button>
-            );
-          })}
-        </div>
       </aside>
 
       <main className="workspace">

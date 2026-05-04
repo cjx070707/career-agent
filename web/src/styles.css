@@ -41,7 +41,11 @@ button:disabled {
   padding: 22px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 14px;
+  overflow: hidden;
+  height: 100vh;
+  position: sticky;
+  top: 0;
 }
 
 .brand {
@@ -640,6 +644,61 @@ textarea:focus,
   .trace-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Session list in sidebar ────────────────────────────────────────────── */
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.session-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  color: #25312c;
+}
+
+.session-item:hover {
+  background: #edf4ef;
+  border-color: #c4d9cc;
+}
+
+.session-item.active {
+  background: #e2ede6;
+  border-color: #8fc4a4;
+}
+
+.session-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.session-meta {
+  font-size: 0.72rem;
+  color: #7a9085;
+}
+
+.session-empty {
+  font-size: 0.8rem;
+  color: #9aaca2;
+  padding: 10px;
+  text-align: center;
 }
 
 /* ── New Chat button ────────────────────────────────────────────────────── */

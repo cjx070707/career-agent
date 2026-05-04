@@ -9,6 +9,7 @@ CHAT_CONTRACT_VERSION = "chat.v1"
 class ChatRequest(BaseModel):
     user_id: str = Field(..., min_length=1, description="Stable user identifier")
     message: str = Field(..., min_length=1, description="User input message")
+    session_id: Optional[str] = Field(default=None, description="Conversation session UUID")
 
 
 class ChatSource(BaseModel):
