@@ -6,3 +6,4 @@ pydantic==2.12.5
 chromadb==1.5.7
 python-multipart
 pillow
+slowapi==0.1.9

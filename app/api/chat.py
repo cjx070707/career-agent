@@ -3,9 +3,10 @@ import json
 import queue as _queue_module
 from typing import AsyncGenerator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
+from app.middleware.rate_limit import CHAT_LIMIT, limiter
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.autonomous_agent_service import AutonomousAgentService
 
@@ -27,7 +28,8 @@ def _sse(event_type: str, **payload) -> str:
 # ---------------------------------------------------------------------------
 
 @router.post("/chat")
-async def chat(payload: ChatRequest) -> StreamingResponse:
+@limiter.limit(CHAT_LIMIT)
+async def chat(request: Request, payload: ChatRequest) -> StreamingResponse:
     """
     SSE streaming chat endpoint backed by AutonomousAgentService.
 
@@ -117,7 +119,8 @@ async def chat(payload: ChatRequest) -> StreamingResponse:
 # ---------------------------------------------------------------------------
 
 @router.post("/chat/sync", response_model=ChatResponse)
-def chat_sync(payload: ChatRequest) -> ChatResponse:
+@limiter.limit(CHAT_LIMIT)
+def chat_sync(request: Request, payload: ChatRequest) -> ChatResponse:
     """Synchronous endpoint kept for evals and direct API testing."""
     result = AutonomousAgentService().respond(payload.user_id, payload.message)
     return ChatResponse(
