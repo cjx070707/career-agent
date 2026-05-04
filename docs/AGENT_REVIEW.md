@@ -109,7 +109,7 @@ SSE 实时状态流（`🤔 正在思考` → `🔧 调用工具`）+ Final answ
 
 **Q8：如果这个 agent 要上生产，你会改什么？**
 
-> "主要四件事。第一，DashScope 加 retry：现在偶发超时直接失败，生产要加指数退避。第二，认证：user_id 现在是前端自填，生产要从 token 解出来确保数据隔离。第三，用户反馈回路：thumbs up/down 存表，为后续偏好优化做数据基础。第四，user_profile 提取的质量评估：目前没有量化手段验证偏好提取准不准，需要专项 eval。"
+> "按优先级分三层。第一层是上线前必须做的：SQLite 换 PostgreSQL（高峰期并发写会触发写锁超时，agent 失忆）；slowapi 的 rate limiting 换 Redis backend（多 worker 进程内存不共享，限速形同虚设）；加 per-user chat lock（Redis SETNX），防止同一用户并发 LLM 调用打爆 DashScope 配额；ChromaDB 换 server mode（多进程直接读写文件会 corrupt）。第二层是上线后根据真实数据再做：DashScope retry、JWT 认证、读写分离。第三层是有用户反馈之后再做：用户 thumbs up/down 存表、user_profile 提取质量 eval。提前做第二三层是过度工程。"
 
 ---
 

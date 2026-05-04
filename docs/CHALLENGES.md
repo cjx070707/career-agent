@@ -254,4 +254,68 @@ LLM 不知道两件事：① 这个工具连接的是实时数据库；② 它�
 
 ---
 
-*最后更新：2026-05-02（P4 demo 验收完成，项目收尾）*
+---
+
+## 生产化阶段
+
+### 15. SQLite 的并发写瓶颈——为什么必须换 PostgreSQL
+
+**背景**：CareerHub 场景估算：DAU 500-3000，高峰 200-1000 并发。每次 AI 对话会写 `messages`、`user_profiles`、`goals` 三张表。
+
+**问题**：SQLite 写操作是串行的——同一时刻只有一个写事务能执行，其他事务全部阻塞等待。高峰期多用户同时对话，会出现写锁超时（`database is locked`），对话历史存不进去，下一轮 LLM 拿不到记忆，表现为 agent「失忆」。
+
+**第一反应（错的）**：调大 SQLite 的 `timeout` 参数或开启 WAL 模式——WAL 提升了读并发，但写依然串行，治标不治本。
+
+**真正根因**：SQLite 是为单进程、低并发场景设计的嵌入式数据库。多 worker 部署时，多个进程同时持有文件锁，冲突概率随并发线性上升。
+
+**解法**：迁移到 PostgreSQL。
+- 连接池（asyncpg/psycopg2 + SQLAlchemy）替代 sqlite3 直连
+- 写操作变为 row-level locking，并发写不再互相阻塞
+- 代价：本地开发需要起 PG 实例，schema migration 需要 Alembic 管理
+
+**教训**：SQLite 对 demo 和单机开发是完美的，但它不是「小号的 PostgreSQL」——并发写模型根本不同。选数据库时先问「并发写场景是什么」，而不是「数据量有多大」。
+
+---
+
+### 16. 内存限速在多进程下失效——分布式 Rate Limiting
+
+**背景**：上线前加了 slowapi 做 `/chat` 限速（20 req/min per IP）。生产用 gunicorn 起 4 个 worker 进程。
+
+**问题**：slowapi 默认用内存存计数器，每个 worker 进程各自维护独立的计数器。4 个 worker 意味着同一个 IP 实际上能发 4 × 20 = 80 req/min，限速形同虚设。
+
+**根因**：进程间内存不共享。这不是 slowapi 的 bug，是进程模型的基本特性。任何基于本地内存的有状态组件（限速、session、cache）在多进程部署时都会有这个问题。
+
+**解法**：slowapi 支持 Redis 作为 storage backend，所有 worker 共享同一个计数器：
+```python
+from slowapi import Limiter
+from slowapi.wrappers import storage
+limiter = Limiter(key_func=get_remote_address, storage_uri="redis://localhost:6379")
+```
+这样 4 个 worker 共享一个原子计数器，限速在分布式环境下才真正有效。
+
+**延伸**：同样的问题存在于任何需要跨进程共享状态的场景——用户在线状态、WebSocket 连接管理、分布式锁。解法统一：引入 Redis 作为进程间共享的状态存储。
+
+---
+
+### 17. LLM 调用的并发控制——DashScope 配额保护
+
+**背景**：DashScope 有并发调用配额限制。高峰 1000 个并发 chat 请求，不可能起 1000 个并行 LLM 调用——超出配额会报 429，所有请求同时失败。
+
+**第一反应（错的）**：把 rate limit 调低，限制全局请求速率——但这会让正常用户也被拒绝，伤害体验。
+
+**真正需要解决的问题**：单个用户同时发多条消息没有意义（产品逻辑上不合理），但不同用户的并发请求是合理的，不应该被统一限流。
+
+**解法**：per-user 并发锁，而不是全局速率限制。
+```
+用户发 chat 请求
+  → Redis SETNX user:{user_id}:chat_lock EX 60
+  → 成功（拿到锁）→ 正常处理，完成后 DEL 锁
+  → 失败（已有锁）→ 返回 409 {"error": "上一条消息还在处理中"}
+```
+这样每个用户同时只有 1 个 active LLM 调用，不同用户之间完全独立。DashScope 的并发压力等于 DAU 活跃用户数，而不是请求总量。
+
+**面试可以深挖的点**：锁的 TTL 怎么设？（等于 TOOL_TIMEOUT + buffer，防止 LLM 超时后锁不释放）。如果 worker 进程 crash，锁怎么处理？（TTL 自动过期，不会永久死锁）。
+
+---
+
+*最后更新：2026-05-04（生产化中间件 + 部署架构分析）*
