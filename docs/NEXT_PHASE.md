@@ -59,7 +59,49 @@
 
 ---
 
-## 三、已决定不做的事
+## 三、生产部署方案
+
+> 流量基准：CareerHub 场景，DAU 500-3000，高峰 200-1000 并发，AI chat 每天数百到数千次。
+
+### Phase 1：测试上线（单服务器，能撑初期流量）
+
+**架构：**
+```
+Nginx（反向代理 + SSL 终止）
+  └── gunicorn -w 4 -k uvicorn.workers.UvicornWorker
+        └── FastAPI app
+Redis（分布式限速 + per-user chat lock）
+PostgreSQL（替换 SQLite，处理并发写）
+ChromaDB server（HTTP mode，单独进程，多 worker 共享）
+```
+
+**必须在上线前完成的 P0 改动：**
+
+| 改动 | 原因 | 不做的后果 |
+|------|------|-----------|
+| SQLite → PostgreSQL | 并发写串行，高峰期写锁超时导致 agent 失忆 | 数据丢失 |
+| slowapi Redis backend | 多 worker 内存不共享，限速形同虚设 | 限速失效，DashScope 被打爆 |
+| per-user chat lock（Redis） | 防止同一用户并发 LLM 调用耗尽 DashScope 配额 | 高峰期大面积 429 |
+| ChromaDB server mode | 多进程直接读写同一文件会 corrupt | 向量库损坏 |
+
+**已完成的中间件（`feature/production-middleware`）：**
+- ✅ CORS
+- ✅ X-Request-ID（每请求唯一 UUID，贯穿日志链路）
+- ✅ 结构化请求日志（JSON lines，method/path/status/latency/request_id）
+- ✅ 全局异常处理（统一错误格式，不泄露 stack trace）
+- ✅ Rate limiting（slowapi，20 req/min，待换 Redis backend）
+
+### Phase 2：流量验证后再做
+
+等真实数据上来再决定，不提前优化：
+- 读写分离（PostgreSQL replica 承接 memory 读）
+- 对话历史异步写入（不阻塞 LLM 调用路径）
+- DashScope 调用加 retry（指数退避 2-3 次）
+- 用户认证（JWT，user_id 从 token 解出）
+
+---
+
+## 四、已决定不做的事
 
 | 方向 | 决策理由 |
 |------|---------|
