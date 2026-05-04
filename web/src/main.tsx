@@ -11,6 +11,7 @@ import {
   ListChecks,
   Loader2,
   MessageSquareText,
+  Paperclip,
   Send,
   Sparkles,
   UserRound,
@@ -649,8 +650,27 @@ function ChatView({
         ) : showEmpty ? (
           <div className="empty-state">
             <MessageSquareText size={30} />
-            <strong>Start with a job search, career diagnosis, or a career question.</strong>
-            <span className="empty-hint">Try: "帮我找 Python backend 岗位" or "分析我的简历缺口"</span>
+            <strong>你好！我是你的求职助手。</strong>
+            <span className="empty-hint">搜岗位、分析简历差距、制定求职目标，都可以直接问我。</span>
+            <div className="empty-upload-hint">
+              <span>首次使用建议先上传简历，解锁 gap 分析功能</span>
+              <label className="resume-upload-btn" aria-disabled={isVisionLoading}>
+                <Paperclip size={15} />
+                {isVisionLoading ? "解析中..." : "上传简历"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  disabled={isVisionLoading}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    await onParseResumeImage(file);
+                    e.currentTarget.value = "";
+                  }}
+                  style={{ display: "none" }}
+                />
+              </label>
+            </div>
           </div>
         ) : (
           messages.map((message) => (
@@ -690,15 +710,36 @@ function ChatView({
           placeholder="Ask about jobs, or paste a resume image (Cmd+V)…"
           rows={3}
         />
-        {isLoading ? (
-          <button type="button" aria-label="Stop request" className="is-loading" onClick={onCancel}>
-            <Loader2 size={19} />
-          </button>
-        ) : (
-          <button type="submit" disabled={!input.trim()} aria-label="Send message">
-            <Send size={19} />
-          </button>
-        )}
+        <div className="composer-actions">
+          <label
+            className="composer-attach"
+            title="上传简历图片"
+            aria-disabled={isVisionLoading}
+          >
+            {isVisionLoading ? <Loader2 size={17} className="spin" /> : <Paperclip size={17} />}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              disabled={isVisionLoading}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                await onParseResumeImage(file);
+                e.currentTarget.value = "";
+              }}
+              style={{ display: "none" }}
+            />
+          </label>
+          {isLoading ? (
+            <button type="button" aria-label="Stop request" className="is-loading" onClick={onCancel}>
+              <Loader2 size={19} />
+            </button>
+          ) : (
+            <button type="submit" disabled={!input.trim()} aria-label="Send message">
+              <Send size={19} />
+            </button>
+          )}
+        </div>
       </form>
     </div>
   );

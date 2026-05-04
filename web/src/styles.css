@@ -388,7 +388,38 @@ h1 {
 }
 
 .composer {
-  grid-template-columns: minmax(0, 1fr) 52px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.composer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer-attach {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #cad6ce;
+  border-radius: 8px;
+  background: #f4f7f5;
+  color: #4a6358;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.composer-attach:hover:not([aria-disabled="true"]) {
+  background: #e6ede9;
+  border-color: #7aab92;
+  color: #1a3d2e;
+}
+
+.composer-attach[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 textarea {
@@ -629,10 +660,48 @@ textarea:focus,
   border-color: #7aab92;
 }
 
-/* ── Empty state hint (extends existing .empty-state) ─────────────────── */
+/* ── Empty state hint + resume upload CTA ───────────────────────────────── */
 .empty-hint {
   font-size: 0.82rem;
   color: #7a9085;
+}
+
+.empty-upload-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 10px 14px;
+  background: #f0f6f2;
+  border: 1px solid #c4d9cc;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  color: #3a5248;
+}
+
+.resume-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #0f5132;
+  color: #ffffff;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.resume-upload-btn:hover {
+  background: #0a3d26;
+}
+
+.resume-upload-btn[aria-disabled="true"] {
+  background: #9aaca2;
+  cursor: not-allowed;
 }
 
 /* ── .spin helper class (reuses existing @keyframes spin) ───────────────── */
