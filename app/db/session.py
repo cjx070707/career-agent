@@ -128,12 +128,28 @@ def init_db(db_path: Optional[str] = None) -> None:
             );
             """
         )
+        # ── Migrations ─────────────────────────────────────────────────────
         candidate_columns = {
             row["name"]
             for row in connection.execute("PRAGMA table_info(candidates)").fetchall()
         }
         if "user_id" not in candidate_columns:
             connection.execute("ALTER TABLE candidates ADD COLUMN user_id TEXT")
+
+        # session_id: nullable so existing rows stay valid; new turns carry a UUID
+        turn_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(conversation_turns)").fetchall()
+        }
+        if "session_id" not in turn_columns:
+            connection.execute(
+                "ALTER TABLE conversation_turns ADD COLUMN session_id TEXT"
+            )
+        if "title" not in turn_columns:
+            # first user message used as conversation title (stored on session start)
+            connection.execute(
+                "ALTER TABLE conversation_turns ADD COLUMN title TEXT"
+            )
         career_profile_columns = {
             row["name"]
             for row in connection.execute("PRAGMA table_info(career_profiles)").fetchall()

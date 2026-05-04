@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from app.db.session import get_connection
 
@@ -18,6 +18,15 @@ class MemoryTurn:
     id: int
     role: str
     content: str
+    session_id: Optional[str] = None
+
+
+@dataclass
+class SessionMeta:
+    session_id: str
+    title: str          # first user message, truncated
+    created_at: str     # ISO timestamp of first turn
+    turn_count: int
 
 
 class MemoryService:
@@ -28,33 +37,100 @@ class MemoryService:
 
     # ── Raw turns ────────────────────────────────────────────────────
 
-    def load_recent_messages(self, user_id: str) -> List[MemoryTurn]:
-        """Return the most recent WINDOW_SIZE turns, oldest first."""
+    def load_recent_messages(self, user_id: str, session_id: Optional[str] = None) -> List[MemoryTurn]:
+        """Return the most recent WINDOW_SIZE turns for a session (or globally), oldest first."""
         with get_connection(self.db_path) as conn:
-            rows = conn.execute(
-                """
-                SELECT id, role, content
-                FROM conversation_turns
-                WHERE user_id = ?
-                ORDER BY id DESC
-                LIMIT ?
-                """,
-                (user_id, WINDOW_SIZE),
-            ).fetchall()
+            if session_id:
+                rows = conn.execute(
+                    """
+                    SELECT id, role, content, session_id
+                    FROM conversation_turns
+                    WHERE user_id = ? AND session_id = ?
+                    ORDER BY id DESC
+                    LIMIT ?
+                    """,
+                    (user_id, session_id, WINDOW_SIZE),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT id, role, content, session_id
+                    FROM conversation_turns
+                    WHERE user_id = ?
+                    ORDER BY id DESC
+                    LIMIT ?
+                    """,
+                    (user_id, WINDOW_SIZE),
+                ).fetchall()
         return [
-            MemoryTurn(id=r["id"], role=r["role"], content=r["content"])
+            MemoryTurn(id=r["id"], role=r["role"], content=r["content"], session_id=r["session_id"])
             for r in reversed(rows)
         ]
 
-    def save_turn(self, user_id: str, user_message: str, assistant_message: str) -> None:
+    def load_session_messages(self, user_id: str, session_id: str) -> List[MemoryTurn]:
+        """Return ALL turns for a session (for frontend display, no window limit)."""
+        with get_connection(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT id, role, content, session_id
+                FROM conversation_turns
+                WHERE user_id = ? AND session_id = ?
+                ORDER BY id ASC
+                """,
+                (user_id, session_id),
+            ).fetchall()
+        return [
+            MemoryTurn(id=r["id"], role=r["role"], content=r["content"], session_id=r["session_id"])
+            for r in rows
+        ]
+
+    def list_sessions(self, user_id: str) -> List[SessionMeta]:
+        """Return all sessions for a user, newest first, with title and turn count."""
+        with get_connection(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    session_id,
+                    MIN(created_at) AS created_at,
+                    COUNT(*) AS turn_count,
+                    -- first user message as title
+                    (SELECT content FROM conversation_turns t2
+                     WHERE t2.user_id = t1.user_id
+                       AND t2.session_id = t1.session_id
+                       AND t2.role = 'user'
+                     ORDER BY t2.id ASC LIMIT 1) AS first_msg
+                FROM conversation_turns t1
+                WHERE user_id = ? AND session_id IS NOT NULL
+                GROUP BY session_id
+                ORDER BY created_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [
+            SessionMeta(
+                session_id=r["session_id"],
+                title=(r["first_msg"] or "新对话")[:60],
+                created_at=r["created_at"],
+                turn_count=r["turn_count"],
+            )
+            for r in rows
+        ]
+
+    def save_turn(
+        self,
+        user_id: str,
+        user_message: str,
+        assistant_message: str,
+        session_id: Optional[str] = None,
+    ) -> None:
         """Append a user+assistant turn pair. Does NOT auto-delete — caller
         decides when to archive (via maybe_archive)."""
         with get_connection(self.db_path) as conn:
             conn.executemany(
-                "INSERT INTO conversation_turns (user_id, role, content) VALUES (?, ?, ?)",
+                "INSERT INTO conversation_turns (user_id, role, content, session_id) VALUES (?, ?, ?, ?)",
                 [
-                    (user_id, "user", user_message),
-                    (user_id, "assistant", assistant_message),
+                    (user_id, "user", user_message, session_id),
+                    (user_id, "assistant", assistant_message, session_id),
                 ],
             )
 

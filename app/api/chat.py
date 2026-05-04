@@ -1,7 +1,6 @@
 import asyncio
 import json
-import queue as _queue_module
-from typing import AsyncGenerator, List
+from typing import AsyncGenerator, List, Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -17,20 +16,57 @@ router = APIRouter(tags=["chat"])
 
 
 # ---------------------------------------------------------------------------
-# History endpoint
+# Session / History endpoints
 # ---------------------------------------------------------------------------
+
+class SessionSummary(BaseModel):
+    session_id: str
+    title: str
+    created_at: str
+    turn_count: int
+
 
 class HistoryMessage(BaseModel):
     id: int
     role: str
     content: str
+    session_id: Optional[str] = None
+
+
+@router.get("/conversations/{user_id}/sessions", response_model=List[SessionSummary])
+def list_sessions(user_id: str) -> List[SessionSummary]:
+    """Return all sessions for a user, newest first."""
+    sessions = MemoryService().list_sessions(user_id)
+    return [
+        SessionSummary(
+            session_id=s.session_id,
+            title=s.title,
+            created_at=s.created_at,
+            turn_count=s.turn_count,
+        )
+        for s in sessions
+    ]
+
+
+@router.get("/conversations/{user_id}/sessions/{session_id}", response_model=List[HistoryMessage])
+def get_session_messages(user_id: str, session_id: str) -> List[HistoryMessage]:
+    """Return all messages in a specific session."""
+    turns = MemoryService().load_session_messages(user_id, session_id)
+    return [
+        HistoryMessage(id=t.id, role=t.role, content=t.content, session_id=t.session_id)
+        for t in turns
+    ]
 
 
 @router.get("/conversations/{user_id}", response_model=List[HistoryMessage])
 def get_conversation_history(user_id: str) -> List[HistoryMessage]:
-    """Return the most recent conversation turns for a user (up to 12)."""
+    """Return the most recent conversation turns for a user (up to 12).
+    Legacy endpoint — used as fallback when no session_id available."""
     turns = MemoryService().load_recent_messages(user_id)
-    return [HistoryMessage(id=t.id, role=t.role, content=t.content) for t in turns]
+    return [
+        HistoryMessage(id=t.id, role=t.role, content=t.content, session_id=t.session_id)
+        for t in turns
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -68,8 +104,6 @@ async def chat(request: Request, payload: ChatRequest) -> StreamingResponse:
         yield _sse("status", text="🔍 正在分析请求...")
 
         loop = asyncio.get_event_loop()
-        # Thread-safe bridge: worker thread → async queue → SSE
-        # Queue carries: str (status text), ("token", str), or _DONE sentinel
         event_q: asyncio.Queue = asyncio.Queue()
         _DONE = object()
 
@@ -88,6 +122,7 @@ async def chat(request: Request, payload: ChatRequest) -> StreamingResponse:
                     lambda: svc.respond(
                         payload.user_id, payload.message,
                         on_status=on_status, on_token=on_token,
+                        session_id=payload.session_id,
                     ),
                 )
             finally:
@@ -95,7 +130,6 @@ async def chat(request: Request, payload: ChatRequest) -> StreamingResponse:
 
         task = asyncio.ensure_future(_run())
 
-        # Stream status + token events until the sentinel arrives
         while True:
             item = await event_q.get()
             if item is _DONE:
@@ -116,7 +150,7 @@ async def chat(request: Request, payload: ChatRequest) -> StreamingResponse:
         sources_data = [s.model_dump() for s in (result.sources or [])]
         yield _sse(
             "answer",
-            text=result.answer,  # fallback for clients that don't handle token events
+            text=result.answer,
             stage=result.stage,
             memory_used=result.memory_used,
             tool_used=result.tool_used,
@@ -142,7 +176,9 @@ async def chat(request: Request, payload: ChatRequest) -> StreamingResponse:
 @limiter.limit(CHAT_LIMIT)
 def chat_sync(request: Request, payload: ChatRequest) -> ChatResponse:
     """Synchronous endpoint kept for evals and direct API testing."""
-    result = AutonomousAgentService().respond(payload.user_id, payload.message)
+    result = AutonomousAgentService().respond(
+        payload.user_id, payload.message, session_id=payload.session_id
+    )
     return ChatResponse(
         answer=result.answer,
         stage=result.stage,
