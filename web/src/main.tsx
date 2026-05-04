@@ -270,7 +270,8 @@ function App() {
         setMessages(
           turns.map((t) => ({
             id: t.id,
-            role: t.role as "user" | "agent",
+            // backend stores "assistant"; frontend uses "agent"
+            role: (t.role === "user" ? "user" : "agent") as "user" | "agent",
             content: t.content,
           }))
         );

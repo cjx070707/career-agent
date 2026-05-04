@@ -7,6 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/chat": "http://127.0.0.1:8000",
+      "/conversations": "http://127.0.0.1:8000",
       "/vision": "http://127.0.0.1:8000"
     }
   }
