@@ -95,6 +95,55 @@ class LLMIntentClassifier:
         if task_type == "fallback":
             steps = []
         lowered = message.lower()
+        implicit_search_markers = (
+            "我想找",
+            "我要找",
+            "帮我找",
+            "找一份",
+            "search",
+            "find",
+        )
+        recommend_markers = (
+            "结合我的情况推荐",
+            "推荐适合投",
+            "适合投的岗位",
+            "what jobs fit me",
+            "recommend jobs",
+        )
+
+        if any(marker in lowered or marker in message for marker in recommend_markers) and bool(user_state.get("has_resume")):
+            task_type = "job_match_planning"
+            steps = [
+                step
+                for step in ["get_candidate_profile", "get_resume_by_id", "search_jobs", "match_resume_to_jobs"]
+                if step in available_tools
+            ]
+            parsed.needs_more_context = False
+
+        is_compound_search_match = (
+            ("匹配" in message or "match" in lowered)
+            and ("简历" in message or "resume" in lowered)
+            and any(marker in lowered or marker in message for marker in implicit_search_markers)
+        )
+        if is_compound_search_match and bool(user_state.get("has_resume")):
+            task_type = "job_match_planning"
+            steps = [
+                step
+                for step in ["get_candidate_profile", "get_resume_by_id", "search_jobs", "match_resume_to_jobs"]
+                if step in available_tools
+            ]
+            parsed.needs_more_context = False
+
+        if any(marker in lowered or marker in message for marker in implicit_search_markers) and not is_compound_search_match:
+            has_explicit_goal_planning = any(
+                marker in lowered or marker in message
+                for marker in ("设定目标", "制定目标", "目标规划", "goal plan", "set goal")
+            )
+            if not has_explicit_goal_planning:
+                task_type = "job_search"
+                if "search_jobs" in available_tools:
+                    steps = ["search_jobs"]
+
         if any(marker in message or marker in lowered for marker in ("我朋友", "我同学", "my friend", "friend wants")):
             return {
                 "task_type": "fallback",
@@ -269,6 +318,13 @@ Input: "帮我找悉尼的数据分析实习"
 Output: {"task_type":"job_search","steps":["search_jobs"],"needs_more_context":false,"missing_context":[],"follow_up_question":null,"reasoning":"pure job search"}
 Input: "有没有 backend intern opening"
 Output: {"task_type":"job_search","steps":["search_jobs"],"needs_more_context":false,"missing_context":[],"follow_up_question":null,"reasoning":"english variant job search"}
+Input: "我想找一份 data analyst 实习"
+Output: {"task_type":"job_search","steps":["search_jobs"],"needs_more_context":false,"missing_context":[],"follow_up_question":null,"reasoning":"implicit search intent"}
+
+Intent boundary:
+- Phrases like "我想找/我要找/帮我找 + 岗位" are job_search, not goal planning.
+- Only choose goal-setting semantics when the user explicitly asks to set/plan a goal.
+- Compound request like "找岗位 + 用我的简历看匹配度" must use job_match_planning chain (profile -> resume -> search -> match).
 
 [career_insights]
 Input: "我该如何提升"

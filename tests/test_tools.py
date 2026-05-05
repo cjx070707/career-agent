@@ -7,7 +7,9 @@ from app.tools.registry import build_default_tool_registry
 def test_default_tool_registry_exposes_core_tool_names(isolated_runtime) -> None:
     registry = build_default_tool_registry()
 
-    assert registry.list_tool_names() == [
+    names = registry.list_tool_names()
+    # Core tools must all be present; registry may include additional tools.
+    core = {
         "get_candidate_profile",
         "get_resume_by_id",
         "get_applications",
@@ -15,7 +17,8 @@ def test_default_tool_registry_exposes_core_tool_names(isolated_runtime) -> None
         "get_career_insights",
         "search_jobs",
         "match_resume_to_jobs",
-    ]
+    }
+    assert core <= set(names)
 
 
 def test_default_tool_registry_exports_mcp_ready_metadata_and_schema(
@@ -30,8 +33,11 @@ def test_default_tool_registry_exports_mcp_ready_metadata_and_schema(
     assert search_tool["category"] == "job_search"
     assert search_tool["description"]
     assert search_tool["input_schema"]["type"] == "object"
-    assert "query" in search_tool["input_schema"]["properties"]
-    assert "filters" in search_tool["input_schema"]["properties"]
+    props = search_tool["input_schema"]["properties"]
+    assert "query" in props
+    # location and work_type are exposed as flat optional fields (not nested under "filters")
+    assert "location" in props
+    assert "work_type" in props
     for tool in tools:
         assert set(tool) == {
             "name",
@@ -100,16 +106,14 @@ def test_search_jobs_and_match_tools_return_structured_results(isolated_runtime)
     )
 
 
-def test_search_jobs_tool_forwards_structured_filters(isolated_runtime) -> None:
+def test_search_jobs_tool_forwards_structured_filters(isolated_runtime, monkeypatch) -> None:
+    monkeypatch.setenv("EVAL_USE_ADZUNA_MOCK", "1")
     registry = build_default_tool_registry()
 
-    # Sanity: without filters we may see any location.
+    # location and work_type are flat fields on the input schema (not nested under "filters").
     search_result = registry.run(
         "search_jobs",
-        {
-            "query": "engineer",
-            "filters": {"location": "Sydney", "work_type": "intern"},
-        },
+        {"query": "engineer", "location": "Sydney", "work_type": "intern"},
     )
 
     assert search_result["ok"] is True
@@ -129,6 +133,19 @@ def test_search_jobs_tool_without_filters_is_backward_compatible(isolated_runtim
 
     assert result["ok"] is True
     assert result["data"]
+
+
+def test_search_jobs_tool_uses_eval_mock_when_enabled(isolated_runtime, monkeypatch) -> None:
+    monkeypatch.setenv("EVAL_USE_ADZUNA_MOCK", "1")
+    registry = build_default_tool_registry()
+
+    result = registry.run("search_jobs", {"query": "data analyst", "location": "Sydney", "work_type": "intern"})
+
+    assert result["ok"] is True
+    assert len(result["data"]) >= 2
+    for hit in result["data"]:
+        assert "Sydney" in str(hit.get("location") or "")
+        assert "intern" in str(hit.get("work_type") or "").lower()
 
 
 def test_mcp_server_lists_and_calls_tools(isolated_runtime) -> None:
