@@ -1,3 +1,4 @@
+import fitz  # PyMuPDF
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from app.llm.vision_client import VisionClient
@@ -16,7 +17,23 @@ candidate_service = CandidateService()
 resume_service = ResumeService()
 
 _ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
+_ALLOWED_PDF_TYPES = {"application/pdf"}
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024
+_MAX_PDF_BYTES = 20 * 1024 * 1024
+
+
+def _pdf_to_jpeg(pdf_bytes: bytes) -> bytes:
+    """Render the first page of a PDF to JPEG bytes at 150 DPI."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    if doc.page_count == 0:
+        raise ValueError("PDF has no pages")
+    page = doc.load_page(0)
+    # 150 DPI → matrix scale ≈ 2.08 (72 dpi baseline)
+    mat = fitz.Matrix(150 / 72, 150 / 72)
+    pix = page.get_pixmap(matrix=mat, alpha=False)
+    jpeg_bytes = pix.tobytes("jpeg", jpg_quality=92)
+    doc.close()
+    return jpeg_bytes
 
 
 def format_parsed_resume(parsed: ParsedResumeImage) -> str:
@@ -79,27 +96,45 @@ def format_parsed_resume(parsed: ParsedResumeImage) -> str:
 @router.post("/vision/resume-image", response_model=ResumeImageParseResponse)
 async def parse_resume_image(file: UploadFile = File(...)) -> ResumeImageParseResponse:
     content_type = (file.content_type or "").lower().strip()
-    if content_type not in _ALLOWED_IMAGE_TYPES:
+    is_pdf = content_type in _ALLOWED_PDF_TYPES
+    is_image = content_type in _ALLOWED_IMAGE_TYPES
+
+    if not is_pdf and not is_image:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported file type. Use PNG, JPEG, or WEBP.",
+            detail="Unsupported file type. Use PNG, JPEG, WEBP, or PDF.",
         )
 
-    image_bytes = await file.read()
-    if not image_bytes:
+    raw_bytes = await file.read()
+    if not raw_bytes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file is empty.",
         )
-    if len(image_bytes) > _MAX_IMAGE_BYTES:
+
+    max_bytes = _MAX_PDF_BYTES if is_pdf else _MAX_IMAGE_BYTES
+    if len(raw_bytes) > max_bytes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File is too large. Max size is 5MB.",
+            detail=f"File is too large. Max size is {max_bytes // (1024 * 1024)}MB.",
         )
+
+    if is_pdf:
+        try:
+            image_bytes = _pdf_to_jpeg(raw_bytes)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Could not render PDF: {exc}",
+            ) from exc
+        mime_type = "image/jpeg"
+    else:
+        image_bytes = raw_bytes
+        mime_type = content_type
 
     return vision_client.parse_resume_image(
         image_bytes=image_bytes,
-        mime_type=content_type,
+        mime_type=mime_type,
     )
 
 
@@ -107,14 +142,12 @@ async def parse_resume_image(file: UploadFile = File(...)) -> ResumeImageParseRe
 def save_parsed_resume(payload: SaveParsedResumeRequest) -> SavedParsedResumeResponse:
     try:
         candidate = candidate_service.get_latest_candidate(user_id=payload.user_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=(
-                "Candidate not found for user_id. "
-                "Create a candidate before saving parsed resume."
-            ),
-        ) from exc
+    except ValueError:
+        # No candidate yet — auto-create one from the parsed name (or a default)
+        inferred_name = (payload.parsed.name or "").strip() or "User"
+        candidate = candidate_service.create_candidate(
+            name=inferred_name, user_id=payload.user_id
+        )
 
     content = format_parsed_resume(payload.parsed)
     title = (payload.title or "Resume parsed from image").strip() or "Resume parsed from image"

@@ -2,7 +2,7 @@ from app.services.application_service import ApplicationService
 from app.services.candidate_service import CandidateService
 from app.services.career_insight_service import CareerInsightService
 from app.services.interview_service import InterviewService
-from app.services.profile_service import ProfileService
+from app.services.career_profile_service import ProfileService
 from app.services.retrieval_service import RetrievalService
 from app.db.session import get_connection
 

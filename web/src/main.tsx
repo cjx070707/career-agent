@@ -533,13 +533,10 @@ function App() {
       const parsed = await parseResumeImage(file);
       const hasContent = hasParsedResumeContent(parsed.parsed);
 
-      if (!hasContent || parsed.warnings.length > 0) {
-        const warnText = parsed.warnings.length > 0
-          ? `⚠️ 简历解析不完整：${parsed.warnings.join("；")}。请确认上传的是清晰的简历图片。`
-          : "⚠️ 简历解析结果为空，请确认上传了正确的简历图片。";
+      if (!hasContent) {
         setMessages((curr) => [
           ...curr,
-          { id: nextId.current++, role: "agent", content: warnText },
+          { id: nextId.current++, role: "agent", content: "⚠️ 简历解析结果为空，请确认上传了正确的简历图片。" },
         ]);
         return;
       }
@@ -549,6 +546,8 @@ function App() {
       const name = parsed.parsed.name ? `（${parsed.parsed.name}）` : "";
       const skills = parsed.parsed.skills.slice(0, 5).join("、");
       const skillsLine = skills ? `\n- 识别技能：${skills}${parsed.parsed.skills.length > 5 ? " 等" : ""}` : "";
+      const warnLine = parsed.warnings.length > 0
+        ? `\n⚠️ 部分字段解析不完整：${parsed.warnings.join("；")}` : "";
 
       setMessages((curr) => [
         ...curr,
@@ -556,7 +555,7 @@ function App() {
           id: nextId.current++,
           role: "agent",
           content:
-            `✅ 简历已解析并保存${name}（ID: ${saved.resume_id}）。${skillsLine}\n\n现在可以问我：\n- "帮我分析和某个 JD 的差距"\n- "我适合哪些 Python 岗位？"`,
+            `✅ 简历已解析并保存${name}（ID: ${saved.resume_id}）。${skillsLine}${warnLine}\n\n现在可以问我：\n- "帮我分析和某个 JD 的差距"\n- "我适合哪些 Python 岗位？"`,
         },
       ]);
     } catch (err) {
@@ -817,7 +816,7 @@ function ChatView({
                 {isVisionLoading ? "解析中..." : "上传简历"}
                 <input
                   type="file"
-                  accept="image/png,image/jpeg,image/webp"
+                  accept="image/png,image/jpeg,image/webp,application/pdf"
                   disabled={isVisionLoading}
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
@@ -877,7 +876,7 @@ function ChatView({
             {isVisionLoading ? <Loader2 size={17} className="spin" /> : <Paperclip size={17} />}
             <input
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept="image/png,image/jpeg,image/webp,application/pdf"
               disabled={isVisionLoading}
               onChange={async (e) => {
                 const file = e.target.files?.[0];
@@ -1054,7 +1053,7 @@ function QueryView({
         <input
           id="resume-image-upload"
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept="image/png,image/jpeg,image/webp,application/pdf"
           onChange={onFileChange}
           disabled={isVisionLoading}
         />
@@ -1089,7 +1088,7 @@ function QueryView({
             <button
               type="button"
               onClick={() => void onSaveParsedResume()}
-              disabled={isSavingResume || !hasParsedContent || Boolean(resumeImageResult.warnings.length)}
+              disabled={isSavingResume || !hasParsedContent}
             >
               {isSavingResume ? "Saving..." : "Save as Resume"}
             </button>

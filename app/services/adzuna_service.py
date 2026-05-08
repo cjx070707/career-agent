@@ -8,11 +8,19 @@ API docs: https://developer.adzuna.com/
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import requests
 
 from app.env import settings
+
+
+@runtime_checkable
+class JobProvider(Protocol):
+    """Any job source (Adzuna, mock, etc.) must implement this interface."""
+    def fetch_jobs(self, query: str, location: str, max_results: int) -> list[dict]:
+        """Return a list of job dicts conforming to the JobPosting schema."""
+        ...
 
 _BASE_URL = "https://api.adzuna.com/v1/api/jobs/au/search"
 _DEFAULT_TIMEOUT = 10.0

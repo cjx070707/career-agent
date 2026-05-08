@@ -4,11 +4,11 @@ from pydantic import BaseModel, Field
 
 
 class CandidateProfileToolInput(BaseModel):
-    candidate_id: int = Field(..., gt=0)
+    user_id: str = Field(..., min_length=1, description="The user_id of the candidate")
 
 
 class ResumeByIdToolInput(BaseModel):
-    resume_id: int = Field(..., gt=0)
+    user_id: str = Field(..., min_length=1, description="The user_id whose latest resume to fetch")
 
 
 class ApplicationsByUserToolInput(BaseModel):
@@ -33,4 +33,4 @@ class SearchJobsToolInput(BaseModel):
 
 
 class MatchResumeToJobsToolInput(BaseModel):
-    resume_id: int = Field(..., gt=0)
+    user_id: str = Field(..., min_length=1, description="The user_id whose resume to match against jobs")

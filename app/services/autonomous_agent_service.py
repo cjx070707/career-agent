@@ -26,6 +26,11 @@ class AutonomousAgentResult:
     sources: List[ChatSource] = field(default_factory=list)
     tool_used: Optional[str] = None
     tool_trace: List[str] = field(default_factory=list)
+    error: Optional[str] = None
+
+    @property
+    def is_error(self) -> bool:
+        return self.error is not None
 
 
 class AutonomousAgentService:
@@ -95,6 +100,7 @@ class AutonomousAgentService:
         # ── 5. True ReAct loop ───────────────────────────────────────
         tool_trace: List[str] = []
         answer = ""
+        loop_exc: Optional[Exception] = None
         turn_start = time.monotonic()
         iterations_used = 0
 
@@ -138,6 +144,7 @@ class AutonomousAgentService:
                     n_messages=len(messages),
                     error=str(exc),
                 )
+                loop_exc = exc
                 answer = f"抱歉，暂时无法回答：{exc}"
                 break
 
@@ -152,7 +159,7 @@ class AutonomousAgentService:
             # Append the assistant message (with tool_calls) to history
             messages.append({
                 "role": "assistant",
-                "content": response_msg.get("content"),
+                "content": response_msg.get("content") or "",
                 "tool_calls": tool_calls,
             })
 
@@ -204,12 +211,14 @@ class AutonomousAgentService:
             if not answer:
                 answer = "抱歉，这个问题的处理步骤超出了预期，请稍后重试或把问题拆分得更具体一些。"
 
-        # ── 6. Persist to memory ─────────────────────────────────────
-        self.memory.save_turn(user_id, message, answer, session_id=session_id)
-
-        # Log the completed turn
+        # ── 6. Persist to memory (skip on agent loop error) ──────────
         total_ms = int((time.monotonic() - turn_start) * 1000)
         stage = "tool" if tool_trace else "direct"
+
+        if loop_exc is None:
+            self.memory.save_turn(user_id, message, answer, session_id=session_id)
+
+        # Log the completed turn
         tracer.log_agent_turn(
             user_id=user_id,
             total_latency_ms=total_ms,
@@ -219,13 +228,12 @@ class AutonomousAgentService:
         )
 
         # ── 7. Post-turn background tasks ────────────────────────────
-        # Extract user preferences from this exchange (best-effort, never crash)
-        try:
-            self.profiler.update_profile(user_id, message, answer)
-        except Exception:
-            pass
+        if loop_exc is None:
+            try:
+                self.profiler.update_profile(user_id, message, answer)
+            except Exception:
+                pass
 
-        # Compress old turns into running summary if threshold exceeded
         try:
             self.summarizer.maybe_compress(user_id)
         except Exception:
@@ -237,6 +245,7 @@ class AutonomousAgentService:
             memory_used=bool(history),
             tool_used=tool_trace[-1] if tool_trace else None,
             tool_trace=tool_trace,
+            error=str(loop_exc) if loop_exc else None,
         )
 
     # ── Helpers ──────────────────────────────────────────────────────
@@ -316,6 +325,9 @@ class AutonomousAgentService:
             if not content or role not in {"user", "assistant"}:
                 continue
             if role == last_role:
+                continue
+            # Skip persisted error responses — they poison future LLM context
+            if role == "assistant" and content.startswith("抱歉，暂时无法回答："):
                 continue
             last_role = role
             messages.append({"role": role, "content": content})

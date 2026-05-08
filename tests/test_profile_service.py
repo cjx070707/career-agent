@@ -1,4 +1,4 @@
-from app.services.profile_service import ProfileService
+from app.services.career_profile_service import ProfileService
 from app.services.application_service import ApplicationService
 from app.services.candidate_service import CandidateService
 from app.services.interview_service import InterviewService

@@ -318,4 +318,27 @@ limiter = Limiter(key_func=get_remote_address, storage_uri="redis://localhost:63
 
 ---
 
-*最后更新：2026-05-04（生产化中间件 + 部署架构分析）*
+### 18. "纯 LLM 意图识别"和"关键词兜底规则"的权衡
+
+**背景**：架构原则是"规则不做决策，意图理解交给 LLM"。但 eval 发现 qwen3.5-plus 在特定边界场景下判断不稳定——用户说"我想找一份 data analyst 实习"，LLM 有时把它归类为 goal-setting（调 `set_goal`）而不是 job search（调 `search_jobs`）。
+
+**第一反应（错的）**：在 system prompt 加一句话"我想找=搜索"。这让 prompt 越来越长，边界 case 越堆越多，变成文本版的 if-else。
+
+**真正根因**：LLM 意图分类在意图边界模糊时本来就有不确定性——"我想找工作"既可以是"帮我搜"，也可以是"帮我设定这个方向为目标"，语义上确实有歧义。LLM 在两者之间来回横跳，通过 prompt 调整只能治标。
+
+**解法（两层防御）**：
+1. System prompt 添加明确的意图边界说明（"我想找/帮我找 + 岗位" 优先 search_jobs，只有明确说"设定目标"才调 set_goal）
+2. LLM classifier 的后处理中加关键词硬规则兜底：匹配到明确搜索 marker 且没有明确 goal-planning marker，强制 task_type = job_search
+
+这是有意为之的技术债：用规则覆盖 LLM 不稳定的边界，换取可预期的行为。
+
+**代价和风险**：关键词规则是脆弱的——用户说"根据我的背景给我推荐几个方向"不会命中任何 marker。这条规则只解决了特定表达的问题，不能泛化。长期应该用更多 few-shot 例子直接训练 LLM 的判断，而不是在代码里堆规则。
+
+**面试可以深挖的点**：
+- 为什么不直接改 LLM prompt 的 few-shot？（可以，这是正确方向；但 few-shot 改了需要重跑 eval 验证没有引入回归，关键词规则可以精确控制不影响其他 case）
+- 这种"LLM + 规则兜底"的混合架构在什么场景下合适？（高频、高确定性的边界；对低频 corner case 没有覆盖）
+- 如何知道关键词规则的覆盖率够不够？（eval dataset 里加 paraphrase case，比如"根据我的情况给我找些岗位"，验证规则不到的地方 LLM 能兜住）
+
+---
+
+*最后更新：2026-05-05（eval 体系升级 + 意图边界 challenge 新增）*

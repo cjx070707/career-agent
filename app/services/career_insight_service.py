@@ -5,7 +5,7 @@ from app.services.application_service import ApplicationService
 from app.services.career_diagnosis_engine import CareerDiagnosisEngine
 from app.services.career_event_service import CareerEventService
 from app.services.interview_service import InterviewService
-from app.services.profile_service import ProfileService
+from app.services.career_profile_service import ProfileService
 from app.services.retrieval_service import RetrievalService
 
 

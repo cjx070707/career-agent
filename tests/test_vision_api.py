@@ -176,16 +176,20 @@ def test_vision_save_parsed_resume_for_existing_candidate(isolated_runtime) -> N
     assert "University of Sydney" in body["content"]
 
 
-def test_vision_save_returns_404_when_candidate_missing(isolated_runtime) -> None:
+def test_vision_save_auto_creates_candidate_when_missing(isolated_runtime) -> None:
+    # When no candidate exists for the user_id, the endpoint auto-creates one
+    # and returns 200 with a valid resume_id.
     response = client.post(
         "/vision/resume-image/save",
         json={
-            "user_id": "missing-user",
-            "parsed": {"skills": ["Python"]},
+            "user_id": "brand-new-user",
+            "parsed": {"name": "New User", "skills": ["Python"]},
         },
     )
-    assert response.status_code == 404
-    assert "Candidate not found" in response.json()["detail"]
+    assert response.status_code == 200
+    body = response.json()
+    assert body["resume_id"] >= 1
+    assert body["candidate_id"] >= 1
 
 
 def test_vision_formatting_handles_sparse_data(isolated_runtime) -> None:

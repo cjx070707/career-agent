@@ -92,7 +92,7 @@ LLM 从以下工具中自主选择，可组合调用：
 | `update_goal_status` | 标记目标完成或放弃 |
 | `get_candidate_profile` | 读取候选人画像 |
 | `get_applications` | 查询投递记录 |
-| `get_interviews` | 查询面试记录和反馈 |
+| `get_interview_feedback` | 查询面试记录和反馈 |
 | `match_resume_to_jobs` | 简历与岗位匹配打分 |
 
 工具通过 `ToolRegistry` 统一注册，Pydantic 做输入校验，标准化 `ToolResult` 输出。Registry 可导出 MCP-ready metadata，为后续 MCP server 改造预留接口。
@@ -129,10 +129,10 @@ cp .env.example .env
 ```bash
 OPENAI_API_KEY=sk-...          # DashScope API Key
 OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-DEFAULT_MODEL=qwen-plus
+DEFAULT_MODEL=qwen3.5-plus-2026-04-20   # thinking 关闭，性价比最优
 PLANNER_API_KEY=sk-...
 PLANNER_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-PLANNER_MODEL=qwen-plus
+PLANNER_MODEL=qwen3.5-plus-2026-04-20
 ```
 
 **2. 安装依赖**

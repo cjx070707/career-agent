@@ -8,11 +8,14 @@ def build_candidate_tools() -> list[ToolDefinition]:
     return [
         ToolDefinition(
             name="get_candidate_profile",
-            description="Fetch a candidate profile by candidate id.",
+            description=(
+                "获取当前用户的候选人基本信息（姓名、注册信息）。"
+                "当需要了解用户基本资料时调用，传入 user_id。"
+            ),
             category="candidate_profile",
             input_model=CandidateProfileToolInput,
-            handler=lambda payload: candidate_service.get_candidate_by_id(
-                payload.candidate_id
+            handler=lambda payload: candidate_service.get_latest_candidate(
+                payload.user_id
             ),
         )
     ]

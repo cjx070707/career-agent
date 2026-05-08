@@ -6,10 +6,10 @@ def test_memory_service_persists_turns_across_instances(tmp_path) -> None:
     db_path = tmp_path / "test_memory.db"
     init_db(str(db_path))
 
-    writer = MemoryService(db_path=str(db_path), max_turns=6)
+    writer = MemoryService(db_path=str(db_path))
     writer.save_turn("user-1", "hello", "hi there")
 
-    reader = MemoryService(db_path=str(db_path), max_turns=6)
+    reader = MemoryService(db_path=str(db_path))
     turns = reader.load_recent_messages("user-1")
 
     assert len(turns) == 2
@@ -23,11 +23,12 @@ def test_memory_service_keeps_only_recent_turns(tmp_path) -> None:
     db_path = tmp_path / "test_memory_trim.db"
     init_db(str(db_path))
 
-    service = MemoryService(db_path=str(db_path), max_turns=4)
+    # WINDOW_SIZE=12 means all 3 turns (6 rows) are within the window.
+    service = MemoryService(db_path=str(db_path))
     service.save_turn("user-1", "one", "A")
     service.save_turn("user-1", "two", "B")
     service.save_turn("user-1", "three", "C")
 
     turns = service.load_recent_messages("user-1")
 
-    assert [turn.content for turn in turns] == ["two", "B", "three", "C"]
+    assert [turn.content for turn in turns] == ["one", "A", "two", "B", "three", "C"]

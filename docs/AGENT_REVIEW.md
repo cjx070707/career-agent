@@ -47,9 +47,16 @@ Qwen-VL，简历图片上传 → 结构化解析。这是 demo 里写入简历�
 **Streaming / UX**
 SSE 实时状态流（`🤔 正在思考` → `🔧 调用工具`）+ Final answer token-by-token 流式输出。asyncio.Queue + call_soon_threadsafe 线程安全桥。
 
-**Eval（已完成）**
-`scripts/eval_agent.py`：5 场景 × 3 问法 × LLM-as-judge
-工具调用准确率 **14/15 = 93%**，答案质量均分 **4.2/5**
+**Eval（已完成，两层体系）**
+
+层 1（工具路由 + 关键词断言）：`evals/run_eval.py`
+- 37 cases 覆盖：搜索、gap 分析、多轮对话、负向拒绝、简历/应用/面试查询
+- 基线（2026-05-05，qwen3.5-plus-2026-04-20）：**30/37 通过，pass_rate = 81%**
+- 支持 `EVAL_USE_ADZUNA_MOCK=1` 隔离外部 API 依赖
+
+层 2（LLM-as-Judge 质量评估）：`evals/run_judge_eval.py`
+- 4 维度：工具合理性 / 答案针对性 / 无幻觉 / coaching 语气，每维 1-5 分
+- 合格门槛：各维均分 ≥ 3.5，且无幻觉单项 ≥ 4
 
 ---
 
@@ -181,7 +188,7 @@ match_score 是 LLM 给的整数，没有独立的技能分类体系和集合对
 ✅ Qwen-VL 简历图片解析
 ✅ MCP server（12 个工具，4 个 domain，Claude 桌面 app 验收通过）
 ✅ Structured Logging（logs/agent_trace.jsonl）
-✅ P2 Eval（93% 工具准确率，4.2/5 答案质量，LLM-as-judge）
+✅ P2 Eval（37 cases，81% pass_rate，两层体系：工具路由断言 + LLM-as-judge）
 ✅ P4 端到端 demo 验收（搜岗位→gap 分析→设目标→查进展）
 ```
 
@@ -202,7 +209,7 @@ match_score 是 LLM 给的整数，没有独立的技能分类体系和集合对
 
 **完成 P2 eval 后（已完成）：**
 
-> "用 LLM-as-judge 做了量化 eval：5 个场景 × 3 种问法，工具调用准确率 14/15（93%），答案质量均分 4.2/5。"
+> "做了两层 eval 体系：层 1 是确定性断言，37 个 case 覆盖主要场景，工具调用准确率 81%；层 2 是 LLM-as-judge，对工具合理性、答案针对性、无幻觉、coaching 语气四个维度打分，合格门槛是均分 3.5/5 且无幻觉 ≥ 4。两层分别对应'行为是否正确'和'答案是否有用'。"
 
 ---
 
@@ -222,7 +229,7 @@ match_score 是 LLM 给的整数，没有独立的技能分类体系和集合对
 - 能清楚说明「真 ReAct vs 假 ReAct」的区别，并且自己做的是真的
 - 能主动说出项目局限（数据覆盖、无 retry）并说明改进方向
 - 踩过真实的工程坑（维度 mismatch、线程安全、context 感知、eval 设计陷阱），有细节可以讲
-- 有量化 eval 数字（93% 工具准确率，4.2/5 质量），不是"感觉挺好的"
+- 有量化 eval 数字（37 cases，81% pass_rate），不是"感觉挺好的"
 
 ---
 

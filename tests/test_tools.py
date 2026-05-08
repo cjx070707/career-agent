@@ -50,22 +50,22 @@ def test_default_tool_registry_exports_mcp_ready_metadata_and_schema(
 
 
 def test_get_candidate_profile_tool_returns_candidate(isolated_runtime) -> None:
-    candidate = CandidateService().create_candidate(name="Tool User")
+    CandidateService().create_candidate(name="Tool User", user_id="tool-user-1")
     registry = build_default_tool_registry()
 
     result = registry.run(
         "get_candidate_profile",
-        {"candidate_id": candidate["id"]},
+        {"user_id": "tool-user-1"},
     )
 
     assert result["ok"] is True
     assert result["tool_name"] == "get_candidate_profile"
-    assert result["data"] == {"id": 1, "name": "Tool User"}
+    assert result["data"]["name"] == "Tool User"
     assert result["error"] is None
 
 
 def test_search_jobs_and_match_tools_return_structured_results(isolated_runtime) -> None:
-    candidate = CandidateService().create_candidate(name="Match Tool User")
+    candidate = CandidateService().create_candidate(name="Match Tool User", user_id="match-user-1")
     JobService().create_job(title="Python FastAPI Backend Engineer")
     ResumeService().create_resume(
         candidate_id=int(candidate["id"]),
@@ -81,7 +81,7 @@ def test_search_jobs_and_match_tools_return_structured_results(isolated_runtime)
     )
     match_result = registry.run(
         "match_resume_to_jobs",
-        {"resume_id": 1},
+        {"user_id": "match-user-1"},
     )
 
     assert search_result["ok"] is True
@@ -149,14 +149,14 @@ def test_search_jobs_tool_uses_eval_mock_when_enabled(isolated_runtime, monkeypa
 
 
 def test_mcp_server_lists_and_calls_tools(isolated_runtime) -> None:
-    candidate = CandidateService().create_candidate(name="MCP User")
+    CandidateService().create_candidate(name="MCP User", user_id="mcp-user-1")
     registry = build_default_tool_registry()
 
     tools = registry.list_tool_names()
     schemas = registry.describe_tools()
     result = registry.run(
         "get_candidate_profile",
-        {"candidate_id": candidate["id"]},
+        {"user_id": "mcp-user-1"},
     )
 
     assert "get_candidate_profile" in tools
