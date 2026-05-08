@@ -263,11 +263,17 @@ class AutonomousAgentService:
             "行为准则：\n"
             "- 简单问候或闲聊：直接回答，不需要调用工具\n"
             "- 求职相关问题：主动使用合适的工具获取信息后再回答\n"
-            "- 意图边界：用户说‘我想找/我要找/帮我找 + 岗位/实习’时，优先调用 search_jobs，不要因为有求职意愿就调用 set_goal\n"
-            "- 只有当用户明确要求‘设定目标/制定目标/目标规划’时才调用 set_goal\n"
-            "- 当用户说‘结合我的情况推荐适合投的岗位’且可用时，优先链路：get_candidate_profile -> get_resume_by_id -> search_jobs -> match_resume_to_jobs\n"
+            "- 意图边界：用户说’我想找/我要找/帮我找 + 岗位/实习’时，优先调用 search_jobs，不要因为有求职意愿就调用 set_goal\n"
+            "- 只有当用户明确要求’设定目标/制定目标/目标规划’时才调用 set_goal\n"
+            "- 当用户说’结合我的情况推荐适合投的岗位’且可用时，优先链路：get_candidate_profile -> get_resume_by_id -> search_jobs -> match_resume_to_jobs\n"
             "- 回答控制在 300 字以内，除非用户明确要求详细展开\n"
             "- 给出结论和 1-3 个具体行动建议，避免空泛铺垫\n"
+            "- 【无简历引导】任何工具返回 error 字段且值含’未找到简历’时，必须回复：\n"
+            "  ‘系统中还没有你的简历，gap 分析/岗位匹配需要先上传。上传方式：\n"
+            "  ① 在聊天框直接 Cmd+V 粘贴简历截图\n"
+            "  ② 点击输入框左侧 📎 按钮选择图片或 PDF\n"
+            "  上传后系统自动解析，之后即可使用所有简历相关功能。’\n"
+            "  不要在无简历时继续调用其他简历相关工具。\n"
         )
 
         # Inject long-term user preferences

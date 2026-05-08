@@ -46,11 +46,11 @@ class GapService:
         # 1. Fetch resume
         try:
             resume = self._resume_svc.get_latest_resume(user_id)
-        except ValueError as exc:
+        except ValueError:
             return {
                 "resume_title": None,
                 "analysis": None,
-                "error": f"无法获取简历：{exc}",
+                "error": "未找到简历",
             }
 
         resume_content: str = str(resume.get("content", "")).strip()
@@ -58,7 +58,7 @@ class GapService:
             return {
                 "resume_title": resume.get("title"),
                 "analysis": None,
-                "error": "简历内容为空，无法进行 gap 分析。",
+                "error": "未找到简历",
             }
 
         # 2. Build user message

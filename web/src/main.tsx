@@ -810,10 +810,10 @@ function ChatView({
             <strong>你好！我是你的求职助手。</strong>
             <span className="empty-hint">搜岗位、分析简历差距、制定求职目标，都可以直接问我。</span>
             <div className="empty-upload-hint">
-              <span>首次使用建议先上传简历，解锁 gap 分析功能</span>
+              <span>上传简历后可解锁 <b>gap 分析</b>、<b>岗位匹配</b>等核心功能</span>
               <label className="resume-upload-btn" aria-disabled={isVisionLoading}>
                 <Paperclip size={15} />
-                {isVisionLoading ? "解析中..." : "上传简历"}
+                {isVisionLoading ? "解析中..." : "上传简历（图片 / PDF）"}
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp,application/pdf"

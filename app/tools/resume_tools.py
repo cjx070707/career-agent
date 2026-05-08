@@ -5,6 +5,13 @@ from app.tools.base import ToolDefinition
 
 def build_resume_tools() -> list[ToolDefinition]:
     resume_service = ResumeService()
+
+    def _get_resume(payload: ResumeByIdToolInput) -> dict:
+        try:
+            return resume_service.get_latest_resume(payload.user_id)
+        except ValueError:
+            return {"error": "未找到简历"}
+
     return [
         ToolDefinition(
             name="get_resume_by_id",
@@ -14,6 +21,6 @@ def build_resume_tools() -> list[ToolDefinition]:
             ),
             category="resume",
             input_model=ResumeByIdToolInput,
-            handler=lambda payload: resume_service.get_latest_resume(payload.user_id),
+            handler=_get_resume,
         )
     ]
