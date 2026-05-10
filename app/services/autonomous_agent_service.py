@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from app.llm.client import LLMClient
 from app.routing.fast_gate import fast_gate
+from app.routing.task_classifier import TaskFamily, classify, score_turn
 from app.schemas.chat import ChatSource
 from app.services.career_event_service import CareerEventService
 from app.services.goal_service import GoalService
@@ -112,6 +113,7 @@ class AutonomousAgentService:
             )
 
         # ── 1. Context ───────────────────────────────────────────────
+        task_family = classify(message)
         goals = self.goals.get_active_goals(user_id)
         history = self.memory.load_recent_messages(user_id, session_id=session_id)
         summary = self.memory.load_summary(user_id)
@@ -120,8 +122,10 @@ class AutonomousAgentService:
         # ── 2. System prompt with goal state ────────────────────────
         system_prompt = self._build_system_prompt(user_id, goals, summary, user_profile)
 
-        # ── 3. Conversation messages ─────────────────────────────────
-        messages: List[Dict[str, Any]] = self._build_messages(history, message)
+        # ── 3. Conversation messages (task-family filtered) ──────────
+        messages: List[Dict[str, Any]] = self._build_messages(
+            history, message, task_family=task_family
+        )
 
         # ── 4. Tool schemas (OpenAI function calling format) ─────────
         tool_schemas = self._build_tool_schemas()
@@ -254,6 +258,7 @@ class AutonomousAgentService:
             tool_trace=tool_trace,
             stage=stage,
             iterations=iterations_used,
+            task_family=task_family.value,
         )
 
         # ── 7. Post-turn background tasks ────────────────────────────
@@ -351,12 +356,31 @@ class AutonomousAgentService:
 
         return base
 
+    # ── Memory context budget constants ──────────────────────────────
+    # Always keep this many of the most-recent turns regardless of relevance
+    _ANCHOR_TURNS = 4   # = 2 user/agent exchanges
+    # Max history turns to include in total (anchor + relevant)
+    _HISTORY_BUDGET = 8
+
     def _build_messages(
         self,
         history: List[Any],
         current_message: str,
+        task_family: TaskFamily = TaskFamily.GENERAL,
     ) -> List[Dict[str, Any]]:
-        messages: List[Dict[str, Any]] = []
+        """Build the messages list with a task-family-aware context budget.
+
+        Strategy:
+          1. Sanitise and deduplicate turns from DB history.
+          2. Always anchor the last _ANCHOR_TURNS sanitised turns (session
+             continuity — the LLM needs to know the immediate prior exchange).
+          3. Fill the remaining budget (_HISTORY_BUDGET - anchor) with older
+             turns that score > 0 against the current task family, keeping
+             the most recent ones first so the window stays coherent.
+          4. Append the new user message.
+        """
+        # ── Sanitise ─────────────────────────────────────────────────
+        sanitised: List[Dict[str, str]] = []
         last_role = ""
         for turn in history:
             role = str(getattr(turn, "role", "")).strip().lower()
@@ -364,12 +388,32 @@ class AutonomousAgentService:
             if not content or role not in {"user", "assistant"}:
                 continue
             if role == last_role:
-                continue
-            # Skip persisted error responses — they poison future LLM context
+                continue  # skip consecutive same-role (de-dup)
             if role == "assistant" and content.startswith("抱歉，暂时无法回答："):
-                continue
+                continue  # skip persisted error turns
             last_role = role
-            messages.append({"role": role, "content": content})
+            sanitised.append({"role": role, "content": content})
+
+        # ── Context budget ────────────────────────────────────────────
+        anchor = sanitised[-self._ANCHOR_TURNS:]          # always included
+        older = sanitised[: -self._ANCHOR_TURNS] if len(sanitised) > self._ANCHOR_TURNS else []
+
+        remaining_budget = max(0, self._HISTORY_BUDGET - len(anchor))
+
+        if older and remaining_budget > 0:
+            # Score older turns; keep those relevant to current task family.
+            # Score is computed on the turn's own content.
+            scored = [
+                (turn, score_turn(turn["content"], task_family))
+                for turn in older
+            ]
+            relevant = [t for t, s in scored if s > 0]
+            # Take the most-recent relevant turns up to the remaining budget
+            selected_older = relevant[-remaining_budget:]
+        else:
+            selected_older = []
+
+        messages: List[Dict[str, Any]] = selected_older + anchor
         messages.append({"role": "user", "content": current_message})
         return messages
 

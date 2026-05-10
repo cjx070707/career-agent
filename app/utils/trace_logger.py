@@ -98,6 +98,7 @@ class TraceLogger:
         tool_trace: List[str],
         stage: str,
         iterations: int,
+        task_family: str = "general",
     ) -> None:
         _write({
             "event": "agent_turn",
@@ -107,6 +108,7 @@ class TraceLogger:
             "iterations": iterations,
             "tool_trace": tool_trace,
             "total_latency_ms": total_latency_ms,
+            "task_family": task_family,
         })
 
 
