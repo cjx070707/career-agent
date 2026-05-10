@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from app.llm.client import LLMClient
 from app.schemas.chat import ChatSource
+from app.services.career_event_service import CareerEventService
 from app.services.goal_service import GoalService
 from app.services.memory_service import MemoryService
 from app.services.user_profile_service import SummaryService, UserProfileService
@@ -61,6 +62,7 @@ class AutonomousAgentService:
         self.goals = goal_service or GoalService()
         self.profiler = UserProfileService(llm_client=self.llm, memory_service=self.memory)
         self.summarizer = SummaryService(llm_client=self.llm, memory_service=self.memory)
+        self.career_events = CareerEventService(llm_client=self.llm)
 
     def respond(
         self,
@@ -231,6 +233,10 @@ class AutonomousAgentService:
         if loop_exc is None:
             try:
                 self.profiler.update_profile(user_id, message, answer)
+            except Exception:
+                pass
+            try:
+                self.career_events.sync_from_message(user_id, message)
             except Exception:
                 pass
 
