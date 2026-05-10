@@ -89,6 +89,7 @@ class Settings(BaseModel):
     chroma_persist_directory: str = get_setting("CHROMA_PERSIST_DIRECTORY", "data/chroma")
     # v3 — collection name bumped so the old 256-dim MD5 collection is not reused
     chroma_collection_name: str = get_setting("CHROMA_COLLECTION_NAME", "job_postings_v3")
+    memory_collection_name: str = get_setting("MEMORY_COLLECTION_NAME", "memory_turns_v1")
     adzuna_app_id: str = get_setting("ADZUNA_APP_ID", "")
     adzuna_api_key: str = get_setting("ADZUNA_API_KEY", "")
 

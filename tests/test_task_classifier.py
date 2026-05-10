@@ -141,16 +141,19 @@ class TestBuildMessagesContextBudget:
         assert "面试结果怎么样" not in contents
 
     def test_relevant_older_turns_included(self):
-        # All older turns are also job search — should be included up to budget
+        # All older turns are also job search — most-recent relevant ones included.
+        # Phase 2 allocates 2 slots to semantic recall, so session_budget = 2.
+        # The most-recent relevant older turns ("Python 岗位呢") should appear.
         history = self._make_turns([
             ("找实习", "有几个实习岗位"),       # older but relevant
-            ("Python 岗位呢", "这里有很多"),     # older but relevant
+            ("Python 岗位呢", "这里有很多"),     # older but relevant (most-recent ↑)
             ("backend 薪资", "根据经验不同"),    # anchor zone
             ("remote 可以吗", "有一些 remote"),  # anchor zone
         ])
         msgs = self._build(history, "再找找", TaskFamily.JOB_SEARCH)
         contents = [m["content"] for m in msgs]
-        assert "找实习" in contents
+        # Most-recent relevant older turn should be kept
+        assert "Python 岗位呢" in contents
 
     def test_total_history_capped_at_budget(self):
         # 10 exchanges = 20 turns; budget is 8 history messages max

@@ -16,6 +16,7 @@ from app.schemas.chat import ChatSource
 from app.services.career_event_service import CareerEventService
 from app.services.goal_service import GoalService
 from app.services.memory_service import MemoryService
+from app.services.memory_vector_service import MemoryVectorService
 from app.services.user_profile_service import SummaryService, UserProfileService
 from app.tools.registry import ToolRegistry, build_default_tool_registry
 from app.utils.trace_logger import tracer
@@ -57,11 +58,13 @@ class AutonomousAgentService:
         tool_registry: Optional[ToolRegistry] = None,
         memory_service: Optional[MemoryService] = None,
         goal_service: Optional[GoalService] = None,
+        memory_vector_service: Optional[MemoryVectorService] = None,
     ) -> None:
         self.llm = llm_client or LLMClient()
         self.tools = tool_registry or build_default_tool_registry()
         self.memory = memory_service or MemoryService()
         self.goals = goal_service or GoalService()
+        self.memory_vector = memory_vector_service or MemoryVectorService()
         self.profiler = UserProfileService(llm_client=self.llm, memory_service=self.memory)
         self.summarizer = SummaryService(llm_client=self.llm, memory_service=self.memory)
         self.career_events = CareerEventService(llm_client=self.llm)
@@ -119,12 +122,20 @@ class AutonomousAgentService:
         summary = self.memory.load_summary(user_id)
         user_profile = self.memory.load_user_profile(user_id)
 
+        # Phase 2: cross-session semantic recall (best-effort, never raises)
+        semantic_turns = self.memory_vector.search(
+            user_id=user_id,
+            query=message,
+            n_results=self._SEMANTIC_BUDGET,
+            exclude_session=session_id or "",
+        )
+
         # ── 2. System prompt with goal state ────────────────────────
         system_prompt = self._build_system_prompt(user_id, goals, summary, user_profile)
 
-        # ── 3. Conversation messages (task-family filtered) ──────────
+        # ── 3. Conversation messages (task-family + semantic filtered) ──
         messages: List[Dict[str, Any]] = self._build_messages(
-            history, message, task_family=task_family
+            history, message, task_family=task_family, semantic_turns=semantic_turns
         )
 
         # ── 4. Tool schemas (OpenAI function calling format) ─────────
@@ -271,6 +282,21 @@ class AutonomousAgentService:
                 self.career_events.sync_from_message(user_id, message)
             except Exception:
                 pass
+            # Index this turn in the vector store for future semantic recall
+            try:
+                sid = session_id or ""
+                # Derive the two most-recently inserted turn IDs from memory count
+                n = self.memory.count_turns(user_id)
+                self.memory_vector.index_turn(
+                    turn_id=n - 1, user_id=user_id, session_id=sid,
+                    role="user", content=message,
+                )
+                self.memory_vector.index_turn(
+                    turn_id=n, user_id=user_id, session_id=sid,
+                    role="assistant", content=answer,
+                )
+            except Exception:
+                pass
 
         try:
             self.summarizer.maybe_compress(user_id)
@@ -358,28 +384,35 @@ class AutonomousAgentService:
 
     # ── Memory context budget constants ──────────────────────────────
     # Always keep this many of the most-recent turns regardless of relevance
-    _ANCHOR_TURNS = 4   # = 2 user/agent exchanges
-    # Max history turns to include in total (anchor + relevant)
+    _ANCHOR_TURNS = 4    # = 2 user/agent exchanges
+    # Max history turns to include in total (anchor + session-relevant + semantic)
     _HISTORY_BUDGET = 8
+    # Max cross-session semantic turns to inject
+    _SEMANTIC_BUDGET = 2
 
     def _build_messages(
         self,
         history: List[Any],
         current_message: str,
         task_family: TaskFamily = TaskFamily.GENERAL,
+        semantic_turns: Optional[List[Dict[str, str]]] = None,
     ) -> List[Dict[str, Any]]:
-        """Build the messages list with a task-family-aware context budget.
+        """Build the messages list with a two-phase context budget.
 
-        Strategy:
-          1. Sanitise and deduplicate turns from DB history.
-          2. Always anchor the last _ANCHOR_TURNS sanitised turns (session
-             continuity — the LLM needs to know the immediate prior exchange).
-          3. Fill the remaining budget (_HISTORY_BUDGET - anchor) with older
-             turns that score > 0 against the current task family, keeping
-             the most recent ones first so the window stays coherent.
-          4. Append the new user message.
+        Phase 1 — task-family keyword filter (within current session):
+          1. Sanitise and deduplicate DB history turns.
+          2. Anchor: always keep the last _ANCHOR_TURNS sanitised turns.
+          3. Fill remaining budget with older same-session turns that score
+             > 0 against the current task family.
+
+        Phase 2 — cross-session semantic recall:
+          4. Prepend up to _SEMANTIC_BUDGET semantically similar turns from
+             other sessions (already retrieved by MemoryVectorService).
+             Deduplicated against in-session content.
+
+        5. Append the new user message.
         """
-        # ── Sanitise ─────────────────────────────────────────────────
+        # ── Sanitise session history ──────────────────────────────────
         sanitised: List[Dict[str, str]] = []
         last_role = ""
         for turn in history:
@@ -394,26 +427,30 @@ class AutonomousAgentService:
             last_role = role
             sanitised.append({"role": role, "content": content})
 
-        # ── Context budget ────────────────────────────────────────────
-        anchor = sanitised[-self._ANCHOR_TURNS:]          # always included
+        # ── Phase 1: anchor + task-family relevant older turns ────────
+        anchor = sanitised[-self._ANCHOR_TURNS:]
         older = sanitised[: -self._ANCHOR_TURNS] if len(sanitised) > self._ANCHOR_TURNS else []
 
-        remaining_budget = max(0, self._HISTORY_BUDGET - len(anchor))
-
-        if older and remaining_budget > 0:
-            # Score older turns; keep those relevant to current task family.
-            # Score is computed on the turn's own content.
-            scored = [
-                (turn, score_turn(turn["content"], task_family))
-                for turn in older
-            ]
+        session_budget = max(0, self._HISTORY_BUDGET - self._SEMANTIC_BUDGET - len(anchor))
+        if older and session_budget > 0:
+            scored = [(t, score_turn(t["content"], task_family)) for t in older]
             relevant = [t for t, s in scored if s > 0]
-            # Take the most-recent relevant turns up to the remaining budget
-            selected_older = relevant[-remaining_budget:]
+            selected_older = relevant[-session_budget:]
         else:
             selected_older = []
 
-        messages: List[Dict[str, Any]] = selected_older + anchor
+        # ── Phase 2: cross-session semantic turns ─────────────────────
+        in_session_contents = {t["content"] for t in sanitised}
+        semantic: List[Dict[str, str]] = []
+        for turn in (semantic_turns or []):
+            content = turn.get("content", "").strip()
+            role = turn.get("role", "user")
+            # Skip if the same content already appears in the current session
+            if content and content not in in_session_contents:
+                semantic.append({"role": role, "content": content})
+
+        # ── Assemble: [semantic | selected_older | anchor | current] ──
+        messages: List[Dict[str, Any]] = semantic + selected_older + anchor
         messages.append({"role": "user", "content": current_message})
         return messages
 
