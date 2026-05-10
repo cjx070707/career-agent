@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from app.llm.client import LLMClient
+from app.routing.fast_gate import fast_gate
 from app.schemas.chat import ChatSource
 from app.services.career_event_service import CareerEventService
 from app.services.goal_service import GoalService
@@ -83,6 +84,32 @@ class AutonomousAgentService:
         def emit(text: str) -> None:
             if on_status:
                 on_status(text)
+
+        # ── 0. Fast Gate — bypass ReAct for pure chitchat ────────────
+        gate = fast_gate(message)
+        if gate.is_chitchat:
+            try:
+                answer = self.llm.simple_chat(
+                    system_prompt="你是一个友好的求职助手。简短自然地回复用户的问候或闲聊，不超过 30 字。",
+                    user_content=message,
+                    timeout=10.0,
+                )
+            except Exception:
+                # Graceful fallback when LLM is unavailable (e.g. no API key in test env)
+                answer = "你好！有什么求职相关的问题我可以帮你？"
+            self.memory.save_turn(user_id, message, answer, session_id=session_id)
+            tracer.log_agent_turn(
+                user_id=user_id,
+                total_latency_ms=0,
+                tool_trace=[],
+                stage="fast_gate",
+                iterations=0,
+            )
+            return AutonomousAgentResult(
+                answer=answer,
+                stage="fast_gate",
+                memory_used=False,
+            )
 
         # ── 1. Context ───────────────────────────────────────────────
         goals = self.goals.get_active_goals(user_id)

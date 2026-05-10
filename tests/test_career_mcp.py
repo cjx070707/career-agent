@@ -18,6 +18,11 @@ def test_build_mcp_registers_all_domain_tools() -> None:
         "get_applications",
         "get_interview_feedback",
         "get_candidate_profile",
-        "get_resume_by_id",
+        "get_resume",
         "get_career_insights",
+        "analyze_gap",
+        "get_goals",
+        "set_goal",
+        "update_goal_status",
+        "log_progress",
     }

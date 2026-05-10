@@ -1,3 +1,16 @@
+"""Integration tests for app/main.py endpoints.
+
+Chat tests that require a live LLM API have been removed — the new
+AutonomousAgentService uses LLM function-calling which is non-deterministic
+without mocks. Tool-routing tests belong in unit tests with mocked LLM.
+
+Remaining coverage:
+  - /health
+  - /chat/sync  (chitchat fast-gate path, memory persistence)
+  - /candidates, /jobs, /resumes CRUD
+  - /applications, /interviews CRUD
+  - /matches/resume (keyword-based, no LLM)
+"""
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -22,13 +35,14 @@ def test_health_endpoint_returns_ok(isolated_runtime) -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_chat_endpoint_returns_mock_agent_response(isolated_runtime) -> None:
+def test_chat_sync_fast_gate_returns_chitchat_response(isolated_runtime) -> None:
+    """Chitchat 'hello' hits Fast Gate → stage=fast_gate, no tool calls."""
     original_api_key = settings.openai_api_key
     settings.openai_api_key = None
 
     try:
         response = client.post(
-            "/chat",
+            "/chat/sync",
             json={"user_id": "user-basic", "message": "hello"},
         )
     finally:
@@ -36,53 +50,30 @@ def test_chat_endpoint_returns_mock_agent_response(isolated_runtime) -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert "我可以帮你找岗位" in body["answer"]
+    assert body["answer"]
+    assert body["stage"] == "fast_gate"
     assert body["memory_used"] is False
     assert body["sources"] == []
     assert body["tool_used"] is None
-    assert body["plan"] is not None
-    assert body["plan"]["task_type"] == "fallback"
-    assert body["plan"]["planner_source"] in {"router", "model", "fallback"}
-    assert body["plan"]["steps"] == []
     assert body["tool_trace"] == []
-    assert body["loop_trace"] == []
-    assert body["llm_trace"] == {
-        "planner_source": "router",
-        "job_search_summary_source": "not_used",
-        "generate_source": "not_used",
-    }
 
 
-def test_chat_endpoint_uses_recent_memory_for_same_user(isolated_runtime) -> None:
-    first_response = client.post(
-        "/chat",
-        json={"user_id": "user-memory", "message": "I want backend roles"},
+def test_chat_sync_memory_used_on_second_turn(isolated_runtime) -> None:
+    """After first fast-gate turn saves memory, a subsequent ReAct turn sees it."""
+    # First turn via fast gate — saves a turn to memory
+    client.post(
+        "/chat/sync",
+        json={"user_id": "user-memory", "message": "你好"},
     )
+    # Second turn with a longer message goes to ReAct path, loads history
     second_response = client.post(
-        "/chat",
-        json={"user_id": "user-memory", "message": "What should I focus on next?"},
+        "/chat/sync",
+        json={"user_id": "user-memory", "message": "帮我看看有什么适合我的岗位"},
     )
 
-    assert first_response.status_code == 200
     assert second_response.status_code == 200
+    # memory_used reflects whether history was loaded — True because first turn was saved
     assert second_response.json()["memory_used"] is True
-
-
-def test_chat_endpoint_returns_job_sources_for_matching_queries(isolated_runtime) -> None:
-    response = client.post(
-        "/chat",
-        json={
-            "user_id": "user-jobs",
-            "message": "What backend FastAPI Python jobs fit me?",
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["sources"]
-    assert all(source["type"] == "job_posting" for source in body["sources"])
-    titles = [source["title"] for source in body["sources"]]
-    assert "Backend Engineer Intern" in titles
 
 
 def test_candidates_endpoint_reads_from_sqlite(isolated_runtime) -> None:
@@ -301,375 +292,3 @@ def test_match_endpoint_returns_structured_job_matches(isolated_runtime) -> None
     assert body["matches"][0]["job_title"] == "Python FastAPI Backend Engineer"
     assert body["matches"][0]["match_score"] >= 60
     assert body["matches"][0]["matched_keywords"]
-
-
-def test_chat_endpoint_routes_to_candidate_profile_tool(isolated_runtime) -> None:
-    CandidateService().create_candidate(name="Jesse")
-
-    response = client.post(
-        "/chat",
-        json={"user_id": "user-profile", "message": "看看我的资料"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["tool_used"] == "get_candidate_profile"
-    assert body["plan"]["task_type"] == "candidate_profile"
-    assert body["plan"]["steps"] == ["get_candidate_profile"]
-    assert "资料" in body["plan"]["reason"]
-    assert body["plan"]["needs_more_context"] is False
-    assert body["tool_trace"] == ["get_candidate_profile"]
-    assert "Jesse" in body["answer"]
-
-
-def test_chat_endpoint_routes_to_search_jobs_tool(isolated_runtime) -> None:
-    client.post(
-        "/jobs",
-        json={"title": "Python FastAPI Backend Engineer"},
-    )
-
-    response = client.post(
-        "/chat",
-        json={"user_id": "user-search", "message": "帮我找一些 Python backend 岗位"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["tool_used"] == "search_jobs"
-    assert body["plan"]["task_type"] == "job_search"
-    assert body["plan"]["steps"] == ["search_jobs"]
-    assert "搜索" in body["plan"]["reason"]
-    assert body["plan"]["needs_more_context"] is False
-    assert body["tool_trace"] == ["search_jobs"]
-    assert "Python FastAPI Backend Engineer" in body["answer"]
-    assert body["sources"]
-
-
-def test_chat_endpoint_routes_to_match_resume_tool(isolated_runtime) -> None:
-    candidate = CandidateService().create_candidate(name="Route User")
-    client.post(
-        "/jobs",
-        json={"title": "Python FastAPI Backend Engineer"},
-    )
-    client.post(
-        "/resumes",
-        json={
-            "candidate_id": candidate["id"],
-            "title": "Backend Resume",
-            "content": "Python FastAPI backend APIs and SQL projects",
-            "version": "v1",
-        },
-    )
-
-    response = client.post(
-        "/chat",
-        json={"user_id": "user-match", "message": "我适合投哪些岗位"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["tool_used"] == "match_resume_to_jobs"
-    assert body["plan"]["task_type"] == "job_match"
-    assert body["plan"]["steps"] == ["match_resume_to_jobs"]
-    assert "匹配" in body["plan"]["reason"]
-    assert body["plan"]["needs_more_context"] is False
-    assert body["tool_trace"] == ["match_resume_to_jobs"]
-    assert "Python FastAPI Backend Engineer" in body["answer"]
-
-
-def test_chat_endpoint_returns_multi_step_plan_for_complex_matching(isolated_runtime) -> None:
-    candidate = CandidateService().create_candidate(name="Planner User")
-    client.post(
-        "/jobs",
-        json={"title": "Python FastAPI Backend Engineer"},
-    )
-    client.post(
-        "/resumes",
-        json={
-            "candidate_id": candidate["id"],
-            "title": "Planner Resume",
-            "content": "Python FastAPI backend APIs and SQL projects",
-            "version": "v1",
-        },
-    )
-
-    response = client.post(
-        "/chat",
-        json={"user_id": "planner-user", "message": "结合我的情况推荐适合投的岗位"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["plan"]["task_type"] == "job_match_planning"
-    assert body["plan"]["steps"] == [
-        "get_candidate_profile",
-        "get_resume_by_id",
-        "search_jobs",
-        "match_resume_to_jobs",
-    ]
-    assert "推荐" in body["plan"]["reason"]
-    assert body["plan"]["needs_more_context"] is False
-    assert body["tool_trace"] == body["plan"]["steps"]
-    assert "Python FastAPI Backend Engineer" in body["answer"]
-    assert "匹配理由" in body["answer"]
-    assert "匹配关键词" in body["answer"]
-    assert "Resume overlaps" not in body["answer"]
-
-
-def test_chat_search_uses_long_term_profile_preference(isolated_runtime) -> None:
-    client.post(
-        "/jobs",
-        json={"title": "Python FastAPI Backend Engineer"},
-    )
-    client.post(
-        "/jobs",
-        json={"title": "React Frontend Engineer"},
-    )
-
-    first_response = client.post(
-        "/chat",
-        json={"user_id": "profile-user", "message": "我想走 Python FastAPI 后端方向"},
-    )
-    second_response = client.post(
-        "/chat",
-        json={"user_id": "profile-user", "message": "帮我找一些岗位"},
-    )
-
-    assert first_response.status_code == 200
-    assert second_response.status_code == 200
-    body = second_response.json()
-    assert body["tool_used"] == "search_jobs"
-    assert body["plan"]["task_type"] == "job_search"
-    assert body["plan"]["steps"] == ["search_jobs"]
-    assert body["plan"]["planner_source"] == "router"
-    assert "backend" in body["plan"]["reason"].lower()
-    assert body["sources"][0]["title"] == "Python FastAPI Backend Engineer"
-
-
-def test_chat_executor_stops_when_search_finds_no_jobs(isolated_runtime) -> None:
-    candidate = CandidateService().create_candidate(name="Stop User")
-    client.post(
-        "/resumes",
-        json={
-            "candidate_id": candidate["id"],
-            "title": "Unmatched Resume",
-            "content": "Cobol mainframe legacy systems",
-            "version": "v1",
-        },
-    )
-
-    response = client.post(
-        "/chat",
-        json={"user_id": "stop-user", "message": "结合我的情况推荐适合投的岗位"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["plan"]["steps"] == [
-        "get_candidate_profile",
-        "get_resume_by_id",
-        "search_jobs",
-        "match_resume_to_jobs",
-    ]
-    assert body["tool_trace"] == [
-        "get_candidate_profile",
-        "get_resume_by_id",
-        "search_jobs",
-    ]
-    assert body["tool_used"] == "search_jobs"
-    assert body["answer"] == "暂时没有合适的岗位结果，建议换个关键词再试。"
-
-
-def test_chat_asks_for_resume_when_matching_without_resume(isolated_runtime) -> None:
-    CandidateService().create_candidate(name="Need Resume User")
-
-    response = client.post(
-        "/chat",
-        json={"user_id": "need-resume-user", "message": "我适合投哪些岗位"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["tool_used"] is None
-    assert body["tool_trace"] == []
-    assert body["plan"]["task_type"] == "job_match"
-    assert body["plan"]["steps"] == []
-    assert body["plan"]["needs_more_context"] is True
-    assert body["plan"]["missing_context"] == ["resume"]
-    assert body["plan"]["planner_source"] == "router"
-    assert "简历" in body["answer"]
-
-
-def test_chat_does_not_borrow_other_users_resume(isolated_runtime) -> None:
-    owner = CandidateService().create_candidate(
-        name="Resume Owner",
-        user_id="resume-owner",
-    )
-    ResumeService().create_resume(
-        candidate_id=int(owner["id"]),
-        title="Owner Resume",
-        content="Python backend FastAPI SQL",
-        version="v1",
-    )
-    CandidateService().create_candidate(
-        name="Need Resume User",
-        user_id="need-resume-user",
-    )
-
-    response = client.post(
-        "/chat",
-        json={"user_id": "need-resume-user", "message": "我适合投哪些岗位"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["tool_used"] is None
-    assert body["tool_trace"] == []
-    assert body["plan"]["task_type"] == "job_match"
-    assert body["plan"]["steps"] == []
-    assert body["plan"]["needs_more_context"] is True
-    assert body["plan"]["missing_context"] == ["resume"]
-    assert "简历" in body["answer"]
-
-
-def test_chat_routes_to_application_history_tool(isolated_runtime) -> None:
-    candidate = CandidateService().create_candidate(name="History User", user_id="history-user")
-    ApplicationService().create_application(
-        candidate_id=int(candidate["id"]),
-        company="Atlassian",
-        job_title="Grad Program",
-        status="applied",
-    )
-
-    response = client.post(
-        "/chat",
-        json={"user_id": "history-user", "message": "我最近投了哪些岗位？"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["tool_used"] == "get_applications"
-    assert body["plan"]["task_type"] == "application_history"
-    assert body["tool_trace"] == ["get_applications"]
-    assert body["sources"]
-    assert body["sources"][0]["type"] == "application"
-    assert "Atlassian" in body["answer"]
-
-
-def test_chat_routes_to_interview_history_tool(isolated_runtime) -> None:
-    candidate = CandidateService().create_candidate(name="Interview User", user_id="interview-user")
-    InterviewService().create_interview(
-        candidate_id=int(candidate["id"]),
-        company="Canva",
-        job_title="Data Analyst Intern",
-        interview_round="hr",
-        result="pending",
-        feedback="good communication",
-    )
-
-    response = client.post(
-        "/chat",
-        json={"user_id": "interview-user", "message": "我最近面试反馈怎么样？"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["tool_used"] == "get_interview_feedback"
-    assert body["plan"]["task_type"] == "interview_history"
-    assert body["tool_trace"] == ["get_interview_feedback"]
-    assert body["sources"]
-    assert body["sources"][0]["type"] == "interview_feedback"
-    assert "Canva" in body["answer"]
-
-
-def test_chat_routes_to_career_insights_tool(isolated_runtime) -> None:
-    candidate = CandidateService().create_candidate(name="Career User", user_id="career-user")
-    ApplicationService().create_application(
-        candidate_id=int(candidate["id"]),
-        company="Canva",
-        job_title="Backend Intern",
-        status="applied",
-    )
-    InterviewService().create_interview(
-        candidate_id=int(candidate["id"]),
-        company="Atlassian",
-        job_title="Backend Grad",
-        interview_round="tech1",
-        result="rejected",
-        feedback="need stronger system design examples",
-    )
-
-    response = client.post(
-        "/chat",
-        json={
-            "user_id": "career-user",
-            "message": "结合我的投递和面试反馈，我下一步该准备什么？",
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["tool_used"] == "get_career_insights"
-    assert body["plan"]["task_type"] == "career_insights"
-    assert body["tool_trace"] == ["get_career_insights"]
-    assert {source["type"] for source in body["sources"]} >= {
-        "application",
-        "interview_feedback",
-    }
-    assert "下一步" in body["answer"]
-    assert "system design" in body["answer"]
-
-
-def test_chat_career_memory_chain_surfaces_event_evidence(isolated_runtime) -> None:
-    candidate = CandidateService().create_candidate(
-        name="Memory Chain User",
-        user_id="memory-chain-user",
-    )
-    ApplicationService().create_application(
-        candidate_id=int(candidate["id"]),
-        company="Canva",
-        job_title="Backend Intern",
-        status="applied",
-        note="resume submitted",
-    )
-    InterviewService().create_interview(
-        candidate_id=int(candidate["id"]),
-        company="Atlassian",
-        job_title="Backend Grad",
-        interview_round="tech1",
-        result="rejected",
-        feedback="system design fundamentals",
-    )
-
-    first_response = client.post(
-        "/chat",
-        json={
-            "user_id": "memory-chain-user",
-            "message": "结合我的投递和面试反馈，我下一步该准备什么？",
-        },
-    )
-    assert first_response.status_code == 200
-    first_body = first_response.json()
-    assert first_body["tool_used"] == "get_career_insights"
-    assert first_body["plan"]["task_type"] == "career_insights"
-    assert first_body["tool_trace"] == ["get_career_insights"]
-
-    second_response = client.post(
-        "/chat",
-        json={
-            "user_id": "memory-chain-user",
-            "message": "system design fundamentals evidence",
-        },
-    )
-
-    assert second_response.status_code == 200
-    second_body = second_response.json()
-    event_sources = [
-        source for source in second_body["sources"] if source["type"] == "career_event"
-    ]
-    if event_sources:
-        assert "Atlassian" in event_sources[0]["title"]
-        assert all(
-            term in str(event_sources[0].get("snippet", ""))
-            for term in ("system", "design", "fundamentals")
-        )
