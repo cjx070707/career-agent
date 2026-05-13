@@ -13,6 +13,7 @@ from app.llm.client import LLMClient
 from app.routing.fast_gate import fast_gate
 from app.routing.task_classifier import TaskFamily, classify, score_turn
 from app.schemas.chat import ChatSource
+from app.services.agent_state_service import AgentState, AgentStateService
 from app.services.career_event_service import CareerEventService
 from app.services.goal_service import GoalService
 from app.services.memory_service import MemoryService
@@ -59,12 +60,14 @@ class AutonomousAgentService:
         memory_service: Optional[MemoryService] = None,
         goal_service: Optional[GoalService] = None,
         memory_vector_service: Optional[MemoryVectorService] = None,
+        agent_state_service: Optional[AgentStateService] = None,
     ) -> None:
         self.llm = llm_client or LLMClient()
         self.tools = tool_registry or build_default_tool_registry()
         self.memory = memory_service or MemoryService()
         self.goals = goal_service or GoalService()
         self.memory_vector = memory_vector_service or MemoryVectorService()
+        self.state_service = agent_state_service or AgentStateService()
         self.profiler = UserProfileService(llm_client=self.llm, memory_service=self.memory)
         self.summarizer = SummaryService(llm_client=self.llm, memory_service=self.memory)
         self.career_events = CareerEventService(llm_client=self.llm)
@@ -122,6 +125,14 @@ class AutonomousAgentService:
         summary = self.memory.load_summary(user_id)
         user_profile = self.memory.load_user_profile(user_id)
 
+        # Build structured agent state (DB checks + profile parse, ~1 ms)
+        agent_state = self.state_service.build(
+            user_id=user_id,
+            task_family=task_family,
+            user_profile_json=user_profile,
+            goals=goals,
+        )
+
         # Phase 2: cross-session semantic recall (best-effort, never raises)
         semantic_turns = self.memory_vector.search(
             user_id=user_id,
@@ -130,8 +141,10 @@ class AutonomousAgentService:
             exclude_session=session_id or "",
         )
 
-        # ── 2. System prompt with goal state ────────────────────────
-        system_prompt = self._build_system_prompt(user_id, goals, summary, user_profile)
+        # ── 2. System prompt with goal state + agent state ───────────
+        system_prompt = self._build_system_prompt(
+            user_id, goals, summary, user_profile, agent_state=agent_state
+        )
 
         # ── 3. Conversation messages (task-family + semantic filtered) ──
         messages: List[Dict[str, Any]] = self._build_messages(
@@ -270,6 +283,7 @@ class AutonomousAgentService:
             stage=stage,
             iterations=iterations_used,
             task_family=task_family.value,
+            missing_info=agent_state.missing_info,
         )
 
         # ── 7. Post-turn background tasks ────────────────────────────
@@ -320,6 +334,7 @@ class AutonomousAgentService:
         goals: List[Dict[str, Any]],
         summary: str = "",
         user_profile: str = "",
+        agent_state: Optional[AgentState] = None,
     ) -> str:
         base = (
             "你是一个专业的求职辅导 Agent，可以自主决定调用哪些工具来帮助用户。\n\n"
@@ -339,6 +354,10 @@ class AutonomousAgentService:
             "  上传后系统自动解析，之后即可使用所有简历相关功能。’\n"
             "  不要在无简历时继续调用其他简历相关工具。\n"
         )
+
+        # Inject structured agent state snapshot
+        if agent_state is not None:
+            base += "\n\n" + agent_state.to_prompt_block()
 
         # Inject long-term user preferences
         if user_profile and user_profile != "{}":
