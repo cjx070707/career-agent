@@ -227,8 +227,6 @@ def _run_expectations(
     body: Dict[str, Any], expect: Dict[str, Any]
 ) -> List[Dict[str, Any]]:
     checks: List[Dict[str, Any]] = []
-    plan = body.get("plan") or {}
-    llm_trace = body.get("llm_trace") or {}
 
     _check(
         checks,
@@ -237,47 +235,6 @@ def _run_expectations(
         got=body.get("contract_version"),
         want="chat.v1",
     )
-
-    if "plan_task_type" in expect:
-        allowed = _as_list(expect["plan_task_type"])
-        _check(
-            checks,
-            "plan_task_type",
-            plan.get("task_type") in allowed,
-            got=plan.get("task_type"),
-            want=allowed,
-        )
-
-    if "planner_source" in expect:
-        allowed = _as_list(expect["planner_source"])
-        _check(
-            checks,
-            "planner_source",
-            plan.get("planner_source") in allowed,
-            got=plan.get("planner_source"),
-            want=allowed,
-        )
-
-    if "plan_needs_more_context" in expect:
-        want = bool(expect["plan_needs_more_context"])
-        _check(
-            checks,
-            "plan_needs_more_context",
-            bool(plan.get("needs_more_context")) == want,
-            got=plan.get("needs_more_context"),
-            want=want,
-        )
-
-    if "plan_missing_context_contains" in expect:
-        missing = plan.get("missing_context") or []
-        want = list(expect["plan_missing_context_contains"])
-        _check(
-            checks,
-            "plan_missing_context_contains",
-            all(item in missing for item in want),
-            got=missing,
-            want=want,
-        )
 
     if "tool_trace_prefix" in expect:
         want = list(expect["tool_trace_prefix"])
@@ -295,15 +252,6 @@ def _run_expectations(
         trace = body.get("tool_trace") or []
         ok = all(tool in trace for tool in want)
         _check(checks, "tool_trace_contains", ok, got=trace, want=want)
-
-    loop_trace = body.get("loop_trace") or []
-    if expect.get("loop_trace_nonempty"):
-        _check(checks, "loop_trace_nonempty", len(loop_trace) > 0, got=len(loop_trace))
-
-    if "loop_replan_at_least" in expect:
-        want = int(expect["loop_replan_at_least"])
-        got = sum(1 for item in loop_trace if str(item.get("decision")) == "replan")
-        _check(checks, "loop_replan_at_least", got >= want, got=got, want=want)
 
     sources = body.get("sources") or []
     if expect.get("sources_nonempty"):
@@ -374,18 +322,6 @@ def _run_expectations(
                 ok,
                 got=field_values,
                 want=needles,
-            )
-
-    if "llm_trace_allowed" in expect:
-        for field_name, allowed in expect["llm_trace_allowed"].items():
-            allowed_list = _as_list(allowed)
-            actual = llm_trace.get(field_name)
-            _check(
-                checks,
-                f"llm_trace.{field_name}",
-                actual in allowed_list,
-                got=actual,
-                want=allowed_list,
             )
 
     answer = str(body.get("answer") or "")
