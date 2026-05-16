@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>CareerHub — Full Mockup</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display:flex; height:100vh; overflow:hidden; background:#f5f4ff; color:#1e1b4b; }
+
+/* ═══ SIDEBAR ═══ */
+.sidebar {
+  width:220px; flex-shrink:0;
+  background:linear-gradient(180deg,#1e1b4b 0%,#2d1b69 100%);
+  display:flex; flex-direction:column; padding:18px 12px; gap:6px;
+}
+.brand { display:flex; align-items:center; gap:9px; padding-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.08); margin-bottom:6px; }
+.brand-icon { width:34px;height:34px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0; }
+.brand strong { color:#fff;font-size:14px;display:block;line-height:1.2; }
+.brand span { color:#a5b4fc;font-size:11px; }
+
+.user-bar { display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.10);border-radius:10px;padding:8px 10px;margin-bottom:8px; }
+.user-info { display:flex;align-items:center;gap:7px; }
+.user-av { width:26px;height:26px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;font-weight:700; }
+.user-name { color:#e0e7ff;font-size:12px;font-weight:500; }
+.logout { color:#6b7db3;font-size:16px;cursor:pointer;line-height:1; }
+
+.nav-item { display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;cursor:pointer;color:#a5b4fc;font-size:13px;font-weight:500;transition:all .15s;border:1px solid transparent; }
+.nav-item:hover { background:rgba(99,102,241,0.12);color:#c7d2fe; }
+.nav-item.active { background:rgba(99,102,241,0.20);color:#fff;border-color:rgba(99,102,241,0.3); }
+.nav-icon { font-size:16px;width:20px;text-align:center;flex-shrink:0; }
+
+.nav-divider { height:1px;background:rgba(255,255,255,0.07);margin:6px 0; }
+
+.history-label { color:#5b6ba8;font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:4px 10px; }
+.hist-item { display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;color:#7c85b8;font-size:12px; }
+.hist-item:hover { background:rgba(255,255,255,0.05);color:#a5b4fc; }
+.hist-dot { width:5px;height:5px;border-radius:50%;background:#6366f1;flex-shrink:0; }
+.hist-text { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1; }
+
+/* ═══ MAIN ═══ */
+.main { flex:1;display:flex;flex-direction:column;overflow:hidden; }
+
+/* pages */
+.page { display:none;flex:1;overflow:hidden; }
+.page.active { display:flex;flex-direction:column; }
+
+/* topbar */
+.topbar { height:54px;background:rgba(255,255,255,0.92);backdrop-filter:blur(12px);border-bottom:1px solid #e8e6ff;display:flex;align-items:center;padding:0 24px;gap:12px;flex-shrink:0; }
+.topbar-title { font-size:15px;font-weight:700;color:#1e1b4b;flex:1; }
+.pill { display:flex;align-items:center;gap:5px;background:#f0f0ff;border:1px solid #c7d2fe;border-radius:20px;padding:4px 12px;font-size:12px;color:#4f46e5;font-weight:500; }
+.pill-dot { width:6px;height:6px;border-radius:50%;background:#6366f1; }
+.new-chat-btn { background:linear-gradient(135deg,#6366f1,#7c3aed);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer; }
+
+/* ═══ DASHBOARD ═══ */
+.dash-body { flex:1;overflow-y:auto;padding:28px 32px;display:flex;flex-direction:column;gap:24px; }
+.dash-greeting h2 { font-size:22px;font-weight:800;color:#1e1b4b; }
+.dash-greeting p { color:#6b7280;font-size:14px;margin-top:4px; }
+
+.stat-row { display:grid;grid-template-columns:repeat(4,1fr);gap:14px; }
+.stat-card { background:#fff;border:1.5px solid #e8e6ff;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:8px; }
+.stat-top { display:flex;align-items:center;justify-content:space-between; }
+.stat-icon { width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px; }
+.stat-icon.purple { background:#f5f3ff; }
+.stat-icon.blue { background:#eff6ff; }
+.stat-icon.green { background:#f0fdf4; }
+.stat-icon.orange { background:#fff7ed; }
+.stat-badge { font-size:11px;color:#10b981;background:#f0fdf4;border-radius:20px;padding:2px 8px;font-weight:600; }
+.stat-badge.warn { color:#f59e0b;background:#fffbeb; }
+.stat-num { font-size:28px;font-weight:800;color:#1e1b4b; }
+.stat-label { font-size:12px;color:#9ca3af; }
+
+.dash-row { display:grid;grid-template-columns:1.4fr 1fr;gap:16px; }
+
+.dash-card { background:#fff;border:1.5px solid #e8e6ff;border-radius:16px;padding:20px; }
+.dash-card-title { font-size:13px;font-weight:700;color:#1e1b4b;margin-bottom:14px;display:flex;align-items:center;gap:7px; }
+.dash-card-title span { font-size:15px; }
+
+.job-row { display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f5f4ff; }
+.job-row:last-child { border:none;padding-bottom:0; }
+.job-logo { width:36px;height:36px;border-radius:9px;background:#f5f3ff;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0; }
+.job-info { flex:1;min-width:0; }
+.job-title { font-size:13px;font-weight:600;color:#1e1b4b; }
+.job-sub { font-size:11px;color:#9ca3af;margin-top:2px; }
+.job-status { font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;flex-shrink:0; }
+.s-watching { background:#f0f9ff;color:#0284c7; }
+.s-applied { background:#f0fdf4;color:#16a34a; }
+.s-r1 { background:#fdf4ff;color:#9333ea; }
+.s-r2 { background:#fff7ed;color:#ea580c; }
+
+.goal-item { display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f5f4ff; }
+.goal-item:last-child { border:none; }
+.goal-check { width:18px;height:18px;border-radius:5px;border:1.5px solid #c7d2fe;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer; }
+.goal-check.done { background:#6366f1;border-color:#6366f1;color:#fff;font-size:11px; }
+.goal-text { font-size:13px;color:#374151;flex:1; }
+.goal-text.done { color:#9ca3af;text-decoration:line-through; }
+.goal-tag { font-size:10px;color:#6366f1;background:#f0f0ff;padding:2px 7px;border-radius:20px;font-weight:600;flex-shrink:0; }
+
+.ai-prompt-bar { background:linear-gradient(135deg,#1e1b4b,#2d1b69);border-radius:14px;padding:18px 20px;display:flex;align-items:center;gap:14px;cursor:pointer; }
+.ai-prompt-icon { font-size:22px; }
+.ai-prompt-text strong { color:#fff;font-size:14px;display:block; }
+.ai-prompt-text span { color:#a5b4fc;font-size:12px; }
+.ai-prompt-arrow { color:#6366f1;font-size:20px;margin-left:auto; }
+
+/* ═══ CHAT PAGE ═══ */
+.chat-layout { display:flex;flex:1;overflow:hidden; }
+.chat-main { flex:1;display:flex;flex-direction:column;overflow:hidden; }
+.chat-body { flex:1;overflow-y:auto;padding:28px 32px;display:flex;flex-direction:column;gap:20px; }
+
+.msg-u { align-self:flex-end;background:linear-gradient(135deg,#6366f1,#7c3aed);color:#fff;padding:11px 16px;border-radius:18px 18px 4px 18px;max-width:58%;font-size:14px;line-height:1.6; }
+.msg-a-wrap { display:flex;gap:10px;align-items:flex-start;max-width:74%; }
+.msg-av { width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;margin-top:2px; }
+.msg-a { background:#fff;border:1px solid #e8e6ff;border-radius:4px 18px 18px 18px;padding:12px 16px;font-size:14px;line-height:1.7;color:#374151;box-shadow:0 2px 8px rgba(99,102,241,0.06); }
+.tool-badge { display:inline-flex;align-items:center;gap:5px;background:#f5f3ff;border:1px solid #ddd6fe;color:#6d28d9;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;margin-bottom:8px; }
+
+/* AI action cards */
+.action-cards { display:flex;flex-direction:column;gap:8px;margin-top:10px; }
+.action-card { background:#fafafa;border:1.5px solid #e8e6ff;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px; }
+.ac-match { font-size:11px;font-weight:700;color:#6366f1;background:#f0f0ff;padding:3px 8px;border-radius:20px;flex-shrink:0; }
+.ac-info { flex:1;min-width:0; }
+.ac-title { font-size:13px;font-weight:600;color:#1e1b4b; }
+.ac-sub { font-size:11px;color:#9ca3af;margin-top:2px; }
+.ac-btn { background:linear-gradient(135deg,#6366f1,#7c3aed);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0; }
+.ac-btn.added { background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0; }
+
+.input-bar { padding:14px 20px 18px;background:rgba(255,255,255,0.9);border-top:1px solid #e8e6ff; }
+.input-wrap { background:#fff;border:1.5px solid #c7d2fe;border-radius:14px;display:flex;align-items:center;padding:10px 10px 10px 16px;gap:8px;box-shadow:0 2px 16px rgba(99,102,241,0.08); }
+.input-wrap input { flex:1;border:none;outline:none;font-size:14px;color:#1e1b4b;background:transparent;font-family:inherit; }
+.send { width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#6366f1,#7c3aed);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;flex-shrink:0; }
+.attach { width:34px;height:34px;border-radius:10px;border:1px solid #e0e7ff;background:#f5f3ff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6366f1;font-size:15px;flex-shrink:0; }
+
+/* right panel */
+.right-panel { width:256px;flex-shrink:0;background:#fff;border-left:1px solid #e8e6ff;display:flex;flex-direction:column;overflow:hidden; }
+.rp-head { padding:14px 16px 10px;border-bottom:1px solid #f0eeff;font-size:11px;font-weight:700;color:#6366f1;letter-spacing:.06em;text-transform:uppercase; }
+.rp-sec { padding:12px 16px;border-bottom:1px solid #f5f4ff; }
+.rp-lbl { font-size:10px;color:#9ca3af;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px; }
+.rp-chip { display:inline-flex;align-items:center;gap:5px;background:#f5f3ff;border:1px solid #ddd6fe;color:#6d28d9;font-size:12px;font-weight:500;padding:4px 10px;border-radius:20px; }
+.rp-src { background:#fafafa;border:1px solid #f0eeff;border-radius:9px;padding:9px 11px;margin-top:5px;font-size:12px;color:#4b5563;line-height:1.5; }
+.rp-src strong { color:#1e1b4b;display:block;margin-bottom:2px; }
+
+/* ═══ 求职追踪 ═══ */
+.track-body { flex:1;overflow-y:auto;padding:24px 28px;display:flex;flex-direction:column;gap:20px; }
+.track-filters { display:flex;gap:8px;align-items:center; }
+.filter-btn { padding:6px 14px;border-radius:20px;border:1.5px solid #e0e7ff;background:#fff;font-size:12px;font-weight:600;color:#6b7280;cursor:pointer; }
+.filter-btn.active { background:#f0f0ff;border-color:#6366f1;color:#4f46e5; }
+.add-job-btn { margin-left:auto;background:linear-gradient(135deg,#6366f1,#7c3aed);color:#fff;border:none;border-radius:9px;padding:7px 16px;font-size:12px;font-weight:600;cursor:pointer; }
+
+.status-section { display:flex;flex-direction:column;gap:10px; }
+.status-header { display:flex;align-items:center;gap:8px; }
+.status-dot-big { width:8px;height:8px;border-radius:50%; }
+.status-title { font-size:13px;font-weight:700;color:#374151; }
+.status-count { font-size:12px;color:#9ca3af; }
+
+.job-card { background:#fff;border:1.5px solid #e8e6ff;border-radius:14px;padding:16px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:all .15s; }
+.job-card:hover { border-color:#6366f1;box-shadow:0 4px 16px rgba(99,102,241,0.10); }
+.jc-logo { width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0; }
+.jc-info { flex:1;min-width:0; }
+.jc-title { font-size:14px;font-weight:700;color:#1e1b4b; }
+.jc-sub { font-size:12px;color:#9ca3af;margin-top:3px; }
+.jc-tags { display:flex;gap:6px;margin-top:7px;flex-wrap:wrap; }
+.jc-tag { font-size:11px;color:#6366f1;background:#f0f0ff;padding:2px 8px;border-radius:20px; }
+.jc-right { display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0; }
+.jc-status { font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px; }
+.jc-date { font-size:11px;color:#d1d5db; }
+.jc-match { font-size:11px;color:#10b981;font-weight:600; }
+
+/* ═══ 简历页 ═══ */
+.resume-body { flex:1;overflow-y:auto;padding:28px 32px;display:flex;gap:20px; }
+.resume-left { flex:1;display:flex;flex-direction:column;gap:16px;min-width:0; }
+.resume-right { width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:14px; }
+
+.resume-hero { background:linear-gradient(135deg,#1e1b4b,#2d1b69);border-radius:18px;padding:24px;display:flex;align-items:center;gap:18px; }
+.resume-av { width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;color:#fff;font-weight:800; }
+.resume-name { color:#fff;font-size:20px;font-weight:800; }
+.resume-contact { color:#a5b4fc;font-size:12px;margin-top:5px;display:flex;gap:14px; }
+
+.r-card { background:#fff;border:1.5px solid #e8e6ff;border-radius:14px;padding:18px; }
+.r-card-title { font-size:13px;font-weight:700;color:#1e1b4b;margin-bottom:12px;display:flex;align-items:center;gap:7px; }
+.skill-tags { display:flex;flex-wrap:wrap;gap:7px; }
+.skill-tag { background:#f5f3ff;border:1px solid #ddd6fe;color:#6d28d9;font-size:12px;font-weight:500;padding:4px 11px;border-radius:20px; }
+.skill-tag.sec { background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8; }
+
+.exp-item { padding:12px 0;border-bottom:1px solid #f5f4ff; }
+.exp-item:last-child { border:none;padding-bottom:0; }
+.exp-top { display:flex;justify-content:space-between;align-items:flex-start; }
+.exp-title { font-size:13px;font-weight:700;color:#1e1b4b; }
+.exp-company { font-size:12px;color:#6366f1;font-weight:600;margin-top:2px; }
+.exp-date { font-size:11px;color:#9ca3af; }
+.exp-desc { font-size:12px;color:#6b7280;margin-top:6px;line-height:1.6; }
+
+/* AI score card */
+.score-card { background:linear-gradient(135deg,#1e1b4b,#2d1b69);border-radius:14px;padding:18px; }
+.score-top { display:flex;align-items:center;justify-content:space-between;margin-bottom:14px; }
+.score-label { color:#a5b4fc;font-size:12px;font-weight:600; }
+.score-num { font-size:36px;font-weight:800;color:#fff; }
+.score-sub { color:#818cf8;font-size:11px; }
+.score-bar-bg { background:rgba(255,255,255,0.1);border-radius:20px;height:6px;margin-bottom:14px; }
+.score-bar-fill { background:linear-gradient(90deg,#6366f1,#8b5cf6);height:6px;border-radius:20px;width:78%; }
+.score-tip { display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-top:1px solid rgba(255,255,255,0.07); }
+.score-tip-icon { font-size:13px;margin-top:1px; }
+.score-tip-text { font-size:12px;color:#c7d2fe;line-height:1.5; }
+
+.upload-btn { background:#fff;border:1.5px dashed #c7d2fe;border-radius:12px;padding:14px;text-align:center;cursor:pointer;color:#6366f1;font-size:13px;font-weight:600; }
+.upload-btn span { display:block;color:#9ca3af;font-size:11px;font-weight:400;margin-top:3px; }
+
+/* ═══ 目标页 ═══ */
+.goals-body { flex:1;overflow-y:auto;padding:28px 32px;display:flex;gap:20px; }
+.goals-left { flex:1;display:flex;flex-direction:column;gap:16px;min-width:0; }
+.goals-right { width:260px;flex-shrink:0;display:flex;flex-direction:column;gap:14px; }
+
+.goals-section { background:#fff;border:1.5px solid #e8e6ff;border-radius:16px;padding:20px; }
+.goals-sec-header { display:flex;align-items:center;justify-content:space-between;margin-bottom:16px; }
+.goals-sec-title { font-size:14px;font-weight:700;color:#1e1b4b;display:flex;align-items:center;gap:7px; }
+.goals-progress-text { font-size:12px;color:#9ca3af; }
+
+.goal-row { display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f5f4ff; }
+.goal-row:last-child { border:none;padding-bottom:0; }
+.gc { width:20px;height:20px;border-radius:6px;border:1.5px solid #c7d2fe;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;font-size:11px; }
+.gc.done { background:#6366f1;border-color:#6366f1;color:#fff; }
+.goal-row-text { flex:1;font-size:13px;color:#374151; }
+.goal-row-text.done { color:#9ca3af;text-decoration:line-through; }
+.goal-ai { font-size:10px;color:#8b5cf6;background:#f5f3ff;padding:2px 7px;border-radius:20px;font-weight:600;flex-shrink:0; }
+.goal-manual { font-size:10px;color:#0284c7;background:#f0f9ff;padding:2px 7px;border-radius:20px;font-weight:600;flex-shrink:0; }
+
+.week-bar { display:flex;flex-direction:column;gap:10px; }
+.week-day { display:flex;align-items:center;gap:10px; }
+.week-day-label { font-size:11px;color:#9ca3af;width:24px;text-align:center;flex-shrink:0; }
+.week-day-bar-bg { flex:1;background:#f5f4ff;border-radius:20px;height:8px; }
+.week-day-bar-fill { background:linear-gradient(90deg,#6366f1,#8b5cf6);height:8px;border-radius:20px; }
+.week-day-count { font-size:11px;color:#9ca3af;width:28px;text-align:right;flex-shrink:0; }
+
+.ai-suggest-card { background:linear-gradient(135deg,#f5f3ff,#ede9fe);border:1.5px solid #ddd6fe;border-radius:14px;padding:16px; }
+.ai-suggest-title { font-size:12px;font-weight:700;color:#6d28d9;margin-bottom:10px;display:flex;align-items:center;gap:6px; }
+.ai-suggest-item { display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid rgba(99,102,241,0.1); }
+.ai-suggest-item:last-child { border:none;padding-bottom:0; }
+.ai-suggest-icon { font-size:14px;margin-top:1px; }
+.ai-suggest-text { font-size:12px;color:#4c1d95;line-height:1.5; }
+.add-goal-btn { width:100%;background:#fff;border:1.5px dashed #c7d2fe;border-radius:10px;padding:10px;font-size:13px;color:#6366f1;font-weight:600;cursor:pointer;margin-top:4px; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="brand">
+    <div class="brand-icon">🧭</div>
+    <div><strong>CareerHub</strong><span>AI 求职辅导助手</span></div>
+  </div>
+
+  <div class="user-bar">
+    <div class="user-info">
+      <div class="user-av">J</div>
+      <span class="user-name">jessechen</span>
+    </div>
+    <span class="logout">⎋</span>
+  </div>
+
+  <div class="nav-item active" onclick="switchPage('dashboard')">
+    <span class="nav-icon">🏠</span> 首页
+  </div>
+  <div class="nav-item" onclick="switchPage('chat')">
+    <span class="nav-icon">💬</span> AI 对话
+  </div>
+  <div class="nav-item" onclick="switchPage('track')">
+    <span class="nav-icon">🎯</span> 求职追踪
+  </div>
+  <div class="nav-item" onclick="switchPage('resume')">
+    <span class="nav-icon">📄</span> 我的简历
+  </div>
+  <div class="nav-item" onclick="switchPage('goals')">
+    <span class="nav-icon">📅</span> 我的目标
+  </div>
+
+  <div class="nav-divider"></div>
+  <div class="history-label">近期对话</div>
+  <div class="hist-item"><div class="hist-dot"></div><span class="hist-text">Python 岗位匹配分析</span></div>
+  <div class="hist-item"><div class="hist-dot"></div><span class="hist-text">简历差距诊断</span></div>
+  <div class="hist-item"><div class="hist-dot"></div><span class="hist-text">面试复盘建议</span></div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- ══ DASHBOARD ══ -->
+  <div class="page active" id="page-dashboard">
+    <div class="topbar">
+      <span class="topbar-title">👋 早上好，jessechen</span>
+      <div class="pill"><div class="pill-dot"></div>简历已上传</div>
+    </div>
+    <div class="dash-body">
+      <div class="dash-greeting">
+        <h2>你的求职进度一览</h2>
+        <p>上次访问：3 小时前 · 本周活跃 5 天</p>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-top"><div class="stat-icon purple">📄</div><span class="stat-badge">78分</span></div>
+          <div class="stat-num">78</div>
+          <div class="stat-label">简历 AI 评分 / 100</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-top"><div class="stat-icon blue">🎯</div><span class="stat-badge">+2 本周</span></div>
+          <div class="stat-num">8</div>
+          <div class="stat-label">追踪中岗位</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-top"><div class="stat-icon green">✅</div><span class="stat-badge">2/4</span></div>
+          <div class="stat-num">50%</div>
+          <div class="stat-label">今日目标完成率</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-top"><div class="stat-icon orange">💬</div><span class="stat-badge warn">3天前</span></div>
+          <div class="stat-num">12</div>
+          <div class="stat-label">累计对话轮次</div>
+        </div>
+      </div>
+
+      <div class="dash-row">
+        <div class="dash-card">
+          <div class="dash-card-title"><span>🎯</span> 最近追踪岗位</div>
+          <div class="job-row">
+            <div class="job-logo">🛒</div>
+            <div class="job-info"><div class="job-title">Amazon · SDE</div><div class="job-sub">上海 · 25-40k/月</div></div>
+            <span class="job-status s-applied">已投递</span>
+          </div>
+          <div class="job-row">
+            <div class="job-logo">🎵</div>
+            <div class="job-info"><div class="job-title">TikTok · Backend</div><div class="job-sub">北京 · 30-50k/月</div></div>
+            <span class="job-status s-watching">关注中</span>
+          </div>
+          <div class="job-row">
+            <div class="job-logo">📈</div>
+            <div class="job-info"><div class="job-title">IMC · Python Dev</div><div class="job-sub">上海 · 35-60k/月</div></div>
+            <span class="job-status s-r1">一面</span>
+          </div>
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-title"><span>📅</span> 今日目标</div>
+          <div class="goal-item">
+            <div class="goal-check done">✓</div>
+            <div class="goal-text done">LeetCode 每日一题</div>
+            <span class="goal-tag">AI推荐</span>
+          </div>
+          <div class="goal-item">
+            <div class="goal-check done">✓</div>
+            <div class="goal-text done">更新简历 AWS 经历</div>
+            <span class="goal-tag">AI推荐</span>
+          </div>
+          <div class="goal-item">
+            <div class="goal-check"></div>
+            <div class="goal-text">阅读 Amazon LP 原则</div>
+            <span class="goal-tag">AI推荐</span>
+          </div>
+          <div class="goal-item">
+            <div class="goal-check"></div>
+            <div class="goal-text">投递 TikTok 岗位</div>
+            <span class="goal-tag">AI推荐</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ai-prompt-bar" onclick="switchPage('chat')">
+        <span class="ai-prompt-icon">🧭</span>
+        <div class="ai-prompt-text">
+          <strong>继续和 AI 对话</strong>
+          <span>上次讨论了 Amazon 简历差距，要继续吗？</span>
+        </div>
+        <span class="ai-prompt-arrow">→</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ CHAT ══ -->
+  <div class="page" id="page-chat">
+    <div class="topbar">
+      <span class="topbar-title">Python 岗位匹配分析</span>
+      <div class="pill"><div class="pill-dot"></div>Ran tools</div>
+      <button class="new-chat-btn">＋ 新对话</button>
+    </div>
+    <div class="chat-layout">
+      <div class="chat-main">
+        <div class="chat-body">
+          <div class="msg-u">帮我找一下适合我的 Python 后端岗位</div>
+
+          <div class="msg-a-wrap">
+            <div class="msg-av">🧭</div>
+            <div class="msg-a">
+              <div class="tool-badge">⚡ match_resume_to_jobs</div>
+              根据你的简历，为你匹配了 3 个高契合度岗位，可以直接加入追踪：
+              <div class="action-cards">
+                <div class="action-card">
+                  <span class="ac-match">92%</span>
+                  <div class="ac-info"><div class="ac-title">Amazon · Software Dev Engineer</div><div class="ac-sub">上海 · Python / AWS · 25-40k/月</div></div>
+                  <button class="ac-btn added">✓ 已追踪</button>
+                </div>
+                <div class="action-card">
+                  <span class="ac-match">88%</span>
+                  <div class="ac-info"><div class="ac-title">TikTok · Backend Engineer</div><div class="ac-sub">北京/上海 · Python / Go · 30-50k/月</div></div>
+                  <button class="ac-btn" onclick="this.textContent='✓ 已追踪';this.className='ac-btn added'">＋ 加入追踪</button>
+                </div>
+                <div class="action-card">
+                  <span class="ac-match">81%</span>
+                  <div class="ac-info"><div class="ac-title">IMC Trading · Python Developer</div><div class="ac-sub">上海 · Python / 量化 · 35-60k/月</div></div>
+                  <button class="ac-btn" onclick="this.textContent='✓ 已追踪';this.className='ac-btn added'">＋ 加入追踪</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="msg-u">分析我和 Amazon 岗位的差距</div>
+          <div class="msg-a-wrap">
+            <div class="msg-av">🧭</div>
+            <div class="msg-a">
+              <div class="tool-badge">⚡ analyze_gap</div>
+              <strong>优势：</strong>Python、FastAPI、数据库设计均已具备。<br><br>
+              <strong>需要补强：</strong><br>
+              · 分布式系统 / AWS 实战经验不足<br>
+              · LeetCode 中等题需加强<br>
+              · 英文技术写作能力<br><br>
+              已为你生成本周目标，去<span style="color:#6366f1;cursor:pointer" onclick="switchPage('goals')">目标页</span>查看 →
+            </div>
+          </div>
+        </div>
+
+        <div class="input-bar">
+          <div class="input-wrap">
+            <div class="attach">📎</div>
+            <input placeholder="继续问我关于求职的任何问题…" />
+            <div class="send">↑</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-panel">
+        <div class="rp-head">分析详情</div>
+        <div class="rp-sec">
+          <div class="rp-lbl">本轮操作</div>
+          <div class="rp-chip">⚡ 岗位匹配 + 差距分析</div>
+        </div>
+        <div class="rp-sec">
+          <div class="rp-lbl">岗位来源</div>
+          <div class="rp-src"><strong>Amazon · SDE</strong>上海 · Python / AWS / 分布式</div>
+          <div class="rp-src"><strong>TikTok · Backend</strong>北京/上海 · Python / Go</div>
+        </div>
+        <div class="rp-sec">
+          <div class="rp-lbl">简历记忆</div>
+          <div class="rp-chip">✓ 已加载简历</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 求职追踪 ══ -->
+  <div class="page" id="page-track">
+    <div class="topbar">
+      <span class="topbar-title">求职追踪</span>
+      <div class="pill">共 8 个岗位</div>
+    </div>
+    <div class="track-body">
+      <div class="track-filters">
+        <div class="filter-btn active">全部</div>
+        <div class="filter-btn">关注中</div>
+        <div class="filter-btn">已投递</div>
+        <div class="filter-btn">面试中</div>
+        <div class="filter-btn">Offer</div>
+        <button class="add-job-btn">＋ 添加岗位</button>
+      </div>
+
+      <div class="status-section">
+        <div class="status-header">
+          <div class="status-dot-big" style="background:#0284c7"></div>
+          <span class="status-title">关注中</span>
+          <span class="status-count">3 个</span>
+        </div>
+        <div class="job-card">
+          <div class="jc-logo" style="background:#eff6ff">🎵</div>
+          <div class="jc-info">
+            <div class="jc-title">TikTok · Backend Engineer (Python)</div>
+            <div class="jc-sub">北京/上海 · 30-50k/月</div>
+            <div class="jc-tags"><span class="jc-tag">Python</span><span class="jc-tag">Go</span><span class="jc-tag">高并发</span></div>
+          </div>
+          <div class="jc-right">
+            <span class="jc-status s-watching">关注中</span>
+            <span class="jc-match">匹配 88%</span>
+            <span class="jc-date">AI 推荐</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="status-section">
+        <div class="status-header">
+          <div class="status-dot-big" style="background:#16a34a"></div>
+          <span class="status-title">已投递</span>
+          <span class="status-count">3 个</span>
+        </div>
+        <div class="job-card">
+          <div class="jc-logo" style="background:#fef3c7">🛒</div>
+          <div class="jc-info">
+            <div class="jc-title">Amazon · Software Dev Engineer</div>
+            <div class="jc-sub">上海 · 25-40k/月</div>
+            <div class="jc-tags"><span class="jc-tag">Python</span><span class="jc-tag">AWS</span><span class="jc-tag">分布式</span></div>
+          </div>
+          <div class="jc-right">
+            <span class="jc-status s-applied">已投递</span>
+            <span class="jc-match">匹配 92%</span>
+            <span class="jc-date">2天前</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="status-section">
+        <div class="status-header">
+          <div class="status-dot-big" style="background:#9333ea"></div>
+          <span class="status-title">面试中</span>
+          <span class="status-count">2 个</span>
+        </div>
+        <div class="job-card">
+          <div class="jc-logo" style="background:#f5f3ff">📈</div>
+          <div class="jc-info">
+            <div class="jc-title">IMC Trading · Python Developer</div>
+            <div class="jc-sub">上海 · 35-60k/月</div>
+            <div class="jc-tags"><span class="jc-tag">Python</span><span class="jc-tag">量化</span><span class="jc-tag">算法</span></div>
+          </div>
+          <div class="jc-right">
+            <span class="jc-status s-r1">一面通过</span>
+            <span class="jc-match">匹配 81%</span>
+            <span class="jc-date">二面待定</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 简历页 ══ -->
+  <div class="page" id="page-resume">
+    <div class="topbar">
+      <span class="topbar-title">我的简历</span>
+      <div class="pill">最近更新：2天前</div>
+    </div>
+    <div class="resume-body">
+      <div class="resume-left">
+        <div class="resume-hero">
+          <div class="resume-av">J</div>
+          <div>
+            <div class="resume-name">Jesse Chen</div>
+            <div class="resume-contact">
+              <span>📧 jesse@example.com</span>
+              <span>📱 138-xxxx-xxxx</span>
+              <span>🎓 USYD · CS 在读</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="r-card">
+          <div class="r-card-title">⚡ 技能栈</div>
+          <div class="skill-tags">
+            <span class="skill-tag">Python</span>
+            <span class="skill-tag">FastAPI</span>
+            <span class="skill-tag">PostgreSQL</span>
+            <span class="skill-tag">Docker</span>
+            <span class="skill-tag">REST API</span>
+            <span class="skill-tag sec">React</span>
+            <span class="skill-tag sec">TypeScript</span>
+            <span class="skill-tag sec">Git</span>
+          </div>
+        </div>
+
+        <div class="r-card">
+          <div class="r-card-title">💼 工作经历</div>
+          <div class="exp-item">
+            <div class="exp-top">
+              <div><div class="exp-title">后端开发实习生</div><div class="exp-company">某科技公司</div></div>
+              <div class="exp-date">2024.06 – 2024.12</div>
+            </div>
+            <div class="exp-desc">负责 Python FastAPI 服务开发，参与数据库设计，日均接口调用量 10万+。</div>
+          </div>
+          <div class="exp-item">
+            <div class="exp-top">
+              <div><div class="exp-title">研究助理</div><div class="exp-company">USYD NLP Lab</div></div>
+              <div class="exp-date">2023.09 – 2024.05</div>
+            </div>
+            <div class="exp-desc">参与大语言模型微调实验，使用 Python / PyTorch，发表 1 篇论文。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="resume-right">
+        <div class="score-card">
+          <div class="score-top">
+            <div><div class="score-label">AI 简历评分</div><div class="score-num">78<span style="font-size:18px;color:#818cf8">/100</span></div></div>
+          </div>
+          <div class="score-bar-bg"><div class="score-bar-fill"></div></div>
+          <div class="score-tip"><span class="score-tip-icon">⚠️</span><span class="score-tip-text">量化成果不足，建议给实习经历加上数据指标</span></div>
+          <div class="score-tip"><span class="score-tip-icon">⚠️</span><span class="score-tip-text">缺少 AWS / 云平台经验描述</span></div>
+          <div class="score-tip"><span class="score-tip-icon">✅</span><span class="score-tip-text">技能栈覆盖度良好，Python 后端匹配度高</span></div>
+        </div>
+
+        <div class="upload-btn">
+          📎 重新上传简历
+          <span>支持图片 / PDF</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 目标页 ══ -->
+  <div class="page" id="page-goals">
+    <div class="topbar">
+      <span class="topbar-title">我的目标</span>
+      <div class="pill">本周完成率 60%</div>
+    </div>
+    <div class="goals-body">
+      <div class="goals-left">
+        <div class="goals-section">
+          <div class="goals-sec-header">
+            <div class="goals-sec-title">📅 今日目标</div>
+            <span class="goals-progress-text">2 / 4 完成</span>
+          </div>
+          <div class="goal-row"><div class="gc done">✓</div><div class="goal-row-text done">LeetCode 每日一题（中等难度）</div><span class="goal-ai">AI推荐</span></div>
+          <div class="goal-row"><div class="gc done">✓</div><div class="goal-row-text done">更新简历 AWS 实习经历描述</div><span class="goal-ai">AI推荐</span></div>
+          <div class="goal-row"><div class="gc"></div><div class="goal-row-text">阅读 Amazon Leadership Principles</div><span class="goal-ai">AI推荐</span></div>
+          <div class="goal-row"><div class="gc"></div><div class="goal-row-text">投递 TikTok Backend 岗位</div><span class="goal-manual">手动</span></div>
+          <button class="add-goal-btn">＋ 添加目标</button>
+        </div>
+
+        <div class="goals-section">
+          <div class="goals-sec-header">
+            <div class="goals-sec-title">📆 本周进度</div>
+            <span class="goals-progress-text">18 / 30 完成</span>
+          </div>
+          <div class="week-bar">
+            <div class="week-day"><span class="week-day-label">一</span><div class="week-day-bar-bg"><div class="week-day-bar-fill" style="width:100%"></div></div><span class="week-day-count">5/5</span></div>
+            <div class="week-day"><span class="week-day-label">二</span><div class="week-day-bar-bg"><div class="week-day-bar-fill" style="width:80%"></div></div><span class="week-day-count">4/5</span></div>
+            <div class="week-day"><span class="week-day-label">三</span><div class="week-day-bar-bg"><div class="week-day-bar-fill" style="width:60%"></div></div><span class="week-day-count">3/5</span></div>
+            <div class="week-day"><span class="week-day-label">四</span><div class="week-day-bar-bg"><div class="week-day-bar-fill" style="width:40%"></div></div><span class="week-day-count">2/5</span></div>
+            <div class="week-day"><span class="week-day-label">五</span><div class="week-day-bar-bg"><div class="week-day-bar-fill" style="width:40%"></div></div><span class="week-day-count">2/5</span></div>
+            <div class="week-day"><span class="week-day-label">六</span><div class="week-day-bar-bg"><div class="week-day-bar-fill" style="width:20%"></div></div><span class="week-day-count">1/5</span></div>
+            <div class="week-day"><span class="week-day-label">日</span><div class="week-day-bar-bg"><div class="week-day-bar-fill" style="width:20%"></div></div><span class="week-day-count">1/5</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="goals-right">
+        <div class="ai-suggest-card">
+          <div class="ai-suggest-title">🧭 AI 本周建议</div>
+          <div class="ai-suggest-item"><span class="ai-suggest-icon">📚</span><span class="ai-suggest-text">每天 2 道 LeetCode，重点练树和动态规划</span></div>
+          <div class="ai-suggest-item"><span class="ai-suggest-icon">☁️</span><span class="ai-suggest-text">完成 AWS Free Tier 的 EC2 + S3 入门 Lab</span></div>
+          <div class="ai-suggest-item"><span class="ai-suggest-icon">📝</span><span class="ai-suggest-text">用 STAR 格式重写实习经历中的 3 个项目</span></div>
+          <div class="ai-suggest-item"><span class="ai-suggest-icon">📮</span><span class="ai-suggest-text">本周至少投递 2 个已追踪的岗位</span></div>
+        </div>
+
+        <div class="r-card">
+          <div class="r-card-title" style="font-size:12px">📊 目标完成趋势</div>
+          <div style="color:#9ca3af;font-size:12px;line-height:1.8">
+            本周：60% ↑<br>上周：45%<br>两周前：30%<br>
+            <span style="color:#10b981;font-weight:600">持续进步中 🎉</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+function switchPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  const idx = {dashboard:0,chat:1,track:2,resume:3,goals:4};
+  document.querySelectorAll('.nav-item')[idx[name]].classList.add('active');
+}
+</script>
+</body>
+</html>

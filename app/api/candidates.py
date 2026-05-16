@@ -1,5 +1,5 @@
-from fastapi import APIRouter, status
-from typing import Dict, List, Union
+from fastapi import APIRouter, Query, status
+from typing import Dict, List, Optional, Union
 
 from app.schemas.candidate import CandidateCreate
 from app.services.candidate_service import CandidateService
@@ -10,7 +10,12 @@ candidate_service = CandidateService()
 
 
 @router.get("/candidates")
-def list_candidates() -> List[Dict[str, Union[int, str]]]:
+def list_candidates(user_id: Optional[str] = Query(None)) -> List[Dict[str, Union[int, str]]]:
+    if user_id:
+        try:
+            return [candidate_service.get_latest_candidate(user_id)]
+        except ValueError:
+            return []
     return candidate_service.list_candidates()
 
 

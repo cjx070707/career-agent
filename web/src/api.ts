@@ -1,4 +1,4 @@
-import type { ChatResponse, ChatSource, ResumeImageParseResponse, SavedParsedResumeResponse } from "./types";
+import type { Application, ChatResponse, ChatSource, Goal, ResumeData, ResumeImageParseResponse, SavedParsedResumeResponse } from "./types";
 
 export async function authRegister(username: string, password: string): Promise<{ token: string; username: string }> {
   const r = await fetch("/auth/register", {
@@ -122,6 +122,54 @@ export async function parseResumeImage(file: File): Promise<ResumeImageParseResp
     throw new Error(body || `Request failed with ${response.status}`);
   }
   return response.json();
+}
+
+export async function fetchApplications(userId: string): Promise<Application[]> {
+  const r = await fetch(`/applications?user_id=${encodeURIComponent(userId)}&limit=50`);
+  if (!r.ok) return [];
+  return r.json();
+}
+
+export async function createApplication(data: {
+  candidate_id: number; company: string; job_title: string; status: string; note?: string;
+}): Promise<Application> {
+  const r = await fetch('/applications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.detail || 'Failed');
+  return body;
+}
+
+export async function updateApplicationStatus(id: number, status: string, note?: string): Promise<void> {
+  await fetch(`/applications/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, note }) });
+}
+
+export async function fetchGoals(userId: string): Promise<Goal[]> {
+  const r = await fetch(`/goals?user_id=${encodeURIComponent(userId)}`);
+  if (!r.ok) return [];
+  return r.json();
+}
+
+export async function createGoal(userId: string, goalText: string): Promise<Goal> {
+  const r = await fetch('/goals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, goal_text: goalText }) });
+  return r.json();
+}
+
+export async function completeGoal(goalId: number): Promise<void> {
+  await fetch(`/goals/${goalId}/complete`, { method: 'PATCH' });
+}
+
+export async function fetchUserResume(userId: string): Promise<ResumeData | null> {
+  const r = await fetch(`/resumes?user_id=${encodeURIComponent(userId)}`);
+  if (!r.ok) return null;
+  const data = await r.json();
+  return Array.isArray(data) ? (data[0] ?? null) : (data ?? null);
+}
+
+export async function fetchCandidate(userId: string): Promise<{ id: number } | null> {
+  const r = await fetch(`/candidates?user_id=${encodeURIComponent(userId)}`);
+  if (!r.ok) return null;
+  const data = await r.json();
+  return Array.isArray(data) ? (data[0] ?? null) : null;
 }
 
 export async function saveParsedResume(

@@ -9,7 +9,11 @@ export default defineConfig({
       "/chat": "http://127.0.0.1:8000",
       "/conversations": "http://127.0.0.1:8000",
       "/vision": "http://127.0.0.1:8000",
-      "/auth": "http://127.0.0.1:8000"
+      "/auth": "http://127.0.0.1:8000",
+      "/goals": "http://127.0.0.1:8000",
+      "/applications": "http://127.0.0.1:8000",
+      "/resumes": "http://127.0.0.1:8000",
+      "/candidates": "http://127.0.0.1:8000",
     }
   }
 });

@@ -7,6 +7,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.goals import router as goals_router
 from app.api.applications import router as applications_router
 from app.api.candidates import router as candidates_router
 from app.api.chat import router as chat_router
@@ -63,6 +64,7 @@ app.include_router(jobs_router)
 app.include_router(resumes_router)
 app.include_router(matches_router)
 app.include_router(vision_router)
+app.include_router(goals_router)
 
 # ── Static demo files ─────────────────────────────────────────────────────────
 demo_directory = Path(__file__).resolve().parents[1] / "demo"

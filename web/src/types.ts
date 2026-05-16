@@ -59,3 +59,44 @@ export type SessionMeta = {
   created_at: string;
   turn_count: number;
 };
+
+export interface Application {
+  id: number;
+  candidate_id: number;
+  company: string;
+  job_title: string;
+  status: string;
+  note: string | null;
+  applied_at: string;
+  last_updated_at: string;
+}
+
+export interface Goal {
+  id: number;
+  goal_text: string;
+  deadline: string | null;
+  status: string;
+  plan: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResumeData {
+  id: number;
+  title: string;
+  content: string;
+  version: string;
+  parsed?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    education?: string[];
+    skills?: string[];
+    experience?: Array<{ company?: string; role?: string; dates?: string; description?: string; summary?: string }>;
+    projects?: Array<{ name?: string; description?: string; summary?: string }>;
+    summary?: string;
+  };
+  created_at?: string;
+}
+
+export type NavPage = 'dashboard' | 'chat' | 'track' | 'resume' | 'goals';

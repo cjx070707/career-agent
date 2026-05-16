@@ -1,19 +1,20 @@
 import React, { FormEvent, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
-  ChevronRight,
-  FileSearch,
+  CheckSquare,
+  FileText,
+  Home,
   LogOut,
   MessageSquareText,
-  UserRound,
+  Briefcase,
 } from "lucide-react";
 import type {
   ChatResponse,
   Message,
+  NavPage,
   ResumeImageParseResponse,
   SavedParsedResumeResponse,
   SessionMeta,
-  ViewMode,
 } from "./types";
 import { sendChat, parseResumeImage, saveParsedResume } from "./api";
 import {
@@ -23,12 +24,14 @@ import {
   persistSessionId,
   relativeTime,
 } from "./utils";
-import { queryStarters } from "./constants";
 import { StatusPill } from "./components/StatusPill";
 import { ChatView } from "./components/ChatView";
-import { QueryView } from "./components/QueryView";
 import { EvidencePanel } from "./components/EvidencePanel";
 import { AuthPage } from "./components/AuthPage";
+import { DashboardPage } from "./components/DashboardPage";
+import { JobTrackingPage } from "./components/JobTrackingPage";
+import { ResumePage } from "./components/ResumePage";
+import { GoalsPage } from "./components/GoalsPage";
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 function getStoredAuth(): { username: string; token: string } | null {
@@ -38,28 +41,26 @@ function getStoredAuth(): { username: string; token: string } | null {
   return null;
 }
 
-export function App() {
-  // Auth state – null means not logged in
-  const [auth, setAuth] = useState<{ username: string; token: string } | null>(getStoredAuth);
+const NAV_ITEMS: { page: NavPage; label: string; icon: React.ElementType }[] = [
+  { page: "dashboard", label: "首页", icon: Home },
+  { page: "chat", label: "AI 对话", icon: MessageSquareText },
+  { page: "track", label: "求职追踪", icon: Briefcase },
+  { page: "resume", label: "我的简历", icon: FileText },
+  { page: "goals", label: "我的目标", icon: CheckSquare },
+];
 
-  const [view, setView] = useState<ViewMode>("chat");
+export function App() {
+  const [auth, setAuth] = useState<{ username: string; token: string } | null>(getStoredAuth);
+  const [navPage, setNavPage] = useState<NavPage>("dashboard");
   const [sessionId, setSessionId] = useState<string>(getOrCreateSessionId);
-  // Derive userId from authenticated username (fallback for safety)
   const userId = auth?.username ?? "guest";
 
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [chatInput, setChatInput] = useState("");
-  const [queryInput, setQueryInput] = useState(
-    "结合我的投递和面试反馈，我下一步该准备什么？",
-  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
-  const [queryResult, setQueryResult] = useState<ChatResponse | null>(null);
-  const [resumeImageResult, setResumeImageResult] = useState<ResumeImageParseResponse | null>(null);
-  const [savedResume, setSavedResume] = useState<SavedParsedResumeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isVisionLoading, setIsVisionLoading] = useState(false);
-  const [isSavingResume, setIsSavingResume] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusLabel, setStatusLabel] = useState("Ready");
   const nextId = useRef(1);
@@ -127,8 +128,6 @@ export function App() {
           setHistoryLoaded(true);
           return;
         }
-        // Resume the session that was open when the user left (localStorage),
-        // falling back to the most recent session.
         const storedSid = localStorage.getItem("career-agent-session-id");
         const target = data.find((s) => s.session_id === storedSid) ?? data[0];
         persistSessionId(target.session_id);
@@ -147,8 +146,6 @@ export function App() {
     setChatInput("");
     setError(null);
     setStatusLabel("Ready");
-    setResumeImageResult(null);
-    setSavedResume(null);
     setHistoryLoaded(true);
     loadSessions(userId);
   }
@@ -164,9 +161,8 @@ export function App() {
   }
 
   const latestResponse = useMemo(() => {
-    if (view === "query") return queryResult;
     return [...messages].reverse().find((message) => message.response)?.response ?? null;
-  }, [messages, queryResult, view]);
+  }, [messages]);
 
   async function handleChatSubmit(event: FormEvent) {
     event.preventDefault();
@@ -184,7 +180,6 @@ export function App() {
       chatAbortRef.current = controller;
       const timeoutId = window.setTimeout(() => controller.abort(), 120000);
 
-      // Add a placeholder message that gets updated token-by-token
       const streamingId = nextId.current++;
       setMessages((current) => [
         ...current,
@@ -208,44 +203,7 @@ export function App() {
           m.id === streamingId ? { ...m, content: response.answer, response } : m,
         ),
       );
-      // Refresh session list so new/updated session appears in sidebar
       loadSessions(userId);
-      setStatusLabel(response.stage === "tool" ? "Ran tools" : "Ready");
-    } catch (err) {
-      const isAbort = err instanceof DOMException && err.name === "AbortError";
-      if (isAbort) {
-        setError("Request timed out or canceled. Please try again.");
-        setStatusLabel("Timed out");
-      } else {
-        setError(err instanceof Error ? err.message : "Request failed");
-        setStatusLabel("Needs retry");
-      }
-    } finally {
-      chatAbortRef.current = null;
-      setIsLoading(false);
-    }
-  }
-
-  async function handleQuerySubmit(event?: FormEvent) {
-    event?.preventDefault();
-    const trimmed = queryInput.trim();
-    if (!trimmed || isLoading) return;
-    setError(null);
-    setStatusLabel("Planning");
-    setIsLoading(true);
-    try {
-      const controller = new AbortController();
-      chatAbortRef.current = controller;
-      const timeoutId = window.setTimeout(() => controller.abort(), 120000);
-      const response = await sendChat(
-        userId,
-        trimmed,
-        controller.signal,
-        undefined,
-        (text) => setStatusLabel(text),
-      );
-      window.clearTimeout(timeoutId);
-      setQueryResult(response);
       setStatusLabel(response.stage === "tool" ? "Ran tools" : "Ready");
     } catch (err) {
       const isAbort = err instanceof DOMException && err.name === "AbortError";
@@ -271,31 +229,6 @@ export function App() {
     setStatusLabel("Canceled");
   }
 
-  function useStarter(prompt: string) {
-    if (view === "query") {
-      setQueryInput(prompt);
-      return;
-    }
-    setChatInput(prompt);
-  }
-
-  // QueryView path: parse only, user manually clicks "Save as Resume"
-  async function handleResumeImageParse(file: File) {
-    if (isVisionLoading) return;
-    setError(null);
-    setResumeImageResult(null);
-    setSavedResume(null);
-    setIsVisionLoading(true);
-    try {
-      const response = await parseResumeImage(file);
-      setResumeImageResult(response);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
-    } finally {
-      setIsVisionLoading(false);
-    }
-  }
-
   // Chat path: parse → auto-save → insert confirmation message in chat
   async function handleChatResumeUpload(file: File) {
     if (isVisionLoading) return;
@@ -317,7 +250,6 @@ export function App() {
         return;
       }
 
-      // Auto-save to DB
       const saved = await saveParsedResume(userId, parsed.parsed);
       const name = parsed.parsed.name ? `（${parsed.parsed.name}）` : "";
       const skills = parsed.parsed.skills.slice(0, 5).join("、");
@@ -351,25 +283,6 @@ export function App() {
     }
   }
 
-  async function handleSaveParsedResume() {
-    if (!resumeImageResult || !hasParsedResumeContent(resumeImageResult.parsed) || isSavingResume)
-      return;
-
-    setError(null);
-    setIsSavingResume(true);
-    try {
-      const response = await saveParsedResume(
-        userId,
-        resumeImageResult.parsed,
-      );
-      setSavedResume(response);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
-    } finally {
-      setIsSavingResume(false);
-    }
-  }
-
   // ── Auth gate ─────────────────────────────────────────────────────────
   if (!auth) {
     return <AuthPage onAuth={handleAuth} />;
@@ -378,6 +291,7 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
+        {/* Brand */}
         <div className="brand">
           <div className="brand-mark">
             <BriefcaseBusiness size={21} />
@@ -388,9 +302,10 @@ export function App() {
           </div>
         </div>
 
+        {/* User bar */}
         <div className="sidebar-user">
           <div className="sidebar-user-info">
-            <UserRound size={16} />
+            <div className="user-avatar">{auth.username[0].toUpperCase()}</div>
             <span className="sidebar-username">{auth.username}</span>
           </div>
           <button
@@ -403,27 +318,26 @@ export function App() {
           </button>
         </div>
 
-        <div className="mode-tabs" role="tablist" aria-label="View mode">
-          <button
-            className={view === "chat" ? "active" : ""}
-            onClick={() => setView("chat")}
-            type="button"
-          >
-            <MessageSquareText size={17} />
-            Chat
-          </button>
-          <button
-            className={view === "query" ? "active" : ""}
-            onClick={() => setView("query")}
-            type="button"
-          >
-            <FileSearch size={17} />
-            Query
-          </button>
-        </div>
+        {/* Nav */}
+        <nav className="sidebar-nav">
+          {NAV_ITEMS.map(({ page, label, icon: Icon }) => (
+            <button
+              key={page}
+              type="button"
+              className={`nav-item${navPage === page ? " active" : ""}`}
+              onClick={() => setNavPage(page)}
+            >
+              <Icon size={18} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
 
-        {view === "chat" ? (
+        {/* Recent sessions — only visible on chat page */}
+        {navPage === "chat" && (
           <>
+            <div className="sidebar-divider" />
+            <div className="sidebar-section-label">近期对话</div>
             <button className="new-chat-btn" type="button" onClick={handleNewChat}>
               + 新对话
             </button>
@@ -446,67 +360,63 @@ export function App() {
               )}
             </div>
           </>
-        ) : (
-          <div className="starter-list">
-            {queryStarters.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button key={item.label} type="button" onClick={() => useStarter(item.prompt)}>
-                  <Icon size={17} />
-                  <span>{item.label}</span>
-                  <ChevronRight size={16} />
-                </button>
-              );
-            })}
-          </div>
         )}
       </aside>
 
       <main className="workspace">
-        <section className="primary-pane">
-          <header className="pane-header">
-            <div>
-              <span className="eyebrow">
-                {view === "chat" ? "continuous context" : "single task"}
-              </span>
-              <h1>{view === "chat" ? "Chat" : "Query"}</h1>
-            </div>
-            <StatusPill isLoading={isLoading} response={latestResponse} statusLabel={statusLabel} />
-          </header>
+        {navPage === "dashboard" && (
+          <div className="full-page">
+            <DashboardPage userId={userId} onNavigate={setNavPage} />
+          </div>
+        )}
 
-          {view === "chat" ? (
-            <ChatView
-              messages={messages}
-              historyLoaded={historyLoaded}
-              input={chatInput}
-              setInput={setChatInput}
-              isLoading={isLoading}
-              isVisionLoading={isVisionLoading}
-              onCancel={cancelChatRequest}
-              onSubmit={handleChatSubmit}
-              onParseResumeImage={handleChatResumeUpload}
-            />
-          ) : (
-            <QueryView
-              input={queryInput}
-              setInput={setQueryInput}
-              isLoading={isLoading}
-              onCancel={cancelChatRequest}
-              onSubmit={handleQuerySubmit}
-              result={queryResult}
-              resumeImageResult={resumeImageResult}
-              isVisionLoading={isVisionLoading}
-              onParseResumeImage={handleResumeImageParse}
-              savedResume={savedResume}
-              isSavingResume={isSavingResume}
-              onSaveParsedResume={handleSaveParsedResume}
-            />
-          )}
+        {navPage === "chat" && (
+          <>
+            <section className="primary-pane">
+              <header className="pane-header">
+                <div>
+                  <span className="eyebrow">continuous context</span>
+                  <h1>Chat</h1>
+                </div>
+                <StatusPill isLoading={isLoading} response={latestResponse} statusLabel={statusLabel} />
+              </header>
 
-          {error && <div className="error-banner">{error}</div>}
-        </section>
+              <ChatView
+                messages={messages}
+                historyLoaded={historyLoaded}
+                input={chatInput}
+                setInput={setChatInput}
+                isLoading={isLoading}
+                isVisionLoading={isVisionLoading}
+                onCancel={cancelChatRequest}
+                onSubmit={handleChatSubmit}
+                onParseResumeImage={handleChatResumeUpload}
+              />
 
-        <EvidencePanel response={latestResponse} />
+              {error && <div className="error-banner">{error}</div>}
+            </section>
+
+            <EvidencePanel response={latestResponse} />
+          </>
+        )}
+
+        {navPage === "track" && (
+          <div className="full-page">
+            <JobTrackingPage userId={userId} />
+          </div>
+        )}
+
+        {navPage === "resume" && (
+          <div className="full-page">
+            <ResumePage userId={userId} onNavigate={setNavPage} />
+          </div>
+        )}
+
+        {navPage === "goals" && (
+          <div className="full-page">
+            <GoalsPage userId={userId} />
+          </div>
+        )}
       </main>
     </div>
   );
