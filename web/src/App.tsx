@@ -3,6 +3,7 @@ import {
   BriefcaseBusiness,
   ChevronRight,
   FileSearch,
+  LogOut,
   MessageSquareText,
   UserRound,
 } from "lucide-react";
@@ -17,7 +18,6 @@ import type {
 import { sendChat, parseResumeImage, saveParsedResume } from "./api";
 import {
   getOrCreateSessionId,
-  getOrCreateUserId,
   hasParsedResumeContent,
   newSessionId,
   persistSessionId,
@@ -28,11 +28,25 @@ import { StatusPill } from "./components/StatusPill";
 import { ChatView } from "./components/ChatView";
 import { QueryView } from "./components/QueryView";
 import { EvidencePanel } from "./components/EvidencePanel";
+import { AuthPage } from "./components/AuthPage";
+
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+function getStoredAuth(): { username: string; token: string } | null {
+  const username = localStorage.getItem("career-agent-username");
+  const token = localStorage.getItem("career-agent-token");
+  if (username && token) return { username, token };
+  return null;
+}
 
 export function App() {
+  // Auth state – null means not logged in
+  const [auth, setAuth] = useState<{ username: string; token: string } | null>(getStoredAuth);
+
   const [view, setView] = useState<ViewMode>("chat");
-  const [userId, setUserId] = useState<string>(getOrCreateUserId);
   const [sessionId, setSessionId] = useState<string>(getOrCreateSessionId);
+  // Derive userId from authenticated username (fallback for safety)
+  const userId = auth?.username ?? "guest";
+
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [queryInput, setQueryInput] = useState(
@@ -50,6 +64,25 @@ export function App() {
   const [statusLabel, setStatusLabel] = useState("Ready");
   const nextId = useRef(1);
   const chatAbortRef = useRef<AbortController | null>(null);
+
+  // ── Auth handlers ─────────────────────────────────────────────────────
+  function handleAuth(username: string, token: string) {
+    localStorage.setItem("career-agent-username", username);
+    localStorage.setItem("career-agent-token", token);
+    setAuth({ username, token });
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("career-agent-username");
+    localStorage.removeItem("career-agent-token");
+    localStorage.removeItem("career-agent-session-id");
+    setAuth(null);
+    setMessages([]);
+    setSessions([]);
+    setChatInput("");
+    setError(null);
+    setStatusLabel("Ready");
+  }
 
   // ── Load session list ─────────────────────────────────────────────────
   const loadSessions = (uid: string) => {
@@ -117,7 +150,7 @@ export function App() {
     setResumeImageResult(null);
     setSavedResume(null);
     setHistoryLoaded(true);
-    loadSessions(userId.trim() || "demo-user");
+    loadSessions(userId);
   }
 
   function handleSessionSelect(sid: string) {
@@ -159,7 +192,7 @@ export function App() {
       ]);
 
       const response = await sendChat(
-        userId.trim() || "demo-user",
+        userId,
         trimmed,
         controller.signal,
         sessionId,
@@ -176,7 +209,7 @@ export function App() {
         ),
       );
       // Refresh session list so new/updated session appears in sidebar
-      loadSessions(userId.trim() || "demo-user");
+      loadSessions(userId);
       setStatusLabel(response.stage === "tool" ? "Ran tools" : "Ready");
     } catch (err) {
       const isAbort = err instanceof DOMException && err.name === "AbortError";
@@ -205,7 +238,7 @@ export function App() {
       chatAbortRef.current = controller;
       const timeoutId = window.setTimeout(() => controller.abort(), 120000);
       const response = await sendChat(
-        userId.trim() || "demo-user",
+        userId,
         trimmed,
         controller.signal,
         undefined,
@@ -285,7 +318,7 @@ export function App() {
       }
 
       // Auto-save to DB
-      const saved = await saveParsedResume(userId.trim() || "demo-user", parsed.parsed);
+      const saved = await saveParsedResume(userId, parsed.parsed);
       const name = parsed.parsed.name ? `（${parsed.parsed.name}）` : "";
       const skills = parsed.parsed.skills.slice(0, 5).join("、");
       const skillsLine = skills
@@ -326,7 +359,7 @@ export function App() {
     setIsSavingResume(true);
     try {
       const response = await saveParsedResume(
-        userId.trim() || "demo-user",
+        userId,
         resumeImageResult.parsed,
       );
       setSavedResume(response);
@@ -337,6 +370,11 @@ export function App() {
     }
   }
 
+  // ── Auth gate ─────────────────────────────────────────────────────────
+  if (!auth) {
+    return <AuthPage onAuth={handleAuth} />;
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -345,25 +383,24 @@ export function App() {
             <BriefcaseBusiness size={21} />
           </div>
           <div>
-            <strong>Career Agent</strong>
-            <span>USYD coaching workspace</span>
+            <strong>CareerHub</strong>
+            <span>AI 求职辅导助手</span>
           </div>
         </div>
 
-        <label className="field-label" htmlFor="user-id">
-          User
-        </label>
-        <div className="user-field">
-          <UserRound size={17} />
-          <input
-            id="user-id"
-            value={userId}
-            onChange={(event) => {
-              setUserId(event.target.value);
-              localStorage.setItem("career-agent-user-id", event.target.value);
-            }}
-            placeholder="user_id"
-          />
+        <div className="sidebar-user">
+          <div className="sidebar-user-info">
+            <UserRound size={16} />
+            <span className="sidebar-username">{auth.username}</span>
+          </div>
+          <button
+            className="sidebar-logout-btn"
+            type="button"
+            onClick={handleLogout}
+            title="退出登录"
+          >
+            <LogOut size={15} />
+          </button>
         </div>
 
         <div className="mode-tabs" role="tablist" aria-label="View mode">

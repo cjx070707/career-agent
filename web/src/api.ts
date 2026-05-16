@@ -1,5 +1,27 @@
 import type { ChatResponse, ChatSource, ResumeImageParseResponse, SavedParsedResumeResponse } from "./types";
 
+export async function authRegister(username: string, password: string): Promise<{ token: string; username: string }> {
+  const r = await fetch("/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.detail || "注册失败");
+  return body;
+}
+
+export async function authLogin(username: string, password: string): Promise<{ token: string; username: string }> {
+  const r = await fetch("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.detail || "登录失败");
+  return body;
+}
+
 export async function sendChat(
   userId: string,
   message: string,
@@ -58,6 +80,18 @@ export async function sendChat(
     }
   }
 
+  // Flush any remaining buffer content (handles streams that don't end with \n)
+  if (buffer.trim()) {
+    const raw = buffer.startsWith("data: ") ? buffer.slice(6).trim() : buffer.trim();
+    if (raw) {
+      try {
+        const event = JSON.parse(raw) as Record<string, unknown>;
+        if (event.type === "answer") answerEvent = event;
+        else if (event.type === "token") streamedText += String(event.text ?? "");
+      } catch { /* ignore */ }
+    }
+  }
+
   if (!answerEvent) {
     throw new Error("No answer received from server");
   }
@@ -72,7 +106,7 @@ export async function sendChat(
     memory_used: Boolean(answerEvent.memory_used),
     tool_used: (answerEvent.tool_used as string | null) ?? null,
     sources: (answerEvent.sources as ChatSource[]) ?? [],
-    tool_trace: [],
+    tool_trace: (answerEvent.tool_trace as string[]) ?? [],
   };
 }
 
