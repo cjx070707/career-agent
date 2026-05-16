@@ -14,14 +14,24 @@ from app.schemas.vision import ParsedResumeImage, ResumeImageParseResponse
 _SYSTEM_PROMPT = (
     "You extract resume information from images. "
     "Return strict JSON only with fields: "
-    "name, email, phone, education, skills, projects, experience, summary."
+    "name, email, phone, education, skills, projects, experience, summary.\n\n"
+    "CRITICAL field rules:\n"
+    "- experience: ONLY real jobs/internships at a company (has company name + role/title + dates). "
+    "e.g. '软件开发实习生 @ TikTok (2024-2025)' → experience.\n"
+    "- projects: academic coursework, personal/open-source projects, research, competitions "
+    "WITHOUT an employer. e.g. 'RAG 问答系统 (课程项目)' → projects.\n"
+    "- If an entry has BOTH a company employer AND technical project details, put it in experience "
+    "(not projects), and include the tech details in the summary field of that experience entry."
 )
 _USER_PROMPT = (
-    "Parse this resume image into JSON fields: "
-    "name, email, phone, education[{school,degree,dates}], "
-    "skills[string], projects[{name,summary,technologies[string]}], "
-    "experience[{company,role,dates,summary}], summary. "
-    "Use null or empty arrays when unknown."
+    "Parse this resume image into JSON fields:\n"
+    "name(string), email(string), phone(string),\n"
+    "education[{school, degree, dates}],\n"
+    "skills[string],\n"
+    "experience[{company, role, dates, summary}]  ← real jobs & internships with an employer,\n"
+    "projects[{name, summary, technologies[string]}]  ← personal/academic/research projects only,\n"
+    "summary(string).\n"
+    "Use null or empty arrays when unknown. Return JSON only, no markdown."
 )
 
 

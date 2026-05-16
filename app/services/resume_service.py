@@ -1,6 +1,25 @@
-from typing import Dict, List, Optional, Union
+import json
+from typing import Any, Dict, List, Optional, Union
 
 from app.db.session import get_connection
+
+
+def _row_to_dict(row) -> Dict[str, Any]:
+    """Convert a DB row to dict, merging parsed_json into structured fields."""
+    result: Dict[str, Any] = {
+        "id": row["id"],
+        "candidate_id": row["candidate_id"],
+        "title": row["title"],
+        "content": row["content"],
+        "version": row["version"],
+    }
+    raw = row["parsed_json"] if "parsed_json" in row.keys() else None
+    if raw:
+        try:
+            result["parsed"] = json.loads(raw)
+        except Exception:
+            pass
+    return result
 
 
 class ResumeService:
@@ -27,11 +46,7 @@ class ResumeService:
                 ).fetchone()
                 return int(total["count"]) == 1 and int(candidate_total["count"]) == 1
             row = connection.execute(
-                """
-                SELECT 1
-                FROM resumes
-                LIMIT 1
-                """
+                "SELECT 1 FROM resumes LIMIT 1"
             ).fetchone()
             return row is not None
 
@@ -41,49 +56,47 @@ class ResumeService:
         title: str,
         content: str,
         version: str,
-    ) -> Dict[str, Union[int, str]]:
+        parsed_json: Optional[str] = None,
+    ) -> Dict[str, Any]:
         with get_connection() as connection:
             cursor = connection.execute(
                 """
-                INSERT INTO resumes (candidate_id, title, content, version)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO resumes (candidate_id, title, content, version, parsed_json)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (candidate_id, title, content, version),
+                (candidate_id, title, content, version, parsed_json),
             )
             resume_id = cursor.lastrowid
-        return {
+        result: Dict[str, Any] = {
             "id": resume_id,
             "candidate_id": candidate_id,
             "title": title,
             "content": content,
             "version": version,
         }
+        if parsed_json:
+            try:
+                result["parsed"] = json.loads(parsed_json)
+            except Exception:
+                pass
+        return result
 
-    def list_resumes(self) -> List[Dict[str, Union[int, str]]]:
+    def list_resumes(self) -> List[Dict[str, Any]]:
         with get_connection() as connection:
             rows = connection.execute(
                 """
-                SELECT id, candidate_id, title, content, version
+                SELECT id, candidate_id, title, content, version, parsed_json
                 FROM resumes
                 ORDER BY id ASC
                 """
             ).fetchall()
-        return [
-            {
-                "id": row["id"],
-                "candidate_id": row["candidate_id"],
-                "title": row["title"],
-                "content": row["content"],
-                "version": row["version"],
-            }
-            for row in rows
-        ]
+        return [_row_to_dict(row) for row in rows]
 
-    def get_resume_by_id(self, resume_id: int) -> Dict[str, Union[int, str]]:
+    def get_resume_by_id(self, resume_id: int) -> Dict[str, Any]:
         with get_connection() as connection:
             row = connection.execute(
                 """
-                SELECT id, candidate_id, title, content, version
+                SELECT id, candidate_id, title, content, version, parsed_json
                 FROM resumes
                 WHERE id = ?
                 """,
@@ -91,20 +104,15 @@ class ResumeService:
             ).fetchone()
         if row is None:
             raise ValueError(f"Resume {resume_id} not found")
-        return {
-            "id": row["id"],
-            "candidate_id": row["candidate_id"],
-            "title": row["title"],
-            "content": row["content"],
-            "version": row["version"],
-        }
+        return _row_to_dict(row)
 
-    def get_latest_resume(self, user_id: Optional[str] = None) -> Dict[str, Union[int, str]]:
+    def get_latest_resume(self, user_id: Optional[str] = None) -> Dict[str, Any]:
         with get_connection() as connection:
             if user_id:
                 row = connection.execute(
                     """
-                    SELECT resumes.id, resumes.candidate_id, resumes.title, resumes.content, resumes.version
+                    SELECT resumes.id, resumes.candidate_id, resumes.title,
+                           resumes.content, resumes.version, resumes.parsed_json
                     FROM resumes
                     INNER JOIN candidates ON candidates.id = resumes.candidate_id
                     WHERE candidates.user_id = ?
@@ -123,7 +131,7 @@ class ResumeService:
                     if int(total["count"]) == 1 and int(candidate_total["count"]) == 1:
                         row = connection.execute(
                             """
-                            SELECT id, candidate_id, title, content, version
+                            SELECT id, candidate_id, title, content, version, parsed_json
                             FROM resumes
                             ORDER BY id DESC
                             LIMIT 1
@@ -132,7 +140,7 @@ class ResumeService:
             else:
                 row = connection.execute(
                     """
-                    SELECT id, candidate_id, title, content, version
+                    SELECT id, candidate_id, title, content, version, parsed_json
                     FROM resumes
                     ORDER BY id DESC
                     LIMIT 1
@@ -140,10 +148,4 @@ class ResumeService:
                 ).fetchone()
         if row is None:
             raise ValueError("No resume available")
-        return {
-            "id": row["id"],
-            "candidate_id": row["candidate_id"],
-            "title": row["title"],
-            "content": row["content"],
-            "version": row["version"],
-        }
+        return _row_to_dict(row)

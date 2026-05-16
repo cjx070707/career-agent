@@ -126,7 +126,10 @@ def _compute_missing_info(state: AgentState) -> List[str]:
         gaps.append("尚未设定求职目标")
 
     if tf == TaskFamily.JOB_SEARCH.value and not state.known_skills:
-        gaps.append("用户技能栈未知，建议先上传简历以获取精准匹配")
+        if state.has_resume:
+            gaps.append("技能栈未提取，请调用 get_resume_by_id 获取用户简历内容后再匹配")
+        else:
+            gaps.append("简历尚未上传，技能栈未知（gap 分析 / 岗位匹配需要先上传简历）")
 
     return gaps
 

@@ -156,6 +156,7 @@ class AutonomousAgentService:
 
         # ── 5. True ReAct loop ───────────────────────────────────────
         tool_trace: List[str] = []
+        all_sources: List[ChatSource] = []
         answer = ""
         loop_exc: Optional[Exception] = None
         turn_start = time.monotonic()
@@ -258,6 +259,9 @@ class AutonomousAgentService:
 
                 tool_trace.append(tool_name)
 
+                # Extract ChatSource objects from tool results (job postings, etc.)
+                _extract_sources(result, all_sources)
+
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call_id,
@@ -321,6 +325,7 @@ class AutonomousAgentService:
             answer=answer,
             stage=stage,
             memory_used=bool(history),
+            sources=all_sources,
             tool_used=tool_trace[-1] if tool_trace else None,
             tool_trace=tool_trace,
             error=str(loop_exc) if loop_exc else None,
@@ -506,3 +511,50 @@ class AutonomousAgentService:
             return node
 
         return resolve(schema)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _extract_sources(tool_result: Any, out: List[ChatSource]) -> None:
+    """Pull ChatSource-compatible items out of a tool result (best-effort).
+
+    Handles:
+      - list of job_posting dicts   → from search_jobs / match_resume_to_jobs
+      - list of application dicts   → from get_applications
+      - list of interview dicts      → from get_interview_feedback
+      - dict with nested lists       → from get_career_insights
+    Silently skips anything that doesn't match.
+    """
+    if not tool_result:
+        return
+
+    items: List[Any] = []
+    if isinstance(tool_result, list):
+        items = tool_result
+    elif isinstance(tool_result, dict):
+        # get_career_insights returns {"applications": [...], "interviews": [...], ...}
+        for v in tool_result.values():
+            if isinstance(v, list):
+                items.extend(v)
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        source_type = item.get("type") or item.get("source_type") or ""
+        title = item.get("title") or item.get("job_title") or item.get("company") or ""
+        snippet = item.get("snippet") or item.get("feedback") or item.get("note") or ""
+        if not source_type or not title:
+            continue
+        try:
+            out.append(ChatSource(
+                type=source_type,
+                title=str(title),
+                snippet=str(snippet)[:300],
+                company=item.get("company"),
+                location=item.get("location"),
+                work_type=item.get("work_type"),
+                posted_at=item.get("posted_at") or item.get("date"),
+                url=item.get("url"),
+            ))
+        except Exception:
+            pass

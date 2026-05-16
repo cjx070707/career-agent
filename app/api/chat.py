@@ -155,6 +155,7 @@ async def chat(request: Request, payload: ChatRequest) -> StreamingResponse:
             memory_used=result.memory_used,
             tool_used=result.tool_used,
             sources=sources_data,
+            tool_trace=result.tool_trace,
         )
         yield _sse("done")
 

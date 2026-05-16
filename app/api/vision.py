@@ -150,6 +150,7 @@ def save_parsed_resume(payload: SaveParsedResumeRequest) -> SavedParsedResumeRes
         )
 
     content = format_parsed_resume(payload.parsed)
+    parsed_json = payload.parsed.model_dump_json()
     title = (payload.title or "Resume parsed from image").strip() or "Resume parsed from image"
     version = (payload.version or "vision-v1").strip() or "vision-v1"
     saved = resume_service.create_resume(
@@ -157,6 +158,7 @@ def save_parsed_resume(payload: SaveParsedResumeRequest) -> SavedParsedResumeRes
         title=title,
         content=content,
         version=version,
+        parsed_json=parsed_json,
     )
     return SavedParsedResumeResponse(
         resume_id=int(saved["id"]),
