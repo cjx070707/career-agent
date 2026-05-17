@@ -1,3 +1,5 @@
+import asyncio
+
 import fitz  # PyMuPDF
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
@@ -132,14 +134,16 @@ async def parse_resume_image(file: UploadFile = File(...)) -> ResumeImageParseRe
         image_bytes = raw_bytes
         mime_type = content_type
 
-    return vision_client.parse_resume_image(
+    # Run blocking Claude API call in a thread so it doesn't block the event loop
+    return await asyncio.to_thread(
+        vision_client.parse_resume_image,
         image_bytes=image_bytes,
         mime_type=mime_type,
     )
 
 
 @router.post("/vision/resume-image/save", response_model=SavedParsedResumeResponse)
-def save_parsed_resume(payload: SaveParsedResumeRequest) -> SavedParsedResumeResponse:
+async def save_parsed_resume(payload: SaveParsedResumeRequest) -> SavedParsedResumeResponse:
     try:
         candidate = candidate_service.get_latest_candidate(user_id=payload.user_id)
     except ValueError:

@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
 import type { Application } from "../types";
-import { fetchApplications, createApplication, updateApplicationStatus, fetchCandidate } from "../api";
+import { fetchApplications, createApplication, updateApplicationStatus, deleteApplication, fetchCandidate } from "../api";
 
 interface Props {
   userId: string;
 }
 
 const ALL_STATUSES = ["关注中", "已投递", "一面", "二面", "Offer", "淘汰"];
-const FILTER_TABS = ["全部", "关注中", "已投递", "面试中", "Offer"];
+const FILTER_TABS = ["全部", "关注中", "已投递", "面试中", "Offer", "淘汰"];
 
 function statusStyle(status: string): React.CSSProperties {
   switch (status) {
@@ -36,6 +36,8 @@ export function JobTrackingPage({ userId }: Props) {
   const [addForm, setAddForm] = useState({ company: "", job_title: "", status: "关注中" });
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -44,6 +46,19 @@ export function JobTrackingPage({ userId }: Props) {
       .catch(() => setApplications([]))
       .finally(() => setLoading(false));
   }, [userId]);
+
+  async function handleDelete(id: number) {
+    setDeleteLoading(true);
+    try {
+      await deleteApplication(id);
+      setApplications(prev => prev.filter(a => a.id !== id));
+      setConfirmDeleteId(null);
+    } catch {
+      // ignore — keep UI unchanged on error
+    } finally {
+      setDeleteLoading(false);
+    }
+  }
 
   async function handleStatusChange(id: number, newStatus: string) {
     await updateApplicationStatus(id, newStatus);
@@ -154,16 +169,48 @@ export function JobTrackingPage({ userId }: Props) {
                 <span className="status-badge" style={statusStyle(app.status)}>{app.status}</span>
               </div>
               {app.note && <div className="job-note">{app.note}</div>}
-              <div className="job-card-footer">
-                <span className="job-date">投递时间: {app.applied_at ? new Date(app.applied_at).toLocaleDateString("zh-CN") : "-"}</span>
-                <button
-                  type="button"
-                  className="btn-ghost-sm"
-                  onClick={() => setSelectedId(selectedId === app.id ? null : app.id)}
-                >
-                  更新状态
-                </button>
-              </div>
+              {confirmDeleteId === app.id ? (
+                <div className="delete-confirm">
+                  <span>确认删除这条记录？</span>
+                  <div className="delete-confirm-actions">
+                    <button
+                      type="button"
+                      className="btn-danger-sm"
+                      onClick={() => handleDelete(app.id)}
+                      disabled={deleteLoading}
+                    >
+                      {deleteLoading ? "删除中..." : "确认删除"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost-sm"
+                      onClick={() => setConfirmDeleteId(null)}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="job-card-footer">
+                  <span className="job-date">投递时间: {app.applied_at ? new Date(app.applied_at).toLocaleDateString("zh-CN") : "-"}</span>
+                  <div className="job-card-actions">
+                    <button
+                      type="button"
+                      className="btn-ghost-sm"
+                      onClick={() => setSelectedId(selectedId === app.id ? null : app.id)}
+                    >
+                      更新状态
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost-sm danger"
+                      onClick={() => { setConfirmDeleteId(app.id); setSelectedId(null); }}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              )}
               {selectedId === app.id && (
                 <div className="status-picker">
                   {ALL_STATUSES.map(s => (

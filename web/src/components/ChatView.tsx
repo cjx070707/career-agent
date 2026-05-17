@@ -1,6 +1,6 @@
 import React, { FormEvent, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
-import { Loader2, MessageSquareText, Paperclip, Send } from "lucide-react";
+import { Loader2, MessageSquareText, Paperclip, Send, Square } from "lucide-react";
 import type { Message } from "../types";
 import { MessageDiagnostics } from "./MessageDiagnostics";
 
@@ -26,6 +26,7 @@ export function ChatView({
   onParseResumeImage: (file: File) => Promise<void>;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isComposingRef = useRef(false);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -90,7 +91,13 @@ export function ChatView({
               <span>{message.role === "user" ? "You" : "Agent"}</span>
               {message.role === "agent" ? (
                 <div className="md-content">
-                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                  {message.content ? (
+                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                  ) : isLoading ? (
+                    <div className="thinking-dots" aria-label="思考中">
+                      <span /><span /><span />
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <p>{message.content}</p>
@@ -113,13 +120,15 @@ export function ChatView({
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onPaste={(e) => void handlePaste(e)}
+          onCompositionStart={() => { isComposingRef.current = true; }}
+          onCompositionEnd={() => { setTimeout(() => { isComposingRef.current = false; }, 0); }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current) {
               e.preventDefault();
               onSubmit(e as unknown as FormEvent);
             }
           }}
-          placeholder="Ask about jobs, or paste a resume image (Cmd+V)…"
+          placeholder="问岗位、分析简历差距、制定求职计划……或粘贴简历截图（Cmd+V）"
           rows={3}
         />
         <div className="composer-actions">
@@ -139,11 +148,12 @@ export function ChatView({
             />
           </label>
           {isLoading ? (
-            <button type="button" aria-label="Stop request" className="is-loading" onClick={onCancel}>
-              <Loader2 size={19} />
+            <button type="button" className="stop-btn" onClick={onCancel} title="停止生成">
+              <Square size={13} fill="currentColor" />
+              停止
             </button>
           ) : (
-            <button type="submit" disabled={!input.trim()} aria-label="Send message">
+            <button type="submit" disabled={!input.trim()} aria-label="发送消息">
               <Send size={19} />
             </button>
           )}

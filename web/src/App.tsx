@@ -56,21 +56,24 @@ export function App() {
   const userId = auth?.username ?? "guest";
 
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const [resumeVersion, setResumeVersion] = useState(0);
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isVisionLoading, setIsVisionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [statusLabel, setStatusLabel] = useState("Ready");
+  const [statusLabel, setStatusLabel] = useState("就绪");
   const nextId = useRef(1);
   const chatAbortRef = useRef<AbortController | null>(null);
+  const userCanceledRef = useRef(false);
 
   // ── Auth handlers ─────────────────────────────────────────────────────
   function handleAuth(username: string, token: string) {
     localStorage.setItem("career-agent-username", username);
     localStorage.setItem("career-agent-token", token);
     setAuth({ username, token });
+    setNavPage("dashboard");
   }
 
   function handleLogout() {
@@ -82,7 +85,7 @@ export function App() {
     setSessions([]);
     setChatInput("");
     setError(null);
-    setStatusLabel("Ready");
+    setStatusLabel("就绪");
   }
 
   // ── Load session list ─────────────────────────────────────────────────
@@ -145,7 +148,7 @@ export function App() {
     setMessages([]);
     setChatInput("");
     setError(null);
-    setStatusLabel("Ready");
+    setStatusLabel("就绪");
     setHistoryLoaded(true);
     loadSessions(userId);
   }
@@ -156,7 +159,7 @@ export function App() {
     setSessionId(sid);
     setMessages([]);
     setError(null);
-    setStatusLabel("Ready");
+    setStatusLabel("就绪");
     loadSession(userId, sid);
   }
 
@@ -169,8 +172,9 @@ export function App() {
     const trimmed = chatInput.trim();
     if (!trimmed || isLoading) return;
     setError(null);
-    setStatusLabel("Thinking");
+    setStatusLabel("思考中");
     setIsLoading(true);
+    userCanceledRef.current = false;
     const userMessage: Message = { id: nextId.current++, role: "user", content: trimmed };
     setMessages((current) => [...current, userMessage]);
     setChatInput("");
@@ -204,29 +208,36 @@ export function App() {
         ),
       );
       loadSessions(userId);
-      setStatusLabel(response.stage === "tool" ? "Ran tools" : "Ready");
+      setStatusLabel(response.stage === "tool" ? "已调用工具" : "就绪");
     } catch (err) {
       const isAbort = err instanceof DOMException && err.name === "AbortError";
-      if (isAbort) {
-        setError("Request timed out or canceled. Please try again.");
-        setStatusLabel("Timed out");
+      if (userCanceledRef.current) {
+        // 用户主动停止，不显示错误（无论是 AbortError 还是 buffer 耗尽）
+        setError(null);
+        setStatusLabel("已取消");
+      } else if (isAbort) {
+        setError("请求超时，请重试。");
+        setStatusLabel("请求超时");
       } else {
-        setError(err instanceof Error ? err.message : "Request failed");
-        setStatusLabel("Needs retry");
+        setError(err instanceof Error ? err.message : "请求失败");
+        setStatusLabel("请重试");
       }
     } finally {
       chatAbortRef.current = null;
+      userCanceledRef.current = false;
       setIsLoading(false);
     }
   }
 
   function cancelChatRequest() {
+    userCanceledRef.current = true;
     if (chatAbortRef.current) {
       chatAbortRef.current.abort();
       chatAbortRef.current = null;
     }
-    setIsLoading(false);
-    setStatusLabel("Canceled");
+    // Don't setIsLoading(false) here — let catch/finally handle it
+    // so the stop button stays visible until streaming truly stops
+    setStatusLabel("取消中...");
   }
 
   // Chat path: parse → auto-save → insert confirmation message in chat
@@ -251,6 +262,7 @@ export function App() {
       }
 
       const saved = await saveParsedResume(userId, parsed.parsed);
+      setResumeVersion((v) => v + 1); // force ResumePage to re-fetch
       const name = parsed.parsed.name ? `（${parsed.parsed.name}）` : "";
       const skills = parsed.parsed.skills.slice(0, 5).join("、");
       const skillsLine = skills
@@ -375,8 +387,8 @@ export function App() {
             <section className="primary-pane">
               <header className="pane-header">
                 <div>
-                  <span className="eyebrow">continuous context</span>
-                  <h1>Chat</h1>
+                  <span className="eyebrow">持续上下文</span>
+                  <h1>AI 对话</h1>
                 </div>
                 <StatusPill isLoading={isLoading} response={latestResponse} statusLabel={statusLabel} />
               </header>
@@ -408,7 +420,15 @@ export function App() {
 
         {navPage === "resume" && (
           <div className="full-page">
-            <ResumePage userId={userId} onNavigate={setNavPage} />
+            <ResumePage
+              key={resumeVersion}
+              userId={userId}
+              onNavigate={setNavPage}
+              onOptimizeResume={() => {
+                setChatInput("请帮我分析和优化我的简历，重点提升关键词匹配度和表达清晰度，给出具体修改建议");
+                setNavPage("chat");
+              }}
+            />
           </div>
         )}
 

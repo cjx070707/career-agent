@@ -32,6 +32,14 @@ def create_application(payload: ApplicationCreate) -> Dict[str, Union[int, str]]
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.delete("/applications/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_application(application_id: int) -> None:
+    try:
+        application_service.delete_application(application_id=application_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.patch("/applications/{application_id}")
 def update_application_status(
     application_id: int,

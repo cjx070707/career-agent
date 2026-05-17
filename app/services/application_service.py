@@ -100,6 +100,19 @@ class ApplicationService:
             ).fetchone()
         return self._row_to_dict(row)
 
+    def delete_application(self, application_id: int) -> None:
+        with get_connection() as connection:
+            existing = connection.execute(
+                "SELECT id FROM applications WHERE id = ?",
+                (application_id,),
+            ).fetchone()
+            if existing is None:
+                raise ValueError(f"Application {application_id} not found")
+            connection.execute(
+                "DELETE FROM applications WHERE id = ?",
+                (application_id,),
+            )
+
     def _row_to_dict(self, row) -> Dict[str, Union[int, str]]:
         if row is None:
             raise ValueError("Application row not found")

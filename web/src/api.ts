@@ -50,7 +50,7 @@ export async function sendChat(
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done || signal.aborted) break;
     buffer += decoder.decode(value, { stream: true });
 
     const lines = buffer.split("\n");
@@ -90,6 +90,11 @@ export async function sendChat(
         else if (event.type === "token") streamedText += String(event.text ?? "");
       } catch { /* ignore */ }
     }
+  }
+
+  // If aborted by user, throw AbortError regardless of buffered content
+  if (signal.aborted) {
+    throw new DOMException("Aborted by user", "AbortError");
   }
 
   if (!answerEvent) {
@@ -143,6 +148,11 @@ export async function updateApplicationStatus(id: number, status: string, note?:
   await fetch(`/applications/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, note }) });
 }
 
+export async function deleteApplication(id: number): Promise<void> {
+  const r = await fetch(`/applications/${id}`, { method: 'DELETE' });
+  if (!r.ok) throw new Error(`删除失败 (${r.status})`);
+}
+
 export async function fetchGoals(userId: string): Promise<Goal[]> {
   const r = await fetch(`/goals?user_id=${encodeURIComponent(userId)}`);
   if (!r.ok) return [];
@@ -170,6 +180,24 @@ export async function fetchCandidate(userId: string): Promise<{ id: number } | n
   if (!r.ok) return null;
   const data = await r.json();
   return Array.isArray(data) ? (data[0] ?? null) : null;
+}
+
+export interface JobMatch {
+  job_title: string;
+  match_score: number;
+  matched_keywords: string[];
+  rationale: string;
+}
+
+export async function fetchJobMatches(resumeId: number): Promise<JobMatch[]> {
+  const r = await fetch('/matches/resume', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resume_id: resumeId }),
+  });
+  if (!r.ok) return [];
+  const data = await r.json();
+  return data.matches ?? [];
 }
 
 export async function saveParsedResume(
