@@ -5,6 +5,7 @@ ReAct loop where the LLM sees all available tools and autonomously decides
 what to do at each step.
 """
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
@@ -207,10 +208,30 @@ class AutonomousAgentService:
                 break
 
             if not tool_calls:
-                # LLM produced a final text answer — exit loop
+                # LLM produced a final text answer — verify before exiting
                 answer = str(response_msg.get("content") or "").strip()
                 if not answer:
                     answer = "抱歉，暂时无法生成回答，请稍后再试。"
+
+                # ── Claim verification ────────────────────────────────
+                # Detect "action claims" in the answer that have no corresponding
+                # tool call in this turn's trace.  If found and we still have
+                # iterations left, inject a correction and keep looping.
+                uncalled = self._check_action_claims(answer, tool_trace)
+                if uncalled and iteration < self.MAX_ITERATIONS - 1:
+                    emit("⚠️ 检测到未执行操作，正在补充调用...")
+                    messages.append({"role": "assistant", "content": answer})
+                    tool_names = "、".join(uncalled)
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"你的回复中声称已完成：{tool_names}，"
+                            "但实际上没有调用对应的工具，数据不会被保存。"
+                            "请立即调用工具完成这些操作，然后再给出最终回答。"
+                        ),
+                    })
+                    continue  # back to top of loop, do NOT break
+
                 break
 
             # LLM wants to call tools — execute and feed results back
@@ -332,6 +353,55 @@ class AutonomousAgentService:
         )
 
     # ── Helpers ──────────────────────────────────────────────────────
+
+    # ── Action-claim verification ─────────────────────────────────────
+    # Each entry: (list of regex patterns, tool_name_that_should_have_been_called)
+    # Patterns are matched against the final-answer text.  Only triggers when
+    # the corresponding tool was NOT in tool_trace for this turn.
+    _CLAIM_PATTERNS: List[tuple] = [
+        (
+            [
+                r"已记录.*投递", r"已记录.*跟进", r"已记录.*岗位", r"已记录.*申请",
+                r"已记录你投", r"已记录.*投了", r"投递.*已记录",
+                r"已添加.*求职追踪", r"已为你记录.*(公司|岗位|投递|申请)",
+                r"已追踪.*岗位", r"投递记录.*已.*保存", r"跟进.*已.*记录",
+            ],
+            "log_application",
+        ),
+        (
+            [
+                r"目标已设定", r"已设定.*目标", r"已为你设定目标",
+                r"目标已创建", r"已记录.*目标",
+            ],
+            "set_goal",
+        ),
+        (
+            [
+                r"进展已记录", r"已记录.*进展", r"已记录.*进度",
+                r"已为你记录.*进展",
+            ],
+            "log_progress",
+        ),
+        (
+            [
+                r"目标.*已.*完成", r"目标.*已.*标记", r"已更新目标状态",
+            ],
+            "update_goal_status",
+        ),
+    ]
+
+    @staticmethod
+    def _check_action_claims(answer: str, tool_trace: List[str]) -> List[str]:
+        """Return human-readable names of actions claimed in text but not executed."""
+        uncalled: List[str] = []
+        for patterns, tool_name in AutonomousAgentService._CLAIM_PATTERNS:
+            if tool_name in tool_trace:
+                continue  # tool was actually called — claim is legitimate
+            for pattern in patterns:
+                if re.search(pattern, answer):
+                    uncalled.append(tool_name)
+                    break
+        return uncalled
 
     def _build_system_prompt(
         self,
