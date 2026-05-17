@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Query, status
 
@@ -11,7 +11,7 @@ resume_service = ResumeService()
 
 
 @router.get("/resumes")
-def list_resumes(user_id: Optional[str] = Query(None)) -> List[Dict[str, Union[int, str]]]:
+def list_resumes(user_id: Optional[str] = Query(None)) -> List[Dict[str, Any]]:
     if user_id:
         try:
             return [resume_service.get_latest_resume(user_id)]
@@ -21,7 +21,7 @@ def list_resumes(user_id: Optional[str] = Query(None)) -> List[Dict[str, Union[i
 
 
 @router.post("/resumes", status_code=status.HTTP_201_CREATED)
-def create_resume(payload: ResumeCreate) -> Dict[str, Union[int, str]]:
+def create_resume(payload: ResumeCreate) -> Dict[str, Any]:
     return resume_service.create_resume(
         candidate_id=payload.candidate_id,
         title=payload.title,

@@ -46,6 +46,7 @@ def init_db(db_path: Optional[str] = None) -> None:
                 title TEXT NOT NULL,
                 content TEXT NOT NULL,
                 version TEXT NOT NULL,
+                parsed_json TEXT,
                 FOREIGN KEY(candidate_id) REFERENCES candidates(id)
             );
 
@@ -131,6 +132,13 @@ def init_db(db_path: Optional[str] = None) -> None:
             """
         )
         # ── Migrations ─────────────────────────────────────────────────────
+        resume_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(resumes)").fetchall()
+        }
+        if "parsed_json" not in resume_columns:
+            connection.execute("ALTER TABLE resumes ADD COLUMN parsed_json TEXT")
+
         candidate_columns = {
             row["name"]
             for row in connection.execute("PRAGMA table_info(candidates)").fetchall()

@@ -58,6 +58,29 @@ def get_session_messages(user_id: str, session_id: str) -> List[HistoryMessage]:
     ]
 
 
+class SaveMessageRequest(BaseModel):
+    role: str
+    content: str
+    session_id: Optional[str] = None
+
+
+@router.post("/conversations/{user_id}/message", response_model=HistoryMessage)
+def save_message(user_id: str, payload: SaveMessageRequest) -> HistoryMessage:
+    """Persist a single message turn (e.g. a system-generated agent note)."""
+    row_id = MemoryService().save_single_turn(
+        user_id=user_id,
+        role=payload.role,
+        content=payload.content,
+        session_id=payload.session_id,
+    )
+    return HistoryMessage(
+        id=row_id,
+        role=payload.role,
+        content=payload.content,
+        session_id=payload.session_id,
+    )
+
+
 @router.get("/conversations/{user_id}", response_model=List[HistoryMessage])
 def get_conversation_history(user_id: str) -> List[HistoryMessage]:
     """Return the most recent conversation turns for a user (up to 12).

@@ -16,7 +16,7 @@ import type {
   SavedParsedResumeResponse,
   SessionMeta,
 } from "./types";
-import { sendChat, parseResumeImage, saveParsedResume } from "./api";
+import { sendChat, parseResumeImage, saveParsedResume, saveMessage } from "./api";
 import {
   getOrCreateSessionId,
   hasParsedResumeContent,
@@ -273,12 +273,17 @@ export function App() {
           ? `\n⚠️ 部分字段解析不完整：${parsed.warnings.join("；")}`
           : "";
 
+      const confirmContent = `✅ 简历已解析并保存${name}（ID: ${saved.resume_id}）。${skillsLine}${warnLine}\n\n现在可以问我：\n- "帮我分析和某个 JD 的差距"\n- "我适合哪些 Python 岗位？"`;
+
+      // Persist so the message survives session reloads
+      void saveMessage(userId, "assistant", confirmContent, sessionId);
+
       setMessages((curr) => [
         ...curr,
         {
           id: nextId.current++,
           role: "agent",
-          content: `✅ 简历已解析并保存${name}（ID: ${saved.resume_id}）。${skillsLine}${warnLine}\n\n现在可以问我：\n- "帮我分析和某个 JD 的差距"\n- "我适合哪些 Python 岗位？"`,
+          content: confirmContent,
         },
       ]);
     } catch (err) {

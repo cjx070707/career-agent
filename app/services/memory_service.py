@@ -116,6 +116,21 @@ class MemoryService:
             for r in rows
         ]
 
+    def save_single_turn(
+        self,
+        user_id: str,
+        role: str,
+        content: str,
+        session_id: Optional[str] = None,
+    ) -> int:
+        """Append a single turn (any role) and return its row id."""
+        with get_connection(self.db_path) as conn:
+            cursor = conn.execute(
+                "INSERT INTO conversation_turns (user_id, role, content, session_id) VALUES (?, ?, ?, ?)",
+                (user_id, role, content, session_id),
+            )
+            return cursor.lastrowid  # type: ignore[return-value]
+
     def save_turn(
         self,
         user_id: str,

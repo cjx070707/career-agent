@@ -200,6 +200,19 @@ export async function fetchJobMatches(resumeId: number): Promise<JobMatch[]> {
   return data.matches ?? [];
 }
 
+export async function saveMessage(
+  userId: string,
+  role: string,
+  content: string,
+  sessionId?: string,
+): Promise<void> {
+  await fetch(`/conversations/${encodeURIComponent(userId)}/message`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role, content, session_id: sessionId ?? null }),
+  }).catch(() => {/* non-critical, ignore failures */});
+}
+
 export async function saveParsedResume(
   userId: string,
   parsed: ResumeImageParseResponse["parsed"],
