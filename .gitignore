@@ -1,19 +1,42 @@
+# Secrets & environment
 .env
+
+# IDE / editor internals
+.cursor/
+.claude/
 .worktrees/
+
+# Claude Code instructions (internal use only)
+CLAUDE.md
+
+# OS
 .DS_Store
 **/.DS_Store
+
+# Python
 __pycache__/
+**/__pycache__/
+*.pyc
 .pytest_cache/
+.venv/
+
+# Data & databases
 data/chroma/
 data/*.db
+*.db
+logs/
+
+# Evals output
 evals/reports/*.md
 evals/reports/*.json
 evals/reports/*/
 !evals/reports/.gitkeep
+
+# Frontend build
 web/dist/
 web/node_modules/
 web/tsconfig.tsbuildinfo
 
-.venv/
+# Dev artifacts
 scripts/add_resume.json
-logs/
+web/public/mockup*.html

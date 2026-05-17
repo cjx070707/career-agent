@@ -480,6 +480,32 @@ class RetrievalService:
         metadatas = response.get("metadatas", [[]])[0]
         return [self._metadata_to_result(metadata) for metadata in metadatas]
 
+    def search_jobs_with_scores(
+        self,
+        query: str,
+        n_results: int = 10,
+    ) -> list[tuple["RetrievalResult", float]]:
+        """Return job postings with their cosine distance scores.
+        Used exclusively by MatchService to compute match percentages.
+        Distance is in [0, 1]: 0 = identical, 1 = completely different.
+        """
+        count = self._collection.count()
+        if count == 0:
+            return []
+        n = min(n_results, count)
+        response = self._collection.query(
+            query_texts=[query],
+            n_results=n,
+            include=["metadatas", "distances"],
+        )
+        metadatas = response.get("metadatas", [[]])[0]
+        distances = response.get("distances", [[]])[0]
+        results = []
+        for metadata, distance in zip(metadatas, distances):
+            if str(metadata.get("type", "")).strip() == "job_posting":
+                results.append((self._metadata_to_result(metadata), float(distance)))
+        return results
+
     def _all_indexed_results(self) -> list[RetrievalResult]:
         response = self._collection.get(include=["metadatas"])
         metadatas = response.get("metadatas", [])

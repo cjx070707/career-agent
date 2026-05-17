@@ -14,6 +14,7 @@ export default defineConfig({
       "/applications": "http://127.0.0.1:8000",
       "/resumes": "http://127.0.0.1:8000",
       "/candidates": "http://127.0.0.1:8000",
+      "/matches": "http://127.0.0.1:8000",
     }
   }
 });
